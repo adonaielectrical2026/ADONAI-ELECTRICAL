@@ -1,11 +1,11 @@
 {
-  "name": "ADONAI ELECTRICAL — Herramientas Técnicas",
-  "short_name": "Herr. Técnicas",
+  "name": "ADONAI ELECTRICAL",
+  "short_name": "ADONAI ELECTRICAL",
   "description": "Relevamientos, cálculos eléctricos y presupuestos para uso interno de ADONAI ELECTRICAL.",
   "start_url": ".",
   "scope": ".",
   "display": "standalone",
-  "background_color": "#f4f4f5",
+  "background_color": "#0b0b0c",
   "theme_color": "#0b0b0c",
   "orientation": "portrait",
   "icons": [
