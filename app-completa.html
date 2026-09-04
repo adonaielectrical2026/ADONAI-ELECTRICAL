@@ -2709,6 +2709,37 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       y += 4;
     }
 
+    if (trabajo && trabajo.circuitos && trabajo.circuitos.length) {
+      const filasCircuitos = trabajo.circuitos
+        .map((c) => ({ c, calc: calcularCircuito(c) }))
+        .filter(({ calc }) => calc.apto)
+        .map(({ c, calc }) => [c.nombre || 'Circuito', calc.seccionAdoptada + ' mm²', calc.breaker + ' A curva ' + calc.curva]);
+      if (filasCircuitos.length) {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
+        doc.text('CIRCUITOS', margin, y);
+        y += 4;
+        doc.autoTable({
+          startY: y,
+          margin: { left: margin, right: margin },
+          head: [['Circuito', 'Sección de cable', 'Protección']],
+          body: filasCircuitos,
+          theme: 'plain',
+          styles: { fontSize: 9, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
+          headStyles: { textColor: [111, 114, 119], fontStyle: 'bold', fontSize: 8, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
+          columnStyles: { 1: { halign: 'right', cellWidth: 36 }, 2: { halign: 'right', cellWidth: 40 } },
+        });
+        y = doc.lastAutoTable.finalY + 4;
+        // Cita la fuente normativa usada por el motor de cálculo (NORMATIVE_PACK), sin
+        // afirmar "verificado" — el paquete normativo puede seguir en estado "pendiente"
+        // (falta confirmación de un electricista matriculado), eso no se le oculta al
+        // cliente pero tampoco se sobreafirma acá.
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(111, 114, 119);
+        const normLines = doc.splitTextToSize('Secciones y protecciones calculadas según ' + NORMATIVE_PACK.nombre + '.', pageWidth - 2 * margin);
+        doc.text(normLines, margin, y);
+        y += normLines.length * 4 + 8;
+      }
+    }
+
     doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
     doc.text('MATERIALES', margin, y);
     y += 4;
