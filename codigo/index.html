@@ -271,6 +271,7 @@
           </table>
         </div>
       </div>
+      <div class="panel-dark card-pad" id="circuitos-proteccion-general" style="display:flex;flex-wrap:wrap;gap:20px" hidden></div>
       <div class="grid-2">
         <button class="btn btn-outline" data-step-prev><svg><use href="#ic-chevron-left"/></svg> Atrás</button>
         <button class="btn btn-primary" data-step-next>Continuar <svg><use href="#ic-chevron-right"/></svg></button>
@@ -324,6 +325,17 @@
 
       <div class="section-label">Circuitos</div>
       <div class="stack-sm" id="resumen-circuitos"></div>
+
+      <div class="card card-pad" id="resumen-proteccion-general" hidden>
+        <div class="section-label" style="margin-bottom:10px">Protección general</div>
+        <div class="stack-sm" id="resumen-proteccion-general-stats"></div>
+        <div class="field" style="margin-top:12px"><label>Sensibilidad diferencial general</label>
+          <select class="select" id="resumen-diferencial-sensibilidad">
+            <option value="30">30 mA</option>
+            <option value="300">300 mA</option>
+          </select>
+        </div>
+      </div>
 
       <div class="card card-pad">
         <div class="row-between" style="margin-bottom:10px">

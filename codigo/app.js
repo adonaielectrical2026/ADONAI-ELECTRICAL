@@ -318,6 +318,29 @@
     });
   }
 
+  // Térmica y diferencial general de toda la instalación (no de un circuito). Solo aplica
+  // a instalaciones nuevas: si es una modificación/reparación sobre una instalación
+  // existente, esa protección ya está puesta — no corresponde recalcularla.
+  function calcularProteccionGeneral(draft) {
+    if (!draft || draft.obra.naturaleza !== 'Proyecto nuevo') return { aplica: false };
+    const sistema = SISTEMAS[draft.sistemaId] || SISTEMAS.tri_tt;
+    const r = calcularPotencia(draft.cargas, sistema, draft.factores);
+    // La térmica general se dimensiona con la potencia a solicitar en el trámite ante UTE
+    // (el suministro contratado), no con la demanda instantánea calculada.
+    const pW = r.suministroSugerido * 1000;
+    const ig = sistema.fases === 1 ? pW / sistema.v : pW / (SQRT3 * sistema.v);
+    const maxCircuito = Math.max(0, ...(draft.circuitos || []).map((c) => calcularCircuito(c).breaker || 0));
+    const termicaIn = BREAKER_RATINGS.find((b) => b >= ig && b > maxCircuito) ?? BREAKER_RATINGS[BREAKER_RATINGS.length - 1];
+    // En Uruguay no suelen conseguirse diferenciales de menos de 25A: si la térmica general
+    // da 16 o 20A, el diferencial general igual se sugiere en 25A.
+    const diferencialIn = Math.max(termicaIn, 25);
+    return {
+      aplica: true, ig, termicaIn, termicaCurva: 'C', termicaPolos: sistema.fases === 1 ? 2 : 4,
+      diferencialIn, diferencialSensibilidad: (draft.proteccionGeneral && draft.proteccionGeneral.diferencialSensibilidad) || 30,
+      diferencialTipo: 'AC',
+    };
+  }
+
   function importarCargasComoCircuitos(cargas, sistema) {
     return cargas.map((c, i) => {
       const pTotal = (Number(c.potenciaW) || 0) * (Number(c.cantidad) || 0);
@@ -386,6 +409,7 @@
       cliente: { nombre: 'Empresa Delta (ejemplo)', telefono: '', whatsapp: '', email: '', contacto: '', obs: '' },
       obra: { nombre: 'Depósito Central', direccion: '', localidad: 'Salto', tipo: 'Industrial', naturaleza: 'Proyecto nuevo', obs: '' },
       sistemaId: 'tri_tt', factores: { iluminacion: 1.0, tomacorrientes: 0.66, cargaFija: 0.8 },
+      proteccionGeneral: { diferencialSensibilidad: 30 },
       cargas, circuitos, materiales, estado: 'revision', observaciones: 'Se verificó caída de tensión y protección según normas vigentes. Pendiente confirmación de tableros.',
       createdAt: now - 3 * 3600e3, updatedAt: now - 3600e3,
     };
@@ -526,6 +550,7 @@
       cliente: { nombre: '', telefono: '', whatsapp: '', email: '', contacto: '', obs: '' },
       obra: { nombre: '', direccion: '', localidad: 'Salto', tipo: 'Residencial', naturaleza: 'Proyecto nuevo', obs: '' },
       sistemaId: 'tri_tt', factores: { iluminacion: 1.0, tomacorrientes: 0.66, cargaFija: 0.8 },
+      proteccionGeneral: { diferencialSensibilidad: 30 },
       cargas: [], circuitos: [], materiales: [], estado: 'pendiente', observaciones: '',
       motorVersion: MOTOR_VERSION, normativaPackId: NORMATIVE_PACK.id, normativaVersion: NORMATIVE_PACK.version,
       createdAt: Date.now(), updatedAt: Date.now(),
@@ -545,6 +570,7 @@
     const t = DB.trabajos.find((x) => x.id === id);
     if (!t) return;
     draft = JSON.parse(JSON.stringify(t));
+    if (!draft.proteccionGeneral) draft.proteccionGeneral = { diferencialSensibilidad: 30 };
     wizardStep = WIZARD_STEPS.length - 1;
     renderClientesExistentes();
     renderWizardForm();
@@ -740,6 +766,15 @@
     return '<div class="stat-box"><div class="lbl">' + label + '</div><div class="val' + (big ? ' big' : '') + '">' + value + '</div></div>';
   }
 
+  function proteccionGeneralHtml(pg) {
+    return statBox('Térmica general', pg.termicaIn + 'A · ' + pg.termicaPolos + 'p · curva ' + pg.termicaCurva, true) +
+      statBox('Diferencial general', pg.diferencialIn + 'A · ' + pg.diferencialSensibilidad + ' mA · tipo ' + pg.diferencialTipo, true);
+  }
+  function proteccionGeneralLightHtml(pg) {
+    return '<div class="light-stat-row"><span class="lbl">Térmica general</span><span class="val strong">' + pg.termicaIn + 'A · ' + pg.termicaPolos + 'p · curva ' + pg.termicaCurva + '</span></div>' +
+      '<div class="light-stat-row"><span class="lbl">Diferencial general</span><span class="val strong">' + pg.diferencialIn + 'A · ' + pg.diferencialTipo + '</span></div>';
+  }
+
   function renderCircuitosList() {
     const wrap = $('#circuitos-list');
     wrap.innerHTML = '';
@@ -748,9 +783,9 @@
     }
     draft.circuitos.forEach((c) => {
       const calc = calcularCircuito(c);
-      const card = el('div', { class: 'card card-pad', style: 'position:relative' });
+      const card = el('div', { class: 'card card-pad item-card', style: 'position:relative' });
       card.innerHTML =
-        '<button class="remove-btn" type="button" style="top:14px;right:14px">' + icon('ic-trash') + '</button>' +
+        '<button class="remove-btn" type="button">' + icon('ic-trash') + '</button>' +
         '<div class="item-grid" style="padding-right:30px">' +
         '<div class="field" style="grid-column:1/-1"><label>Nombre del circuito</label><input class="input" data-f="nombre" value="' + escapeHtml(c.nombre) + '"></div>' +
         '<div class="field"><label>Corriente Ib (A)</label><input class="input" type="number" data-f="ib" value="' + c.ib + '"></div>' +
@@ -787,6 +822,11 @@
         '<td>' + (calc.apto ? calc.breaker + 'A · ' + calc.curva : '—') + '</td>' +
         '<td style="color:' + (calc.apto && calc.dUPct > c.caidaMax ? 'var(--error)' : 'inherit') + '">' + (calc.apto ? fmt(calc.dUPct) : '—') + '</td></tr>';
     }).join('');
+
+    const pgWrap = $('#circuitos-proteccion-general');
+    const pg = calcularProteccionGeneral(draft);
+    pgWrap.hidden = !pg.aplica || draft.circuitos.length === 0;
+    if (pg.aplica) pgWrap.innerHTML = proteccionGeneralHtml(pg);
   }
 
   function renderMaterialesList() {
@@ -840,6 +880,13 @@
         '<div style="font-size:0.76rem;color:var(--steel)">' + (calc.apto ? calc.seccionAdoptada + ' mm² · ' + calc.breaker + 'A · ΔU ' + fmt(calc.dUPct) + '%' : 'No apto con estos parámetros') + '</div></div>';
       cWrap.appendChild(row);
     });
+
+    const pg = calcularProteccionGeneral(draft);
+    $('#resumen-proteccion-general').hidden = !pg.aplica;
+    if (pg.aplica) {
+      $('#resumen-proteccion-general-stats').innerHTML = proteccionGeneralLightHtml(pg);
+      $('#resumen-diferencial-sensibilidad').value = String(pg.diferencialSensibilidad);
+    }
 
     $('#resumen-materiales-count').textContent = draft.materiales.length + ' ítems';
     const mWrap = $('#resumen-materiales-preview');
@@ -1104,6 +1151,9 @@
       toast('Materiales regenerados desde los circuitos');
     });
     $('#resumen-estado').addEventListener('change', () => { draft.estado = $('#resumen-estado').value; });
+    $('#resumen-diferencial-sensibilidad').addEventListener('change', () => {
+      draft.proteccionGeneral.diferencialSensibilidad = Number($('#resumen-diferencial-sensibilidad').value);
+    });
     $('#btn-enviar-revision').addEventListener('click', () => { persistDraft('revision'); toast('Enviado a revisión'); showView('home'); });
     $('#btn-crear-presupuesto').addEventListener('click', () => {
       persistDraft();
