@@ -1290,55 +1290,112 @@
     'Modificación': 'Modificación, ampliación o reparación sobre una instalación eléctrica existente.',
     'Emergencia': 'Intervención de urgencia para resolver una falla o riesgo inmediato.',
   };
-  function generarPdfPresupuesto(p) {
+  function logoDataUrl() {
+    return fetch(LOGO_SRC).then((r) => r.blob()).then((blob) => new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    })).catch(() => null);
+  }
+
+  async function generarPdfPresupuesto(p) {
     savePresupuesto();
     const t = calcularTotalesPresupuesto(p);
-    const w = window.open('', '_blank');
-    if (!w) { toast('Habilitá las ventanas emergentes para generar el PDF'); return; }
     const trabajo = p.trabajoId ? DB.trabajos.find((tr) => tr.id === p.trabajoId) : null;
     const materialesItems = trabajo && trabajo.materiales && trabajo.materiales.length ? trabajo.materiales : null;
-    const filasMateriales = materialesItems
-      ? materialesItems.map((m) =>
-          '<tr><td>' + escapeHtml(m.nombre) + ' <span class="muted">(' + fmt(m.cantidad, 0) + ' ' + escapeHtml(m.unidad) + ')</span></td><td class="r">' + money(m.cantidad * m.precioUnit) + '</td></tr>'
-        ).join('')
-      : '<tr><td>Materiales</td><td class="r">' + money(p.materiales) + '</td></tr>';
     const naturaleza = trabajo ? trabajo.obra.naturaleza : null;
-    const bloqueTarea = naturaleza
-      ? '<div class="tarea"><div class="tarea-tipo">' + escapeHtml(naturaleza) + '</div>' +
-        '<div>' + escapeHtml(NATURALEZA_DESC[naturaleza] || '') + '</div>' +
-        '<div class="tarea-plazo">Plazo estimado: ' + p.plazo + ' días</div></div>'
-      : '';
-    w.document.write(
-      '<title>' + p.codigo + '</title>' +
-      '<style>html{background:#fff}body{font-family:Arial,sans-serif;padding:40px;color:#171719;background:#fff;max-width:640px;margin:0 auto}' +
-      'h1{font-size:20px;margin-bottom:2px}.muted{color:#6f7277;font-size:13px;margin-bottom:24px}' +
-      'table{width:100%;border-collapse:collapse;margin-top:8px}td{padding:8px 0;border-bottom:1px solid #e2e3e5;font-size:14px}' +
-      '.r{text-align:right}.total{font-weight:800;font-size:18px}.tag{font-weight:800;letter-spacing:0.06em;font-size:15px}' +
-      '.head{display:flex;align-items:center;gap:12px;padding-bottom:14px;margin-bottom:18px;border-bottom:2px solid #0b0b0c}' +
-      '.head img{height:40px;width:auto}.slogan{font-size:11px;color:#6f7277;letter-spacing:0.03em}' +
-      '.tarea{background:#f4f4f5;border-radius:8px;padding:12px 14px;margin:14px 0;font-size:13px;line-height:1.5}' +
-      '.tarea-tipo{font-weight:800;font-size:14px;margin-bottom:2px}.tarea-plazo{color:#6f7277;margin-top:4px}' +
-      '.section-title{font-weight:800;font-size:13px;letter-spacing:0.04em;text-transform:uppercase;color:#6f7277;margin-top:20px}</style>' +
-      '<div class="head"><img src="' + LOGO_SRC + '" alt=""><div><div class="tag">ADONAI ELECTRICAL</div><div class="slogan">Energía con propósito</div></div></div>' +
-      '<h1>Presupuesto ' + p.codigo + '</h1>' +
-      '<div class="muted">Cliente / proyecto: ' + escapeHtml(p.clienteNombre || '—') + '</div>' +
-      bloqueTarea +
-      '<div class="section-title">Materiales</div>' +
-      '<table>' + filasMateriales + '</table>' +
-      '<div class="section-title">Presupuesto</div>' +
-      '<table>' +
-      '<tr><td>Mano de obra</td><td class="r">' + money(p.manoObra) + '</td></tr>' +
-      '<tr><td>Traslados</td><td class="r">' + money(p.traslados) + '</td></tr>' +
-      '<tr><td>Otros gastos</td><td class="r">' + money(p.otros) + '</td></tr>' +
-      '<tr><td>Costo total</td><td class="r">' + money(t.costoTotal) + '</td></tr>' +
-      '<tr><td>Margen (' + p.margen + '%)</td><td class="r">' + money(t.subtotal - t.costoTotal) + '</td></tr>' +
-      '<tr><td>IVA (' + p.iva + '%)</td><td class="r">' + money(t.ivaMonto) + '</td></tr>' +
-      '<tr><td class="total">TOTAL CLIENTE</td><td class="r total">' + money(t.total) + '</td></tr>' +
-      '</table>' +
-      '<p class="muted" style="margin-top:24px">Validez: ' + p.validez + ' días · Forma de pago: ' + escapeHtml(p.formaPago) + '</p>'
-    );
-    w.document.close();
-    setTimeout(() => w.print(), 300);
+    const logo = await logoDataUrl();
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 18;
+    let y = 18;
+
+    if (logo) doc.addImage(logo, 'PNG', margin, y, 12, 12);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(23, 23, 25);
+    doc.text('ADONAI ELECTRICAL', margin + 16, y + 5);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(111, 114, 119);
+    doc.text('Energía con propósito', margin + 16, y + 10);
+    y += 16;
+    doc.setDrawColor(11, 11, 12); doc.setLineWidth(0.6);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 10;
+
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(23, 23, 25);
+    doc.text('Presupuesto ' + p.codigo, margin, y);
+    y += 7;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
+    doc.text('Cliente / proyecto: ' + (p.clienteNombre || '—'), margin, y);
+    y += 6;
+
+    if (naturaleza) {
+      const descLines = doc.splitTextToSize(NATURALEZA_DESC[naturaleza] || '', pageWidth - 2 * margin - 8);
+      const boxH = 8 + descLines.length * 5 + 7;
+      doc.setFillColor(244, 244, 245);
+      doc.roundedRect(margin, y, pageWidth - 2 * margin, boxH, 2, 2, 'F');
+      let ty = y + 7;
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.setTextColor(23, 23, 25);
+      doc.text(naturaleza, margin + 4, ty);
+      ty += 6;
+      doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(23, 23, 25);
+      doc.text(descLines, margin + 4, ty);
+      ty += descLines.length * 5;
+      doc.setTextColor(111, 114, 119);
+      doc.text('Plazo estimado: ' + p.plazo + ' días', margin + 4, ty);
+      y += boxH + 8;
+    } else {
+      y += 4;
+    }
+
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
+    doc.text('MATERIALES', margin, y);
+    y += 4;
+    const filasMateriales = materialesItems
+      ? materialesItems.map((m) => [m.nombre, fmt(m.cantidad, 0) + ' ' + m.unidad, money(m.cantidad * m.precioUnit)])
+      : [['Materiales', '', money(p.materiales)]];
+    doc.autoTable({
+      startY: y,
+      margin: { left: margin, right: margin },
+      head: [['Material', 'Cant.', 'Precio']],
+      body: filasMateriales,
+      theme: 'plain',
+      styles: { fontSize: 9, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
+      headStyles: { textColor: [111, 114, 119], fontStyle: 'bold', fontSize: 8, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
+      columnStyles: { 1: { halign: 'right', cellWidth: 26 }, 2: { halign: 'right', cellWidth: 28 } },
+    });
+    y = doc.lastAutoTable.finalY + 10;
+
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
+    doc.text('PRESUPUESTO', margin, y);
+    y += 4;
+    const filasPresupuesto = [
+      ['Mano de obra', money(p.manoObra)],
+      ['Traslados', money(p.traslados)],
+      ['Otros gastos', money(p.otros)],
+      ['Costo total', money(t.costoTotal)],
+      ['Margen (' + p.margen + '%)', money(t.subtotal - t.costoTotal)],
+      ['IVA (' + p.iva + '%)', money(t.ivaMonto)],
+      ['TOTAL CLIENTE', money(t.total)],
+    ];
+    doc.autoTable({
+      startY: y,
+      margin: { left: margin, right: margin },
+      body: filasPresupuesto,
+      theme: 'plain',
+      styles: { fontSize: 9, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
+      columnStyles: { 1: { halign: 'right' } },
+      didParseCell: (data) => {
+        if (data.row.index === filasPresupuesto.length - 1) { data.cell.styles.fontStyle = 'bold'; data.cell.styles.fontSize = 11; }
+      },
+    });
+    y = doc.lastAutoTable.finalY + 10;
+
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(111, 114, 119);
+    doc.text('Validez: ' + p.validez + ' días · Forma de pago: ' + p.formaPago, margin, y);
+
+    doc.save(p.codigo + '.pdf');
   }
 
   function wirePerfil() {
