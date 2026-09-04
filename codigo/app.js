@@ -43,27 +43,130 @@
   const MONO_STEPS = [3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10, 10.5, 11, 11.5];
   const TRI_STEPS = [6, 8, 10, 12, 15, 20, 25, 30, 35, 40];
 
-  const AMPACITY_TABLE = [
-    { s: 1.5, a: 17.5 }, { s: 2.5, a: 24 }, { s: 4, a: 32 }, { s: 6, a: 41 },
-    { s: 10, a: 57 }, { s: 16, a: 76 }, { s: 25, a: 96 }, { s: 35, a: 119 },
-    { s: 50, a: 144 }, { s: 70, a: 184 }, { s: 95, a: 223 },
-  ];
-  const FACTOR_ALUMINIO = 0.78;
+  // Corriente maxima admisible, RBT-UTE Capitulo II - Anexo (ed. junio 2001).
+  // c2 = corriente con 2 conductores cargados (circuito monofasico: fase + neutro).
+  // c3 = corriente con 3 conductores cargados (circuito trifasico, neutro no se cuenta).
+  const TABLAS_UTE = {
+    // "Dentro de conductos" (Anexo S5, Tablas X-XIII). embutido/vista/enterrado-bajo-tubo
+    // usan esta categoria: fisicamente son conductores dentro de un cano, solo cambia el
+    // entorno (pared, a la vista, bajo tierra). No confundir con Tablas XV/XVI, que son
+    // para cable armado enterrado DIRECTO (sin cano) - un producto distinto que esta app
+    // no contempla como opcion separada.
+    conducto: {
+      cobre: {
+        pvc: [
+          { s: 0.75, c2: 12, c3: 10 }, { s: 1, c2: 14, c3: 13 }, { s: 1.5, c2: 19, c3: 16 },
+          { s: 2, c2: 22, c3: 20 }, { s: 2.5, c2: 25, c3: 22 }, { s: 4, c2: 34, c3: 30 },
+          { s: 6, c2: 43, c3: 38 }, { s: 10, c2: 60, c3: 53 }, { s: 16, c2: 81, c3: 72 },
+          { s: 25, c2: 107, c3: 94 }, { s: 35, c2: 133, c3: 118 }, { s: 50, c2: 160, c3: 142 },
+          { s: 70, c2: 204, c3: 181 }, { s: 95, c2: 246, c3: 219 }, { s: 120, c2: 285, c3: 253 },
+          { s: 150, c2: 328, c3: 292 }, { s: 185, c2: 375, c3: 332 }, { s: 240, c2: 440, c3: 391 },
+          { s: 300, c2: 506, c3: 449 }, { s: 400, c2: 605, c3: 538 },
+        ],
+        xlpe: [
+          { s: 0.75, c2: 16, c3: 14 }, { s: 1, c2: 19, c3: 17 }, { s: 1.5, c2: 24, c3: 21 },
+          { s: 2, c2: 29, c3: 26 }, { s: 2.5, c2: 32, c3: 28 }, { s: 4, c2: 44, c3: 38 },
+          { s: 6, c2: 56, c3: 50 }, { s: 10, c2: 77, c3: 69 }, { s: 16, c2: 104, c3: 93 },
+          { s: 25, c2: 138, c3: 122 }, { s: 35, c2: 171, c3: 150 }, { s: 50, c2: 206, c3: 182 },
+          { s: 70, c2: 264, c3: 231 }, { s: 95, c2: 318, c3: 280 }, { s: 120, c2: 368, c3: 324 },
+          { s: 150, c2: 428, c3: 382 }, { s: 185, c2: 489, c3: 434 }, { s: 240, c2: 572, c3: 512 },
+          { s: 300, c2: 661, c3: 588 }, { s: 400, c2: 791, c3: 704 },
+        ],
+      },
+      aluminio: {
+        pvc: [
+          { s: 0.75, c2: 9, c3: 8 }, { s: 1, c2: 11, c3: 10 }, { s: 1.5, c2: 14, c3: 13 },
+          { s: 2, c2: 17, c3: 15 }, { s: 2.5, c2: 20, c3: 18 }, { s: 4, c2: 26, c3: 24 },
+          { s: 6, c2: 34, c3: 31 }, { s: 10, c2: 47, c3: 42 }, { s: 16, c2: 63, c3: 56 },
+          { s: 25, c2: 83, c3: 75 }, { s: 35, c2: 103, c3: 92 }, { s: 50, c2: 128, c3: 115 },
+          { s: 70, c2: 158, c3: 142 }, { s: 95, c2: 192, c3: 172 }, { s: 120, c2: 222, c3: 199 },
+          { s: 150, c2: 255, c3: 228 }, { s: 185, c2: 291, c3: 260 }, { s: 240, c2: 342, c3: 306 },
+          { s: 300, c2: 394, c3: 352 }, { s: 400, c2: 471, c3: 422 },
+        ],
+        xlpe: [
+          { s: 0.75, c2: 12, c3: 11 }, { s: 1, c2: 15, c3: 13 }, { s: 1.5, c2: 19, c3: 17 },
+          { s: 2, c2: 22, c3: 20 }, { s: 2.5, c2: 26, c3: 23 }, { s: 4, c2: 35, c3: 31 },
+          { s: 6, c2: 45, c3: 40 }, { s: 10, c2: 61, c3: 55 }, { s: 16, c2: 82, c3: 74 },
+          { s: 25, c2: 109, c3: 97 }, { s: 35, c2: 134, c3: 120 }, { s: 50, c2: 168, c3: 150 },
+          { s: 70, c2: 207, c3: 185 }, { s: 95, c2: 251, c3: 224 }, { s: 120, c2: 290, c3: 259 },
+          { s: 150, c2: 334, c3: 298 }, { s: 185, c2: 381, c3: 340 }, { s: 240, c2: 448, c3: 400 },
+          { s: 300, c2: 515, c3: 460 }, { s: 400, c2: 616, c3: 550 },
+        ],
+      },
+    },
+    // "Al aire bajo techo" (Anexo S4, Tablas VI-IX). Columnas usadas: "2 unipolar" (c2) y
+    // "3 unipolar" (c3) - la app compra conductores unipolares sueltos, no cable multipolar.
+    aire: {
+      cobre: {
+        pvc: [
+          { s: 0.75, c2: 15, c3: 11 }, { s: 1, c2: 18, c3: 14 }, { s: 1.5, c2: 23, c3: 18 },
+          { s: 2, c2: 28, c3: 22 }, { s: 2.5, c2: 32, c3: 25 }, { s: 4, c2: 43, c3: 35 },
+          { s: 6, c2: 56, c3: 45 }, { s: 10, c2: 78, c3: 64 }, { s: 16, c2: 105, c3: 87 },
+          { s: 25, c2: 139, c3: 117 }, { s: 35, c2: 172, c3: 145 }, { s: 50, c2: 208, c3: 177 },
+          { s: 70, c2: 266, c3: 229 }, { s: 95, c2: 322, c3: 280 }, { s: 120, c2: 373, c3: 325 },
+          { s: 150, c2: 431, c3: 377 }, { s: 185, c2: 491, c3: 431 }, { s: 240, c2: 576, c3: 511 },
+          { s: 300, c2: 667, c3: 589 }, { s: 400, c2: 799, c3: 704 }, { s: 500, c2: 920, c3: 802 },
+          { s: 630, c2: 1065, c3: 907 },
+        ],
+        xlpe: [
+          { s: 0.75, c2: 18, c3: 14 }, { s: 1, c2: 21, c3: 16 }, { s: 1.5, c2: 28, c3: 21 },
+          { s: 2, c2: 33, c3: 26 }, { s: 2.5, c2: 39, c3: 30 }, { s: 4, c2: 52, c3: 42 },
+          { s: 6, c2: 67, c3: 54 }, { s: 10, c2: 93, c3: 79 }, { s: 16, c2: 126, c3: 105 },
+          { s: 25, c2: 167, c3: 140 }, { s: 35, c2: 208, c3: 176 }, { s: 50, c2: 252, c3: 215 },
+          { s: 70, c2: 322, c3: 279 }, { s: 95, c2: 392, c3: 341 }, { s: 120, c2: 454, c3: 397 },
+          { s: 150, c2: 524, c3: 461 }, { s: 185, c2: 598, c3: 529 }, { s: 240, c2: 706, c3: 628 },
+          { s: 300, c2: 814, c3: 727 }, { s: 400, c2: 978, c3: 873 }, { s: 500, c2: 1126, c3: 996 },
+          { s: 630, c2: 1304, c3: 1121 },
+        ],
+      },
+      aluminio: {
+        pvc: [
+          { s: 0.75, c2: 11, c3: 9 }, { s: 1, c2: 13, c3: 11 }, { s: 1.5, c2: 17, c3: 14 },
+          { s: 2, c2: 20, c3: 17 }, { s: 2.5, c2: 23, c3: 19 }, { s: 4, c2: 31, c3: 26 },
+          { s: 6, c2: 41, c3: 34 }, { s: 10, c2: 57, c3: 48 }, { s: 16, c2: 78, c3: 66 },
+          { s: 25, c2: 104, c3: 89 }, { s: 35, c2: 130, c3: 111 }, { s: 50, c2: 164, c3: 140 },
+          { s: 70, c2: 204, c3: 176 }, { s: 95, c2: 249, c3: 215 }, { s: 120, c2: 290, c3: 251 },
+          { s: 150, c2: 336, c3: 291 }, { s: 185, c2: 385, c3: 334 }, { s: 240, c2: 456, c3: 397 },
+          { s: 300, c2: 528, c3: 461 }, { s: 400, c2: 637, c3: 558 },
+        ],
+        xlpe: [
+          { s: 0.75, c2: 13, c3: 10 }, { s: 1, c2: 15, c3: 12 }, { s: 1.5, c2: 20, c3: 16 },
+          { s: 2, c2: 24, c3: 20 }, { s: 2.5, c2: 28, c3: 23 }, { s: 4, c2: 38, c3: 31 },
+          { s: 6, c2: 49, c3: 41 }, { s: 10, c2: 69, c3: 58 }, { s: 16, c2: 94, c3: 80 },
+          { s: 25, c2: 126, c3: 107 }, { s: 35, c2: 157, c3: 135 }, { s: 50, c2: 198, c3: 171 },
+          { s: 70, c2: 246, c3: 214 }, { s: 95, c2: 301, c3: 263 }, { s: 120, c2: 350, c3: 308 },
+          { s: 150, c2: 405, c3: 357 }, { s: 185, c2: 465, c3: 411 }, { s: 240, c2: 551, c3: 490 },
+          { s: 300, c2: 638, c3: 569 }, { s: 400, c2: 770, c3: 690 },
+        ],
+      },
+    },
+  };
+  // embutido/vista/enterrado (bajo tubo) son fisicamente "dentro de un cano" -> misma
+  // categoria de tabla; solo "aire" (al aire libre/bandeja) usa las tablas de aire.
+  const CATEGORIA_METODO = { embutido: 'conducto', vista: 'conducto', enterrado: 'conducto', aire: 'aire' };
   const RHO_COBRE = 0.0225;
   const FACTOR_RESIST_ALUMINIO = 1.68;
-  const TEMP_FACTORS = [
-    { t: 20, f: 1.06 }, { t: 25, f: 1.03 }, { t: 30, f: 1.00 }, { t: 35, f: 0.94 },
-    { t: 40, f: 0.87 }, { t: 45, f: 0.79 }, { t: 50, f: 0.71 },
-  ];
-  const GROUP_FACTORS = [
-    { n: 1, f: 1.00 }, { n: 2, f: 0.80 }, { n: 3, f: 0.70 },
-    { n: 4, f: 0.65 }, { n: 5, f: 0.60 }, { n: 6, f: 0.57 },
-  ];
-  const METODOS = { embutido: 1.00, vista: 1.00, aire: 1.15, enterrado: 0.85 };
+  // Factor de correccion por temperatura ambiente, RBT-UTE Anexo Tabla XIV, por aislacion.
+  const TEMP_FACTORS_UTE = {
+    pvc: [
+      { t: 10, f: 1.15 }, { t: 15, f: 1.10 }, { t: 20, f: 1.05 }, { t: 25, f: 1.00 },
+      { t: 30, f: 0.94 }, { t: 35, f: 0.88 }, { t: 40, f: 0.82 }, { t: 45, f: 0.75 },
+      { t: 50, f: 0.67 }, { t: 55, f: 0.58 }, { t: 60, f: 0.47 },
+    ],
+    xlpe: [
+      { t: 10, f: 1.11 }, { t: 15, f: 1.08 }, { t: 20, f: 1.04 }, { t: 25, f: 1.00 },
+      { t: 30, f: 0.96 }, { t: 35, f: 0.92 }, { t: 40, f: 0.88 }, { t: 45, f: 0.84 },
+      { t: 50, f: 0.79 }, { t: 55, f: 0.73 }, { t: 60, f: 0.68 }, { t: 65, f: 0.63 },
+      { t: 70, f: 0.56 }, { t: 75, f: 0.48 }, { t: 80, f: 0.39 },
+    ],
+  };
   const METODO_LABEL = { embutido: 'Embutido / bajo tubo', vista: 'Bajo tubo a la vista', aire: 'Al aire libre / bandeja', enterrado: 'Enterrado bajo tubo' };
   const BREAKER_RATINGS = [6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100];
   const CURVA_SUGERIDA = { iluminacion: 'B', tomacorrientes: 'C', fuerza: 'C' };
-  const MINIMOS_REGLAMENTARIOS = { iluminacion: 1.5, tomacorrientes: 2.5, fuerza: 1.0 };
+  // Secciones minimas por resistencia mecanica, RBT-UTE Anexo S9: derivacion para
+  // alumbrado 0,75mm2; derivacion para tomacorrientes "en salto" 1,5mm2 (mas conservador
+  // que 1mm2 para un solo tomacorriente); derivacion para otros usos 1mm2.
+  const MINIMOS_REGLAMENTARIOS = { iluminacion: 0.75, tomacorrientes: 1.5, fuerza: 1 };
   const CAIDA_MAX_DEFAULT = { iluminacion: 3, tomacorrientes: 5, fuerza: 5 };
   const DIAMETRO_CANO = [{ s: 2.5, d: 16 }, { s: 6, d: 20 }, { s: 10, d: 25 }, { s: 16, d: 32 }, { s: 95, d: 40 }];
 
@@ -75,14 +178,14 @@
      ============================================================ */
   const MOTOR_VERSION = '1.0.0';
   const NORMATIVE_PACK = {
-    id: 'referencia-iec-utegenerico-2025',
-    nombre: 'Valores de referencia (IEC 60364-5-52 / UNIT-IEC 898)',
-    fuente: 'Tabla orientativa incluida en el proyecto original — sin confirmar contra RBT-UTE',
-    version: '0.1-borrador',
+    id: 'rbt-ute-cap-ii-anexo-2001',
+    nombre: 'Reglamento de Baja Tensión UTE — Capítulo II y Anexo',
+    fuente: 'RBT-UTE, Capítulo II "Instalaciones Interiores o Receptoras" y su Anexo (Tablas I a XVI), edición N.5 / Junio 2001, ute.com.uy',
+    version: '0.2-borrador',
     estado: 'pendiente', // 'pendiente' | 'verificado' | 'personalizado'
     vigenteDesde: null,
     actualizadoEl: '2026-09-03',
-    notas: 'Ampacidades, factores de corrección, secciones mínimas y curvas sugeridas son orientativos. Deben confirmarse contra el Reglamento de Baja Tensión de UTE y las normas UNIT/IEC vigentes antes de usarse en una instalación real.',
+    notas: 'Ampacidades (Tablas VI-XIII), sección mínima por resistencia mecánica (Anexo §9) y factor de corrección por temperatura (Tabla XIV) tomados directamente del reglamento. Dos supuestos de mapeo quedan pendientes de confirmar con un electricista matriculado: (1) "Enterrado bajo tubo" se calcula con las tablas de "dentro de conductos" (X-XIII), no con las Tablas XV/XVI de cable armado enterrado directo, porque el reglamento no define una tabla propia para conducto enterrado y XV/XVI son para un producto distinto (cable armado sin caño). (2) El factor de agrupamiento de circuitos "al aire" se dejó en 1,00 (sin reducción) porque el Anexo no da una tabla de agrupamiento para ese método — solo para preensamblado (Tabla II) y dentro de conductos (§5.1, ya aplicado).',
   };
   const ESTADO_PACK_LABEL = { pendiente: 'Pendiente de verificación', verificado: 'Verificado', personalizado: 'Personalizado (no verificado)' };
   const ESTADO_PACK_CLASS = { pendiente: 'status-pending', verificado: 'status-approved', personalizado: 'status-review' };
@@ -100,20 +203,24 @@
     for (const s of steps) if (s >= value) return s;
     return steps[steps.length - 1];
   }
-  function getTempFactor(temp) {
-    let closest = TEMP_FACTORS[0];
-    for (const tf of TEMP_FACTORS) if (Math.abs(tf.t - temp) < Math.abs(closest.t - temp)) closest = tf;
+  function getTempFactorUTE(aislacion, temp) {
+    const tabla = TEMP_FACTORS_UTE[aislacion] || TEMP_FACTORS_UTE.pvc;
+    let closest = tabla[0];
+    for (const tf of tabla) if (Math.abs(tf.t - temp) < Math.abs(closest.t - temp)) closest = tf;
     return closest.f;
   }
-  function getGroupFactor(n) {
-    const found = GROUP_FACTORS.find((g) => g.n === n);
-    if (found) return found.f;
-    return n > 6 ? GROUP_FACTORS[GROUP_FACTORS.length - 1].f : 1;
+  // RBT-UTE Anexo §5.1: recién por encima de 3 conductores cargados en el mismo caño
+  // hay reducción (4 a 7 = 0.90, más de 7 = 0.70). Sin tabla equivalente para "al aire".
+  function getGroupFactorUTE(categoria, nConductores) {
+    if (categoria !== 'conducto') return 1;
+    if (nConductores <= 3) return 1;
+    if (nConductores <= 7) return 0.90;
+    return 0.70;
   }
-  function ampacityFor(s, material) {
-    const row = AMPACITY_TABLE.find((r) => r.s === s);
-    if (!row) return 0;
-    return material === 'aluminio' ? row.a * FACTOR_ALUMINIO : row.a;
+  function tablaAmpacidad(categoria, material, aislacion) {
+    const cat = TABLAS_UTE[categoria] || TABLAS_UTE.conducto;
+    const mat = cat[material === 'aluminio' ? 'aluminio' : 'cobre'];
+    return mat[aislacion === 'xlpe' ? 'xlpe' : 'pvc'];
   }
   function nearestBreaker(ib, iz) {
     for (const b of BREAKER_RATINGS) if (b >= ib && b <= iz) return b;
@@ -154,31 +261,44 @@
     const l = Number(p.l) || 0;
     const cosPhi = Number(p.cosPhi) || 1;
     const fases = p.fases || 1;
-    const metodoF = METODOS[p.metodo] ?? 1;
-    const tempF = getTempFactor(Number(p.tempAmb) || 30);
-    const groupF = getGroupFactor(Number(p.agrupados) || 1);
-    const rho = p.material === 'aluminio' ? RHO_COBRE * FACTOR_RESIST_ALUMINIO : RHO_COBRE;
+    const material = p.material === 'aluminio' ? 'aluminio' : 'cobre';
+    const aislacion = p.aislacion === 'xlpe' ? 'xlpe' : 'pvc';
+    const categoria = CATEGORIA_METODO[p.metodo] || 'conducto';
+    const tabla = tablaAmpacidad(categoria, material, aislacion);
+    const tempF = getTempFactorUTE(aislacion, Number(p.tempAmb) || 30);
+    // Conductores activos cargados: 2 (fase+neutro monofásico) o 3 (trifásico, el
+    // neutro no se cuenta según RBT-UTE Anexo §5.1).
+    const conductoresPorCircuito = fases === 1 ? 2 : 3;
+    const nConductores = (Number(p.agrupados) || 1) * conductoresPorCircuito;
+    const groupF = getGroupFactorUTE(categoria, nConductores);
+    const rho = material === 'aluminio' ? RHO_COBRE * FACTOR_RESIST_ALUMINIO : RHO_COBRE;
     const caidaMax = Number(p.caidaMax) || 5;
     const uso = p.uso || 'fuerza';
-    const minimo = MINIMOS_REGLAMENTARIOS[uso] ?? 1.5;
+    const minimo = MINIMOS_REGLAMENTARIOS[uso] ?? 1;
     const curva = CURVA_SUGERIDA[uso] || 'C';
 
     let seccionCapacidad = null, seccionCaida = null, elegido = null;
-    for (const row of AMPACITY_TABLE) {
+    for (const row of tabla) {
       if (row.s < minimo) continue;
-      const izBase = ampacityFor(row.s, p.material);
-      const iz = izBase * tempF * groupF * metodoF;
+      const izBase = fases === 1 ? row.c2 : row.c3;
+      const iz = izBase * tempF * groupF;
       if (seccionCapacidad === null && iz >= ib) seccionCapacidad = row.s;
       const dU = fases === 1 ? (2 * rho * l * ib * cosPhi) / row.s : (SQRT3 * rho * l * ib * cosPhi) / row.s;
       const dUPct = (dU / v) * 100;
       if (seccionCaida === null && dUPct <= caidaMax) seccionCaida = row.s;
-      if (iz >= ib && dUPct <= caidaMax && elegido === null) elegido = { seccion: row.s, iz, dUPct };
+      // Además de capacidad y caída, tiene que existir una térmica estándar que
+      // proteja el conductor (In >= Ib y In <= Iz) — si no hay ninguna en ese rango
+      // para esta sección, no sirve como "elegido" aunque la corriente admisible ya
+      // alcance; se sigue probando con la sección siguiente.
+      if (iz >= ib && dUPct <= caidaMax && elegido === null) {
+        const breaker = nearestBreaker(ib, iz);
+        if (breaker !== null) elegido = { seccion: row.s, iz, dUPct, breaker };
+      }
     }
     if (!elegido) return { apto: false, ib, seccionCapacidad, seccionCaida, minimo, curva };
-    const breaker = nearestBreaker(ib, elegido.iz);
     return {
       apto: true, ib, seccionCapacidad, seccionCaida, minimo, curva,
-      seccionAdoptada: elegido.seccion, iz: elegido.iz, dUPct: elegido.dUPct, breaker,
+      seccionAdoptada: elegido.seccion, iz: elegido.iz, dUPct: elegido.dUPct, breaker: elegido.breaker,
     };
   }
 
@@ -193,7 +313,7 @@
 
   function calcularCircuito(c) {
     return calcularSeccion({
-      ib: c.ib, v: c.v, fases: c.fases, l: c.l, material: c.material, metodo: c.metodo,
+      ib: c.ib, v: c.v, fases: c.fases, l: c.l, material: c.material, metodo: c.metodo, aislacion: c.aislacion,
       tempAmb: c.tempAmb, agrupados: c.agrupados, cosPhi: c.cosPhi, caidaMax: c.caidaMax, uso: c.uso || 'fuerza',
     });
   }
@@ -210,7 +330,7 @@
         id: 'imp-' + Date.now() + '-' + i,
         nombre: c.nombre || (cat ? cat.label : 'Circuito'),
         ib: Math.round(ib * 100) / 100,
-        v: sistema.v, fases: sistema.fases, l: 15, material: 'cobre', metodo: 'embutido',
+        v: sistema.v, fases: sistema.fases, l: 15, material: 'cobre', metodo: 'embutido', aislacion: 'pvc',
         tempAmb: 30, agrupados: 1, caidaMax: CAIDA_MAX_DEFAULT[uso] || 5, cosPhi, uso,
       };
     });
@@ -784,7 +904,8 @@
     const ib = ibDesdeInput({ datoConocido: dato, potenciaKw: dato === 'potencia' ? valor : 0, corrienteA: dato === 'corriente' ? valor : 0, cosPhi, v, fases });
     const r = calcularSeccion({
       ib, v, fases, l: Number($('#cond-longitud').value) || 0, material: $('#cond-material').value,
-      metodo: $('#cond-metodo').value, tempAmb: Number($('#cond-temp').value) || 30, agrupados: Number($('#cond-agrupados').value) || 1,
+      metodo: $('#cond-metodo').value, aislacion: $('#cond-aislacion').value,
+      tempAmb: Number($('#cond-temp').value) || 30, agrupados: Number($('#cond-agrupados').value) || 1,
       cosPhi, caidaMax: Number($('#cond-caidamax').value) || 5, uso: $('#cond-uso').value,
     });
     $('#cond-badge').innerHTML = r.apto
@@ -1054,16 +1175,25 @@
     const t = calcularTotalesPresupuesto(p);
     const w = window.open('', '_blank');
     if (!w) { toast('Habilitá las ventanas emergentes para generar el PDF'); return; }
+    const trabajo = p.trabajoId ? DB.trabajos.find((tr) => tr.id === p.trabajoId) : null;
+    const materialesItems = trabajo && trabajo.materiales && trabajo.materiales.length ? trabajo.materiales : null;
+    const filasMateriales = materialesItems
+      ? materialesItems.map((m) =>
+          '<tr><td>' + escapeHtml(m.nombre) + ' <span class="muted">(' + fmt(m.cantidad, 0) + ' ' + escapeHtml(m.unidad) + ')</span></td><td class="r">' + money(m.cantidad * m.precioUnit) + '</td></tr>'
+        ).join('')
+      : '<tr><td>Materiales</td><td class="r">' + money(p.materiales) + '</td></tr>';
     w.document.write(
       '<title>' + p.codigo + '</title>' +
       '<style>body{font-family:Arial,sans-serif;padding:40px;color:#171719;max-width:640px;margin:0 auto}' +
       'h1{font-size:20px;margin-bottom:2px}.muted{color:#6f7277;font-size:13px;margin-bottom:24px}' +
       'table{width:100%;border-collapse:collapse;margin-top:16px}td{padding:8px 0;border-bottom:1px solid #e2e3e5;font-size:14px}' +
-      '.r{text-align:right}.total{font-weight:800;font-size:18px}.tag{font-weight:800;letter-spacing:0.06em}</style>' +
-      '<div class="tag">ADONAI ELECTRICAL</div><h1>Presupuesto ' + p.codigo + '</h1>' +
+      '.r{text-align:right}.total{font-weight:800;font-size:18px}.tag{font-weight:800;letter-spacing:0.06em}' +
+      '.head{display:flex;align-items:center;gap:10px;margin-bottom:6px}.head img{height:36px;width:auto}</style>' +
+      '<div class="head"><img src="' + LOGO_SRC + '" alt=""><div class="tag">ADONAI ELECTRICAL</div></div>' +
+      '<h1>Presupuesto ' + p.codigo + '</h1>' +
       '<div class="muted">Cliente / proyecto: ' + escapeHtml(p.clienteNombre || '—') + '</div>' +
       '<table>' +
-      '<tr><td>Materiales</td><td class="r">' + money(p.materiales) + '</td></tr>' +
+      filasMateriales +
       '<tr><td>Mano de obra</td><td class="r">' + money(p.manoObra) + '</td></tr>' +
       '<tr><td>Traslados</td><td class="r">' + money(p.traslados) + '</td></tr>' +
       '<tr><td>Otros gastos</td><td class="r">' + money(p.otros) + '</td></tr>' +
