@@ -394,9 +394,14 @@
         if (c.metodo === 'amurado_pvc') {
           add('Caño PVC rígido ' + diametroCano(calc.seccionAdoptada) + ' mm', 'm', largo);
           add('Grampa omega', 'un.', largo);
+          // Cantidad en 0: el caño flexible se dobla solo, pero el amurado con caño rígido
+          // necesita codos para los cambios de dirección — no hay forma de saber cuántos
+          // hacen falta a partir de la longitud, así que se deja lista para cargar a mano.
+          add('Codo PVC rígido ' + diametroCano(calc.seccionAdoptada) + ' mm (cambio de dirección)', 'un.', 0);
         } else if (c.metodo === 'amurado_galvanizado') {
           add('Caño de acero galvanizado ' + diametroCano(calc.seccionAdoptada) + ' mm', 'm', largo);
           add('Grampa omega', 'un.', largo);
+          add('Codo caño galvanizado ' + diametroCano(calc.seccionAdoptada) + ' mm (cambio de dirección)', 'un.', 0);
         } else if (c.metodo === 'bandeja') {
           add('Bandeja portacable ' + anchoBandeja(conductores) + ' mm', 'm', largo);
           const nMensulas = Math.ceil(largo / 1.5);
@@ -404,6 +409,7 @@
           add('Taco fischer 10mm', 'un.', nMensulas * 2);
           add('Tornillo cabeza tuerca para taco 10mm', 'un.', nMensulas * 2);
           add('Tornillo con tuerca 8mm', 'un.', nMensulas * 2);
+          add('Codo / caja de pase para bandeja ' + anchoBandeja(conductores) + ' mm (cambio de dirección)', 'un.', 0);
         } else if (c.metodo !== 'aire') {
           // embutido, enterrado, o metodo viejo/desconocido: caño corrugado (comportamiento por defecto)
           add('Caño corrugado ' + diametroCano(calc.seccionAdoptada) + ' mm', 'm', largo);
@@ -412,6 +418,20 @@
       }
       const tipoTermica = c.fases === 1 ? 'bipolar' : 'tetrapolar';
       add('Térmica ' + tipoTermica + ' ' + calc.breaker + 'A curva ' + calc.curva, 'un.', 1);
+    });
+    // Puntos de luz y de toma, según la cantidad cargada en cada carga del relevamiento.
+    // Quedan como cualquier otro material: editables a mano si la cantidad real difiere.
+    ((draft && draft.cargas) || []).forEach((carga) => {
+      const n = Number(carga.cantidad) || 0;
+      if (n <= 0) return;
+      if (carga.categoria === 'iluminacion') {
+        add('Caja de embutir octogonal', 'un.', n);
+        add('Portalámparas', 'un.', n);
+        add('Llave de luz simple', 'un.', n);
+      } else if (carga.categoria === 'tomacorrientes') {
+        add('Caja de embutir rectangular', 'un.', n);
+        add('Tomacorriente', 'un.', n);
+      }
     });
     if (draft && draft.obra && draft.obra.naturaleza === 'Proyecto nuevo') {
       const nLlaves = circuitos.length + 2; // + térmica general + diferencial general
@@ -446,7 +466,7 @@
       { id: 'c3', nombre: 'Motor bomba', categoria: 'cargaFija', potenciaW: 2200, cantidad: 1, cosPhi: 0.85 },
     ];
     const circuitos = importarCargasComoCircuitos(cargas, sistema).map((c, i) => ({ ...c, l: [18, 30, 42][i] || 15 }));
-    const materiales = generarMateriales(circuitos, { obra: { naturaleza: 'Proyecto nuevo' } });
+    const materiales = generarMateriales(circuitos, { obra: { naturaleza: 'Proyecto nuevo' }, cargas });
     const now = Date.now();
     const trabajo = {
       id: 'T' + (++DB.seq.trabajo), codigo: 'REL-' + new Date().getFullYear() + '-0001',
