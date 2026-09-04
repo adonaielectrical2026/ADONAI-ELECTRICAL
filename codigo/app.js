@@ -143,7 +143,10 @@
   };
   // embutido/vista/enterrado (bajo tubo) son fisicamente "dentro de un cano" -> misma
   // categoria de tabla; solo "aire" (al aire libre/bandeja) usa las tablas de aire.
-  const CATEGORIA_METODO = { embutido: 'conducto', vista: 'conducto', enterrado: 'conducto', aire: 'aire' };
+  const CATEGORIA_METODO = {
+    embutido: 'conducto', amurado_pvc: 'conducto', amurado_galvanizado: 'conducto', enterrado: 'conducto',
+    bandeja: 'aire', aire: 'aire',
+  };
   const RHO_COBRE = 0.0225;
   const FACTOR_RESIST_ALUMINIO = 1.68;
   // Factor de correccion por temperatura ambiente, RBT-UTE Anexo Tabla XIV, por aislacion.
@@ -160,7 +163,14 @@
       { t: 70, f: 0.56 }, { t: 75, f: 0.48 }, { t: 80, f: 0.39 },
     ],
   };
-  const METODO_LABEL = { embutido: 'Embutido / bajo tubo', vista: 'Bajo tubo a la vista', aire: 'Al aire libre / bandeja', enterrado: 'Enterrado bajo tubo' };
+  const METODO_LABEL = {
+    embutido: 'Embutido en pared',
+    amurado_pvc: 'Amurado — caño PVC rígido',
+    amurado_galvanizado: 'Amurado — caño de acero galvanizado',
+    bandeja: 'Bandeja',
+    aire: 'Aire libre',
+    enterrado: 'Enterrado bajo tierra',
+  };
   const BREAKER_RATINGS = [6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100];
   const CURVA_SUGERIDA = { iluminacion: 'B', tomacorrientes: 'C', fuerza: 'C' };
   // Secciones minimas por resistencia mecanica, RBT-UTE Anexo S9: derivacion para
@@ -229,6 +239,13 @@
   function diametroCano(seccion) {
     for (const row of DIAMETRO_CANO) if (seccion <= row.s) return row.d;
     return 40;
+  }
+  // Ancho de bandeja portacable según cantidad de cables que lleva (criterio del usuario,
+  // no una tabla normativa).
+  const ANCHO_BANDEJA = [{ n: 6, ancho: 150 }, { n: 10, ancho: 200 }, { n: Infinity, ancho: 250 }];
+  function anchoBandeja(nCables) {
+    for (const row of ANCHO_BANDEJA) if (nCables <= row.n) return row.ancho;
+    return ANCHO_BANDEJA[ANCHO_BANDEJA.length - 1].ancho;
   }
 
   function calcularPotencia(cargas, sistema, factores) {
@@ -359,7 +376,7 @@
     });
   }
 
-  function generarMateriales(circuitos) {
+  function generarMateriales(circuitos, draft) {
     const mapa = {};
     function add(nombre, unidad, cantidad, precioUnit) {
       const key = nombre;
@@ -372,11 +389,38 @@
       const conductores = c.fases === 1 ? 2 : 4;
       const largoCable = Math.ceil((Number(c.l) || 0) * conductores * 1.1);
       if (largoCable > 0) add('Cable unipolar ' + fmt(calc.seccionAdoptada, calc.seccionAdoptada < 10 ? 1 : 0).replace(/,00$/, '') + ' mm²', 'm', largoCable);
-      const largoCano = Math.ceil((Number(c.l) || 0) * 1.1);
-      if (largoCano > 0) add('Caño corrugado ' + diametroCano(calc.seccionAdoptada) + ' mm', 'm', largoCano);
+      const largo = Math.ceil((Number(c.l) || 0) * 1.1);
+      if (largo > 0) {
+        if (c.metodo === 'amurado_pvc') {
+          add('Caño PVC rígido ' + diametroCano(calc.seccionAdoptada) + ' mm', 'm', largo);
+          add('Grampa omega', 'un.', largo);
+        } else if (c.metodo === 'amurado_galvanizado') {
+          add('Caño de acero galvanizado ' + diametroCano(calc.seccionAdoptada) + ' mm', 'm', largo);
+          add('Grampa omega', 'un.', largo);
+        } else if (c.metodo === 'bandeja') {
+          add('Bandeja portacable ' + anchoBandeja(conductores) + ' mm', 'm', largo);
+          const nMensulas = Math.ceil(largo / 1.5);
+          add('Ménsula para bandeja', 'un.', nMensulas);
+          add('Taco fischer 10mm', 'un.', nMensulas * 2);
+          add('Tornillo cabeza tuerca para taco 10mm', 'un.', nMensulas * 2);
+          add('Tornillo con tuerca 8mm', 'un.', nMensulas * 2);
+        } else if (c.metodo !== 'aire') {
+          // embutido, enterrado, o metodo viejo/desconocido: caño corrugado (comportamiento por defecto)
+          add('Caño corrugado ' + diametroCano(calc.seccionAdoptada) + ' mm', 'm', largo);
+        }
+        // 'aire' (aire libre): sin canalización
+      }
       const tipoTermica = c.fases === 1 ? 'bipolar' : 'tetrapolar';
       add('Térmica ' + tipoTermica + ' ' + calc.breaker + 'A curva ' + calc.curva, 'un.', 1);
     });
+    if (draft && draft.obra && draft.obra.naturaleza === 'Proyecto nuevo') {
+      const nLlaves = circuitos.length + 2; // + térmica general + diferencial general
+      add('Tablero eléctrico (' + nLlaves + ' módulos)', 'un.', 1);
+      add('Caja para medidor', 'un.', 1);
+      add('Jabalina / electrodo de puesta a tierra', 'un.', 1);
+      add('Caño PVC 1" x 3m (puesta a tierra)', 'un.', 2);
+      add('Codo PVC 1" (puesta a tierra)', 'un.', 6);
+    }
     return Object.values(mapa);
   }
 
@@ -402,7 +446,7 @@
       { id: 'c3', nombre: 'Motor bomba', categoria: 'cargaFija', potenciaW: 2200, cantidad: 1, cosPhi: 0.85 },
     ];
     const circuitos = importarCargasComoCircuitos(cargas, sistema).map((c, i) => ({ ...c, l: [18, 30, 42][i] || 15 }));
-    const materiales = generarMateriales(circuitos);
+    const materiales = generarMateriales(circuitos, { obra: { naturaleza: 'Proyecto nuevo' } });
     const now = Date.now();
     const trabajo = {
       id: 'T' + (++DB.seq.trabajo), codigo: 'REL-' + new Date().getFullYear() + '-0001',
@@ -832,7 +876,7 @@
   function renderMaterialesList() {
     const wrap = $('#materiales-list');
     if (draft.materiales.length === 0 && draft.circuitos.length > 0) {
-      draft.materiales = generarMateriales(draft.circuitos);
+      draft.materiales = generarMateriales(draft.circuitos, draft);
     }
     wrap.innerHTML = '';
     if (draft.materiales.length === 0) {
@@ -1146,7 +1190,7 @@
       renderMaterialesList();
     });
     $('#btn-regenerar-materiales').addEventListener('click', () => {
-      draft.materiales = generarMateriales(draft.circuitos);
+      draft.materiales = generarMateriales(draft.circuitos, draft);
       renderMaterialesList();
       toast('Materiales regenerados desde los circuitos');
     });
