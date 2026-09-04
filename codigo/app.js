@@ -339,7 +339,7 @@
   // a instalaciones nuevas: si es una modificación/reparación sobre una instalación
   // existente, esa protección ya está puesta — no corresponde recalcularla.
   function calcularProteccionGeneral(draft) {
-    if (!draft || draft.obra.naturaleza !== 'Proyecto nuevo') return { aplica: false };
+    if (!draft || draft.obra.naturaleza !== 'Instalación nueva') return { aplica: false };
     const sistema = SISTEMAS[draft.sistemaId] || SISTEMAS.tri_tt;
     const r = calcularPotencia(draft.cargas, sistema, draft.factores);
     // La térmica general se dimensiona con la potencia a solicitar en el trámite ante UTE
@@ -433,7 +433,7 @@
         add('Tomacorriente', 'un.', n);
       }
     });
-    if (draft && draft.obra && draft.obra.naturaleza === 'Proyecto nuevo') {
+    if (draft && draft.obra && draft.obra.naturaleza === 'Instalación nueva') {
       const nLlaves = circuitos.length + 2; // + térmica general + diferencial general
       add('Tablero eléctrico (' + nLlaves + ' módulos)', 'un.', 1);
       add('Caja para medidor', 'un.', 1);
@@ -466,12 +466,12 @@
       { id: 'c3', nombre: 'Motor bomba', categoria: 'cargaFija', potenciaW: 2200, cantidad: 1, cosPhi: 0.85 },
     ];
     const circuitos = importarCargasComoCircuitos(cargas, sistema).map((c, i) => ({ ...c, l: [18, 30, 42][i] || 15 }));
-    const materiales = generarMateriales(circuitos, { obra: { naturaleza: 'Proyecto nuevo' }, cargas });
+    const materiales = generarMateriales(circuitos, { obra: { naturaleza: 'Instalación nueva' }, cargas });
     const now = Date.now();
     const trabajo = {
       id: 'T' + (++DB.seq.trabajo), codigo: 'REL-' + new Date().getFullYear() + '-0001',
       cliente: { nombre: 'Empresa Delta (ejemplo)', telefono: '', whatsapp: '', email: '', contacto: '', obs: '' },
-      obra: { nombre: 'Depósito Central', direccion: '', localidad: 'Salto', tipo: 'Industrial', naturaleza: 'Proyecto nuevo', obs: '' },
+      obra: { nombre: 'Depósito Central', direccion: '', localidad: 'Salto', tipo: 'Industrial', naturaleza: 'Instalación nueva', obs: '' },
       sistemaId: 'tri_tt', factores: { iluminacion: 1.0, tomacorrientes: 0.66, cargaFija: 0.8 },
       proteccionGeneral: { diferencialSensibilidad: 30 },
       cargas, circuitos, materiales, estado: 'revision', observaciones: 'Se verificó caída de tensión y protección según normas vigentes. Pendiente confirmación de tableros.',
@@ -612,7 +612,7 @@
     return {
       id: null, codigo: null,
       cliente: { nombre: '', telefono: '', whatsapp: '', email: '', contacto: '', obs: '' },
-      obra: { nombre: '', direccion: '', localidad: 'Salto', tipo: 'Residencial', naturaleza: 'Proyecto nuevo', obs: '' },
+      obra: { nombre: '', direccion: '', localidad: 'Salto', tipo: 'Residencial', naturaleza: 'Instalación nueva', obs: '' },
       sistemaId: 'tri_tt', factores: { iluminacion: 1.0, tomacorrientes: 0.66, cargaFija: 0.8 },
       proteccionGeneral: { diferencialSensibilidad: 30 },
       cargas: [], circuitos: [], materiales: [], estado: 'pendiente', observaciones: '',
@@ -1284,6 +1284,12 @@
     $('#btn-pres-doc').addEventListener('click', () => generarPdfPresupuesto(presActual));
   }
 
+  const NATURALEZA_DESC = {
+    'Trámite': 'Gestión de trámite ante UTE u organismo correspondiente, sin trabajo de instalación en el lugar.',
+    'Instalación nueva': 'Instalación eléctrica nueva completa, incluye tablero, protección general y puesta a tierra.',
+    'Modificación': 'Modificación, ampliación o reparación sobre una instalación eléctrica existente.',
+    'Emergencia': 'Intervención de urgencia para resolver una falla o riesgo inmediato.',
+  };
   function generarPdfPresupuesto(p) {
     savePresupuesto();
     const t = calcularTotalesPresupuesto(p);
@@ -1296,18 +1302,31 @@
           '<tr><td>' + escapeHtml(m.nombre) + ' <span class="muted">(' + fmt(m.cantidad, 0) + ' ' + escapeHtml(m.unidad) + ')</span></td><td class="r">' + money(m.cantidad * m.precioUnit) + '</td></tr>'
         ).join('')
       : '<tr><td>Materiales</td><td class="r">' + money(p.materiales) + '</td></tr>';
+    const naturaleza = trabajo ? trabajo.obra.naturaleza : null;
+    const bloqueTarea = naturaleza
+      ? '<div class="tarea"><div class="tarea-tipo">' + escapeHtml(naturaleza) + '</div>' +
+        '<div>' + escapeHtml(NATURALEZA_DESC[naturaleza] || '') + '</div>' +
+        '<div class="tarea-plazo">Plazo estimado: ' + p.plazo + ' días</div></div>'
+      : '';
     w.document.write(
       '<title>' + p.codigo + '</title>' +
-      '<style>body{font-family:Arial,sans-serif;padding:40px;color:#171719;max-width:640px;margin:0 auto}' +
+      '<style>html{background:#fff}body{font-family:Arial,sans-serif;padding:40px;color:#171719;background:#fff;max-width:640px;margin:0 auto}' +
       'h1{font-size:20px;margin-bottom:2px}.muted{color:#6f7277;font-size:13px;margin-bottom:24px}' +
-      'table{width:100%;border-collapse:collapse;margin-top:16px}td{padding:8px 0;border-bottom:1px solid #e2e3e5;font-size:14px}' +
-      '.r{text-align:right}.total{font-weight:800;font-size:18px}.tag{font-weight:800;letter-spacing:0.06em}' +
-      '.head{display:flex;align-items:center;gap:10px;margin-bottom:6px}.head img{height:36px;width:auto}</style>' +
-      '<div class="head"><img src="' + LOGO_SRC + '" alt=""><div class="tag">ADONAI ELECTRICAL</div></div>' +
+      'table{width:100%;border-collapse:collapse;margin-top:8px}td{padding:8px 0;border-bottom:1px solid #e2e3e5;font-size:14px}' +
+      '.r{text-align:right}.total{font-weight:800;font-size:18px}.tag{font-weight:800;letter-spacing:0.06em;font-size:15px}' +
+      '.head{display:flex;align-items:center;gap:12px;padding-bottom:14px;margin-bottom:18px;border-bottom:2px solid #0b0b0c}' +
+      '.head img{height:40px;width:auto}.slogan{font-size:11px;color:#6f7277;letter-spacing:0.03em}' +
+      '.tarea{background:#f4f4f5;border-radius:8px;padding:12px 14px;margin:14px 0;font-size:13px;line-height:1.5}' +
+      '.tarea-tipo{font-weight:800;font-size:14px;margin-bottom:2px}.tarea-plazo{color:#6f7277;margin-top:4px}' +
+      '.section-title{font-weight:800;font-size:13px;letter-spacing:0.04em;text-transform:uppercase;color:#6f7277;margin-top:20px}</style>' +
+      '<div class="head"><img src="' + LOGO_SRC + '" alt=""><div><div class="tag">ADONAI ELECTRICAL</div><div class="slogan">Energía con propósito</div></div></div>' +
       '<h1>Presupuesto ' + p.codigo + '</h1>' +
       '<div class="muted">Cliente / proyecto: ' + escapeHtml(p.clienteNombre || '—') + '</div>' +
+      bloqueTarea +
+      '<div class="section-title">Materiales</div>' +
+      '<table>' + filasMateriales + '</table>' +
+      '<div class="section-title">Presupuesto</div>' +
       '<table>' +
-      filasMateriales +
       '<tr><td>Mano de obra</td><td class="r">' + money(p.manoObra) + '</td></tr>' +
       '<tr><td>Traslados</td><td class="r">' + money(p.traslados) + '</td></tr>' +
       '<tr><td>Otros gastos</td><td class="r">' + money(p.otros) + '</td></tr>' +
@@ -1316,7 +1335,7 @@
       '<tr><td>IVA (' + p.iva + '%)</td><td class="r">' + money(t.ivaMonto) + '</td></tr>' +
       '<tr><td class="total">TOTAL CLIENTE</td><td class="r total">' + money(t.total) + '</td></tr>' +
       '</table>' +
-      '<p class="muted" style="margin-top:24px">Validez: ' + p.validez + ' días · Forma de pago: ' + escapeHtml(p.formaPago) + ' · Plazo estimado: ' + p.plazo + ' días</p>'
+      '<p class="muted" style="margin-top:24px">Validez: ' + p.validez + ' días · Forma de pago: ' + escapeHtml(p.formaPago) + '</p>'
     );
     w.document.close();
     setTimeout(() => w.print(), 300);
