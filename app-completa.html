@@ -1736,6 +1736,71 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     });
   }
 
+  /* ============================================================
+     PRECIOS DE REFERENCIA — punto de partida editable, NO una lista de
+     precios en vivo. Relevados a mano en fivisa.com.uy (Uruguay) el
+     04/09/2026, precio de lista (sin descuento de tarjeta) en USD,
+     convertidos a pesos a razón de USD 1 = $ 40,20 (BCU). Cada material
+     sigue siendo 100% editable a mano en cada presupuesto — esto solo
+     evita arrancar todos los presupuestos desde $0.
+     Precio en 0 = no se encontró en Fivisa (ej. bandeja portacable y
+     caño de acero galvanizado roscado son productos más industriales;
+     conviene cotizarlos con un proveedor especializado).
+     ============================================================ */
+  const FX_USD_UYU = 40.2;
+  function usd(n) { return Math.round(n * FX_USD_UYU); }
+  const PRECIO_CABLE_UNIPOLAR = {
+    0.75: 11, 1: 14, 1.5: 20, 2: 27, 2.5: 34, 4: 54, 6: 80, 10: 136, 16: 217, 25: 333,
+    // 35mm² en adelante: pocos presupuestos los usan y Fivisa no los tiene en su buscador
+    // minorista — estimados por extrapolación lineal desde el precio real de 16 y 25mm².
+    35: 462, 50: 655, 70: 913, 95: 1236, 120: 1559, 150: 1946, 185: 2398, 240: 3108,
+    300: 3882, 400: 5173, 500: 6464, 630: 8142,
+  };
+  const PRECIO_CANO_CORRUGADO = { 16: 13, 20: 14, 25: 19, 32: 27, 40: 39 };
+  const PRECIO_CANO_PVC_RIGIDO = { 16: 74, 20: 84, 25: 112, 32: 158, 40: 222 };
+  const PRECIO_CANO_GALVANIZADO = { 16: 0, 20: 0, 25: 0, 32: 0, 40: 0 };
+  const PRECIO_BANDEJA = { 150: 0, 200: 0, 250: 0 };
+  const PRECIO_GRAMPA_OMEGA = 12;
+  const PRECIO_MENSULA_BANDEJA = 135;
+  const PRECIO_TACO_FISCHER_10MM = 3;
+  const PRECIO_TORNILLO_TUERCA_TACO_10MM = 0;
+  const PRECIO_TORNILLO_TUERCA_8MM = 0;
+  const PRECIO_CODO_PVC_RIGIDO = 31;
+  const PRECIO_CODO_GALVANIZADO = 0;
+  const PRECIO_CODO_CAJA_BANDEJA = 0;
+  // Las térmicas DIN residenciales cotizaron parejo entre 6 y 40A en Fivisa; para 50A+ se
+  // aplica un escalón proporcional (no relevado) porque suelen pasar a otro bastidor/marco.
+  function precioTermica(tipo, amp) {
+    const base = tipo === 'bipolar' ? 277 : 294;
+    if (amp <= 40) return base;
+    if (amp <= 63) return Math.round(base * 1.5);
+    return Math.round(base * 2.5);
+  }
+  const PRECIO_CAJA_OCTOGONAL = 72;
+  const PRECIO_PORTALAMPARAS = 45;
+  const PRECIO_LLAVE_LUZ_SIMPLE = 140;
+  const PRECIO_CAJA_RECTANGULAR = 42;
+  const PRECIO_TOMACORRIENTE = 237;
+  const TABLERO_PRECIOS_USD = [{ n: 6, p: 8.65 }, { n: 12, p: 13.49 }, { n: 18, p: 20.84 }, { n: 24, p: 24.05 }, { n: 36, p: 40.15 }, { n: 54, p: 50.44 }];
+  function precioTablero(nModulos) {
+    const pts = TABLERO_PRECIOS_USD;
+    if (nModulos <= pts[0].n) return usd(pts[0].p);
+    for (let i = 1; i < pts.length; i++) {
+      if (nModulos <= pts[i].n) {
+        const a = pts[i - 1], b = pts[i];
+        const frac = (nModulos - a.n) / (b.n - a.n);
+        return usd(a.p + frac * (b.p - a.p));
+      }
+    }
+    const last = pts[pts.length - 1], prev = pts[pts.length - 2];
+    const porModulo = (last.p - prev.p) / (last.n - prev.n);
+    return usd(last.p + porModulo * (nModulos - last.n));
+  }
+  const PRECIO_CAJA_MEDIDOR = 0;
+  const PRECIO_JABALINA = 978;
+  const PRECIO_CANO_PVC_1PULG_3M = 197;
+  const PRECIO_CODO_PVC_1PULG = 31;
+
   function generarMateriales(circuitos, draft) {
     const mapa = {};
     function add(nombre, unidad, cantidad, precioUnit) {
@@ -1748,36 +1813,38 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       if (!calc.apto) return;
       const conductores = c.fases === 1 ? 2 : 4;
       const largoCable = Math.ceil((Number(c.l) || 0) * conductores * 1.1);
-      if (largoCable > 0) add('Cable unipolar ' + fmt(calc.seccionAdoptada, calc.seccionAdoptada < 10 ? 1 : 0).replace(/,00$/, '') + ' mm²', 'm', largoCable);
+      if (largoCable > 0) add('Cable unipolar ' + fmt(calc.seccionAdoptada, calc.seccionAdoptada < 10 ? 1 : 0).replace(/,00$/, '') + ' mm²', 'm', largoCable, PRECIO_CABLE_UNIPOLAR[calc.seccionAdoptada] || 0);
       const largo = Math.ceil((Number(c.l) || 0) * 1.1);
       if (largo > 0) {
+        const d = diametroCano(calc.seccionAdoptada);
         if (c.metodo === 'amurado_pvc') {
-          add('Caño PVC rígido ' + diametroCano(calc.seccionAdoptada) + ' mm', 'm', largo);
-          add('Grampa omega', 'un.', largo);
+          add('Caño PVC rígido ' + d + ' mm', 'm', largo, PRECIO_CANO_PVC_RIGIDO[d] || 0);
+          add('Grampa omega', 'un.', largo, PRECIO_GRAMPA_OMEGA);
           // Cantidad en 0: el caño flexible se dobla solo, pero el amurado con caño rígido
           // necesita codos para los cambios de dirección — no hay forma de saber cuántos
           // hacen falta a partir de la longitud, así que se deja lista para cargar a mano.
-          add('Codo PVC rígido ' + diametroCano(calc.seccionAdoptada) + ' mm (cambio de dirección)', 'un.', 0);
+          add('Codo PVC rígido ' + d + ' mm (cambio de dirección)', 'un.', 0, PRECIO_CODO_PVC_RIGIDO);
         } else if (c.metodo === 'amurado_galvanizado') {
-          add('Caño de acero galvanizado ' + diametroCano(calc.seccionAdoptada) + ' mm', 'm', largo);
-          add('Grampa omega', 'un.', largo);
-          add('Codo caño galvanizado ' + diametroCano(calc.seccionAdoptada) + ' mm (cambio de dirección)', 'un.', 0);
+          add('Caño de acero galvanizado ' + d + ' mm', 'm', largo, PRECIO_CANO_GALVANIZADO[d] || 0);
+          add('Grampa omega', 'un.', largo, PRECIO_GRAMPA_OMEGA);
+          add('Codo caño galvanizado ' + d + ' mm (cambio de dirección)', 'un.', 0, PRECIO_CODO_GALVANIZADO);
         } else if (c.metodo === 'bandeja') {
-          add('Bandeja portacable ' + anchoBandeja(conductores) + ' mm', 'm', largo);
+          const ancho = anchoBandeja(conductores);
+          add('Bandeja portacable ' + ancho + ' mm', 'm', largo, PRECIO_BANDEJA[ancho] || 0);
           const nMensulas = Math.ceil(largo / 1.5);
-          add('Ménsula para bandeja', 'un.', nMensulas);
-          add('Taco fischer 10mm', 'un.', nMensulas * 2);
-          add('Tornillo cabeza tuerca para taco 10mm', 'un.', nMensulas * 2);
-          add('Tornillo con tuerca 8mm', 'un.', nMensulas * 2);
-          add('Codo / caja de pase para bandeja ' + anchoBandeja(conductores) + ' mm (cambio de dirección)', 'un.', 0);
+          add('Ménsula para bandeja', 'un.', nMensulas, PRECIO_MENSULA_BANDEJA);
+          add('Taco fischer 10mm', 'un.', nMensulas * 2, PRECIO_TACO_FISCHER_10MM);
+          add('Tornillo cabeza tuerca para taco 10mm', 'un.', nMensulas * 2, PRECIO_TORNILLO_TUERCA_TACO_10MM);
+          add('Tornillo con tuerca 8mm', 'un.', nMensulas * 2, PRECIO_TORNILLO_TUERCA_8MM);
+          add('Codo / caja de pase para bandeja ' + ancho + ' mm (cambio de dirección)', 'un.', 0, PRECIO_CODO_CAJA_BANDEJA);
         } else if (c.metodo !== 'aire') {
           // embutido, enterrado, o metodo viejo/desconocido: caño corrugado (comportamiento por defecto)
-          add('Caño corrugado ' + diametroCano(calc.seccionAdoptada) + ' mm', 'm', largo);
+          add('Caño corrugado ' + d + ' mm', 'm', largo, PRECIO_CANO_CORRUGADO[d] || 0);
         }
         // 'aire' (aire libre): sin canalización
       }
       const tipoTermica = c.fases === 1 ? 'bipolar' : 'tetrapolar';
-      add('Térmica ' + tipoTermica + ' ' + calc.breaker + 'A curva ' + calc.curva, 'un.', 1);
+      add('Térmica ' + tipoTermica + ' ' + calc.breaker + 'A curva ' + calc.curva, 'un.', 1, precioTermica(tipoTermica, calc.breaker));
     });
     // Puntos de luz y de toma, según la cantidad cargada en cada carga del relevamiento.
     // Quedan como cualquier otro material: editables a mano si la cantidad real difiere.
@@ -1785,21 +1852,21 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       const n = Number(carga.cantidad) || 0;
       if (n <= 0) return;
       if (carga.categoria === 'iluminacion') {
-        add('Caja de embutir octogonal', 'un.', n);
-        add('Portalámparas', 'un.', n);
-        add('Llave de luz simple', 'un.', n);
+        add('Caja de embutir octogonal', 'un.', n, PRECIO_CAJA_OCTOGONAL);
+        add('Portalámparas', 'un.', n, PRECIO_PORTALAMPARAS);
+        add('Llave de luz simple', 'un.', n, PRECIO_LLAVE_LUZ_SIMPLE);
       } else if (carga.categoria === 'tomacorrientes') {
-        add('Caja de embutir rectangular', 'un.', n);
-        add('Tomacorriente', 'un.', n);
+        add('Caja de embutir rectangular', 'un.', n, PRECIO_CAJA_RECTANGULAR);
+        add('Tomacorriente', 'un.', n, PRECIO_TOMACORRIENTE);
       }
     });
     if (draft && draft.obra && draft.obra.naturaleza === 'Instalación nueva') {
       const nLlaves = circuitos.length + 2; // + térmica general + diferencial general
-      add('Tablero eléctrico (' + nLlaves + ' módulos)', 'un.', 1);
-      add('Caja para medidor', 'un.', 1);
-      add('Jabalina / electrodo de puesta a tierra', 'un.', 1);
-      add('Caño PVC 1" x 3m (puesta a tierra)', 'un.', 2);
-      add('Codo PVC 1" (puesta a tierra)', 'un.', 6);
+      add('Tablero eléctrico (' + nLlaves + ' módulos)', 'un.', 1, precioTablero(nLlaves));
+      add('Caja para medidor', 'un.', 1, PRECIO_CAJA_MEDIDOR);
+      add('Jabalina / electrodo de puesta a tierra', 'un.', 1, PRECIO_JABALINA);
+      add('Caño PVC 1" x 3m (puesta a tierra)', 'un.', 2, PRECIO_CANO_PVC_1PULG_3M);
+      add('Codo PVC 1" (puesta a tierra)', 'un.', 6, PRECIO_CODO_PVC_1PULG);
     }
     return Object.values(mapa);
   }
