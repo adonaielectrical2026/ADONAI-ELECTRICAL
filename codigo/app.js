@@ -1526,6 +1526,7 @@
     });
     $('#btn-pres-pdf').addEventListener('click', () => generarPdfPresupuesto(presActual));
     $('#btn-pres-doc').addEventListener('click', () => generarPdfPresupuesto(presActual));
+    $('#btn-pres-whatsapp').addEventListener('click', () => compartirPdfPorWhatsapp(presActual));
   }
 
   const NATURALEZA_DESC = {
@@ -1543,7 +1544,7 @@
     })).catch(() => null);
   }
 
-  async function generarPdfPresupuesto(p) {
+  async function construirPdfPresupuesto(p) {
     savePresupuesto();
     const t = calcularTotalesPresupuesto(p);
     const trabajo = p.trabajoId ? DB.trabajos.find((tr) => tr.id === p.trabajoId) : null;
@@ -1670,7 +1671,47 @@
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(111, 114, 119);
     doc.text('Validez: ' + p.validez + ' días · Forma de pago: ' + p.formaPago, margin, y);
 
-    doc.save(p.codigo + '.pdf');
+    return { doc, filename: p.codigo + '.pdf' };
+  }
+
+  async function generarPdfPresupuesto(p) {
+    const { doc, filename } = await construirPdfPresupuesto(p);
+    doc.save(filename);
+  }
+
+  // Uruguay: normaliza a formato internacional sin "+" ni espacios para wa.me/api.whatsapp.com
+  // (099xxxxxx -> 598 99xxxxxx). Si ya viene con 598 o no hay número, se deja tal cual.
+  function numeroWhatsapp(raw) {
+    const digitos = (raw || '').replace(/\D/g, '');
+    if (!digitos) return '';
+    if (digitos.startsWith('598')) return digitos;
+    if (digitos.startsWith('0')) return '598' + digitos.slice(1);
+    return '598' + digitos;
+  }
+
+  async function compartirPdfPorWhatsapp(p) {
+    const { doc, filename } = await construirPdfPresupuesto(p);
+    const mensaje = 'Hola' + (p.clienteNombre ? ' ' + p.clienteNombre : '') + ', te comparto el presupuesto ' + p.codigo + ' de ADONAI ELECTRICAL.';
+    const file = new File([doc.output('blob')], filename, { type: 'application/pdf' });
+    // Camino principal (celulares con Web Share API): abre el selector nativo de "compartir"
+    // con el PDF ya adjunto — el usuario toca WhatsApp y elige el contacto ahí mismo.
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'Presupuesto ' + p.codigo, text: mensaje });
+        return;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return; // el usuario cerró el selector, no hacer nada más
+      }
+    }
+    // Camino de respaldo (desktop, o navegadores sin Web Share de archivos): no hay forma de
+    // adjuntar el PDF automáticamente, así que se descarga y se abre WhatsApp con el mensaje
+    // listo para que el usuario lo adjunte a mano en el chat.
+    doc.save(filename);
+    const trabajo = p.trabajoId ? DB.trabajos.find((tr) => tr.id === p.trabajoId) : null;
+    const numero = trabajo && trabajo.cliente ? numeroWhatsapp(trabajo.cliente.whatsapp || trabajo.cliente.telefono) : '';
+    const url = 'https://api.whatsapp.com/send?' + (numero ? 'phone=' + numero + '&' : '') + 'text=' + encodeURIComponent(mensaje + ' Te lo adjunto en este chat.');
+    window.open(url, '_blank');
+    toast('PDF descargado — adjuntalo en el chat que se abrió');
   }
 
   function wirePerfil() {
