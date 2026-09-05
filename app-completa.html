@@ -361,6 +361,11 @@
     transition:opacity .2s ease, transform .2s ease; z-index:100; max-width:88%; text-align:center; }
   .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
 
+  /* ============================================================
+     CATÁLOGO DE PRECIOS (details/summary nativos, sin JS de acordeón)
+     ============================================================ */
+  details summary{ cursor:pointer; }
+
   .fab-add{ display:flex; align-items:center; justify-content:center; gap:6px; }
   .divider-label{ font-size:0.78rem; font-weight:700; color:var(--steel); margin:4px 0 -4px; }
   .chips{ display:flex; flex-wrap:wrap; gap:8px; }
@@ -923,10 +928,28 @@
         </div>
       </div>
       <div class="card card-pad stack-sm">
+        <div class="section-label">Mano de obra</div>
+        <div class="grid-2">
+          <div class="field"><label>Tarifa por hora ($)</label><input class="input" type="number" id="perfil-tarifahora" value="500"></div>
+          <div class="field"><label>Horas por jornada</label><input class="input" type="number" id="perfil-horasjornada" value="8"></div>
+        </div>
+        <p style="font-size:0.78rem;color:var(--steel);margin:2px 0 0">Mano de obra = Plazo estimado (días) × horas × tarifa. Se puede ajustar a mano en cada presupuesto.</p>
+      </div>
+      <div class="card card-pad stack-sm">
+        <div class="section-label">Catálogo de precios</div>
+        <p style="font-size:0.78rem;color:var(--steel);margin:0">Precios de referencia que usan los materiales generados automáticamente en cada relevamiento.</p>
+        <button class="btn btn-outline btn-block" id="btn-abrir-catalogo">Editar catálogo de precios</button>
+      </div>
+      <div class="card card-pad stack-sm">
         <div class="section-label">Datos</div>
         <div class="light-stat-row"><span class="lbl">Trabajos guardados</span><span class="val" id="perfil-count-trabajos">0</span></div>
         <div class="light-stat-row"><span class="lbl">Presupuestos</span><span class="val" id="perfil-count-presupuestos">0</span></div>
         <p style="font-size:0.78rem;color:var(--steel);margin:6px 0 0">Todos los datos se guardan solo en este dispositivo.</p>
+        <div class="grid-2" style="margin-top:4px">
+          <button class="btn btn-outline" id="btn-exportar-backup">Exportar copia de seguridad</button>
+          <button class="btn btn-outline" id="btn-importar-backup">Importar copia de seguridad</button>
+        </div>
+        <input type="file" accept="application/json" id="input-importar-backup" hidden>
       </div>
 
       <div class="card card-pad stack-sm">
@@ -955,6 +978,21 @@
       </div>
 
       <button class="btn btn-outline btn-block" id="btn-instalar">📲 Instalar en este dispositivo</button>
+    </div>
+  </main>
+
+  <main class="view" id="view-catalogo-precios" hidden>
+    <div class="topbar">
+      <div class="topbar-row">
+        <button class="icon-btn" data-back="perfil"><svg><use href="#ic-chevron-left"/></svg></button>
+        <div class="topbar-title">Catálogo de precios</div>
+        <span style="width:36px"></span>
+      </div>
+    </div>
+    <div class="stack" style="padding-top:14px">
+      <p class="page-sub" style="margin:0">Precios de referencia de los materiales que la app genera sola en cada relevamiento. Tocá una categoría para abrirla y editar los valores.</p>
+      <div id="catalogo-precios-list" class="stack"></div>
+      <button class="btn btn-outline btn-block" id="btn-restablecer-precios">Restablecer precios de fábrica</button>
     </div>
   </main>
 
@@ -1737,71 +1775,81 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   }
 
   /* ============================================================
-     PRECIOS DE REFERENCIA — punto de partida editable, NO una lista de
-     precios en vivo. Relevados a mano en fivisa.com.uy (Uruguay) el
-     04/09/2026, precio de lista (sin descuento de tarjeta) en USD,
-     convertidos a pesos a razón de USD 1 = $ 40,20 (BCU). Cada material
-     sigue siendo 100% editable a mano en cada presupuesto — esto solo
-     evita arrancar todos los presupuestos desde $0.
+     PRECIOS DE REFERENCIA — punto de partida editable desde la app
+     (Perfil → Catálogo de precios), NO una lista de precios en vivo.
+     Estos son los valores de fábrica: relevados a mano en fivisa.com.uy
+     (Uruguay) el 04/09/2026, precio de lista (sin descuento de tarjeta)
+     en USD, convertidos a pesos a razón de USD 1 = $ 40,20 (BCU). El
+     usuario puede editarlos en cualquier momento; lo que queda acá es
+     solo el valor con el que arranca un dispositivo nuevo o un
+     "Restablecer precios de fábrica". Cada material sigue siendo 100%
+     editable a mano en cada presupuesto además de esto.
      Precio en 0 = no se encontró en Fivisa (ej. bandeja portacable y
      caño de acero galvanizado roscado son productos más industriales;
      conviene cotizarlos con un proveedor especializado).
      ============================================================ */
-  const FX_USD_UYU = 40.2;
-  function usd(n) { return Math.round(n * FX_USD_UYU); }
-  const PRECIO_CABLE_UNIPOLAR = {
-    0.75: 11, 1: 14, 1.5: 20, 2: 27, 2.5: 34, 4: 54, 6: 80, 10: 136, 16: 217, 25: 333,
-    // 35mm² en adelante: pocos presupuestos los usan y Fivisa no los tiene en su buscador
-    // minorista — estimados por extrapolación lineal desde el precio real de 16 y 25mm².
-    35: 462, 50: 655, 70: 913, 95: 1236, 120: 1559, 150: 1946, 185: 2398, 240: 3108,
-    300: 3882, 400: 5173, 500: 6464, 630: 8142,
+  function clonePrecios(obj) {
+    try { return structuredClone(obj); } catch (e) { return JSON.parse(JSON.stringify(obj)); }
+  }
+  const DEFAULT_PRECIOS = {
+    cableUnipolar: {
+      0.75: 11, 1: 14, 1.5: 20, 2: 27, 2.5: 34, 4: 54, 6: 80, 10: 136, 16: 217, 25: 333,
+      // 35mm² en adelante: pocos presupuestos los usan y Fivisa no los tiene en su buscador
+      // minorista — estimados por extrapolación lineal desde el precio real de 16 y 25mm².
+      35: 462, 50: 655, 70: 913, 95: 1236, 120: 1559, 150: 1946, 185: 2398, 240: 3108,
+      300: 3882, 400: 5173, 500: 6464, 630: 8142,
+    },
+    canoCorrugado: { 16: 13, 20: 14, 25: 19, 32: 27, 40: 39 },
+    canoPvcRigido: { 16: 74, 20: 84, 25: 112, 32: 158, 40: 222 },
+    canoGalvanizado: { 16: 0, 20: 0, 25: 0, 32: 0, 40: 0 },
+    bandeja: { 150: 0, 200: 0, 250: 0 },
+    grampaOmega: 12,
+    mensulaBandeja: 135,
+    tacoFischer10mm: 3,
+    tornilloTuercaTaco10mm: 0,
+    tornilloTuerca8mm: 0,
+    codoPvcRigido: 31,
+    codoGalvanizado: 0,
+    codoCajaBandeja: 0,
+    // Las térmicas DIN residenciales cotizaron parejo entre 6 y 40A en Fivisa; para 50A+ se
+    // aplica un escalón proporcional (no relevado) porque suelen pasar a otro bastidor/marco.
+    termicaBipolarBase: 277,
+    termicaTetrapolarBase: 294,
+    cajaOctogonal: 72,
+    portalamparas: 45,
+    llaveLuzSimple: 140,
+    cajaRectangular: 42,
+    tomacorriente: 237,
+    tableroPuntos: [{ n: 6, p: 348 }, { n: 12, p: 543 }, { n: 18, p: 838 }, { n: 24, p: 967 }, { n: 36, p: 1614 }, { n: 54, p: 2028 }],
+    cajaMedidor: 0,
+    jabalina: 978,
+    canoPvc1pulg3m: 197,
+    codoPvc1pulg: 31,
   };
-  const PRECIO_CANO_CORRUGADO = { 16: 13, 20: 14, 25: 19, 32: 27, 40: 39 };
-  const PRECIO_CANO_PVC_RIGIDO = { 16: 74, 20: 84, 25: 112, 32: 158, 40: 222 };
-  const PRECIO_CANO_GALVANIZADO = { 16: 0, 20: 0, 25: 0, 32: 0, 40: 0 };
-  const PRECIO_BANDEJA = { 150: 0, 200: 0, 250: 0 };
-  const PRECIO_GRAMPA_OMEGA = 12;
-  const PRECIO_MENSULA_BANDEJA = 135;
-  const PRECIO_TACO_FISCHER_10MM = 3;
-  const PRECIO_TORNILLO_TUERCA_TACO_10MM = 0;
-  const PRECIO_TORNILLO_TUERCA_8MM = 0;
-  const PRECIO_CODO_PVC_RIGIDO = 31;
-  const PRECIO_CODO_GALVANIZADO = 0;
-  const PRECIO_CODO_CAJA_BANDEJA = 0;
-  // Las térmicas DIN residenciales cotizaron parejo entre 6 y 40A en Fivisa; para 50A+ se
-  // aplica un escalón proporcional (no relevado) porque suelen pasar a otro bastidor/marco.
-  function precioTermica(tipo, amp) {
-    const base = tipo === 'bipolar' ? 277 : 294;
+  const DEFAULT_MANO_OBRA = { tarifaHora: 500, horasJornada: 8 };
+  function precioTermica(tipo, amp, precios) {
+    const base = tipo === 'bipolar' ? precios.termicaBipolarBase : precios.termicaTetrapolarBase;
     if (amp <= 40) return base;
     if (amp <= 63) return Math.round(base * 1.5);
     return Math.round(base * 2.5);
   }
-  const PRECIO_CAJA_OCTOGONAL = 72;
-  const PRECIO_PORTALAMPARAS = 45;
-  const PRECIO_LLAVE_LUZ_SIMPLE = 140;
-  const PRECIO_CAJA_RECTANGULAR = 42;
-  const PRECIO_TOMACORRIENTE = 237;
-  const TABLERO_PRECIOS_USD = [{ n: 6, p: 8.65 }, { n: 12, p: 13.49 }, { n: 18, p: 20.84 }, { n: 24, p: 24.05 }, { n: 36, p: 40.15 }, { n: 54, p: 50.44 }];
-  function precioTablero(nModulos) {
-    const pts = TABLERO_PRECIOS_USD;
-    if (nModulos <= pts[0].n) return usd(pts[0].p);
+  function precioTablero(nModulos, precios) {
+    const pts = precios.tableroPuntos;
+    if (nModulos <= pts[0].n) return pts[0].p;
     for (let i = 1; i < pts.length; i++) {
       if (nModulos <= pts[i].n) {
         const a = pts[i - 1], b = pts[i];
         const frac = (nModulos - a.n) / (b.n - a.n);
-        return usd(a.p + frac * (b.p - a.p));
+        return Math.round(a.p + frac * (b.p - a.p));
       }
     }
     const last = pts[pts.length - 1], prev = pts[pts.length - 2];
     const porModulo = (last.p - prev.p) / (last.n - prev.n);
-    return usd(last.p + porModulo * (nModulos - last.n));
+    return Math.round(last.p + porModulo * (nModulos - last.n));
   }
-  const PRECIO_CAJA_MEDIDOR = 0;
-  const PRECIO_JABALINA = 978;
-  const PRECIO_CANO_PVC_1PULG_3M = 197;
-  const PRECIO_CODO_PVC_1PULG = 31;
 
   function generarMateriales(circuitos, draft) {
+    const precios = DB.settings.precios;
     const mapa = {};
     function add(nombre, unidad, cantidad, precioUnit) {
       const key = nombre;
@@ -1813,38 +1861,38 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       if (!calc.apto) return;
       const conductores = c.fases === 1 ? 2 : 4;
       const largoCable = Math.ceil((Number(c.l) || 0) * conductores * 1.1);
-      if (largoCable > 0) add('Cable unipolar ' + fmt(calc.seccionAdoptada, calc.seccionAdoptada < 10 ? 1 : 0).replace(/,00$/, '') + ' mm²', 'm', largoCable, PRECIO_CABLE_UNIPOLAR[calc.seccionAdoptada] || 0);
+      if (largoCable > 0) add('Cable unipolar ' + fmt(calc.seccionAdoptada, calc.seccionAdoptada < 10 ? 1 : 0).replace(/,00$/, '') + ' mm²', 'm', largoCable, precios.cableUnipolar[calc.seccionAdoptada] || 0);
       const largo = Math.ceil((Number(c.l) || 0) * 1.1);
       if (largo > 0) {
         const d = diametroCano(calc.seccionAdoptada);
         if (c.metodo === 'amurado_pvc') {
-          add('Caño PVC rígido ' + d + ' mm', 'm', largo, PRECIO_CANO_PVC_RIGIDO[d] || 0);
-          add('Grampa omega', 'un.', largo, PRECIO_GRAMPA_OMEGA);
+          add('Caño PVC rígido ' + d + ' mm', 'm', largo, precios.canoPvcRigido[d] || 0);
+          add('Grampa omega', 'un.', largo, precios.grampaOmega);
           // Cantidad en 0: el caño flexible se dobla solo, pero el amurado con caño rígido
           // necesita codos para los cambios de dirección — no hay forma de saber cuántos
           // hacen falta a partir de la longitud, así que se deja lista para cargar a mano.
-          add('Codo PVC rígido ' + d + ' mm (cambio de dirección)', 'un.', 0, PRECIO_CODO_PVC_RIGIDO);
+          add('Codo PVC rígido ' + d + ' mm (cambio de dirección)', 'un.', 0, precios.codoPvcRigido);
         } else if (c.metodo === 'amurado_galvanizado') {
-          add('Caño de acero galvanizado ' + d + ' mm', 'm', largo, PRECIO_CANO_GALVANIZADO[d] || 0);
-          add('Grampa omega', 'un.', largo, PRECIO_GRAMPA_OMEGA);
-          add('Codo caño galvanizado ' + d + ' mm (cambio de dirección)', 'un.', 0, PRECIO_CODO_GALVANIZADO);
+          add('Caño de acero galvanizado ' + d + ' mm', 'm', largo, precios.canoGalvanizado[d] || 0);
+          add('Grampa omega', 'un.', largo, precios.grampaOmega);
+          add('Codo caño galvanizado ' + d + ' mm (cambio de dirección)', 'un.', 0, precios.codoGalvanizado);
         } else if (c.metodo === 'bandeja') {
           const ancho = anchoBandeja(conductores);
-          add('Bandeja portacable ' + ancho + ' mm', 'm', largo, PRECIO_BANDEJA[ancho] || 0);
+          add('Bandeja portacable ' + ancho + ' mm', 'm', largo, precios.bandeja[ancho] || 0);
           const nMensulas = Math.ceil(largo / 1.5);
-          add('Ménsula para bandeja', 'un.', nMensulas, PRECIO_MENSULA_BANDEJA);
-          add('Taco fischer 10mm', 'un.', nMensulas * 2, PRECIO_TACO_FISCHER_10MM);
-          add('Tornillo cabeza tuerca para taco 10mm', 'un.', nMensulas * 2, PRECIO_TORNILLO_TUERCA_TACO_10MM);
-          add('Tornillo con tuerca 8mm', 'un.', nMensulas * 2, PRECIO_TORNILLO_TUERCA_8MM);
-          add('Codo / caja de pase para bandeja ' + ancho + ' mm (cambio de dirección)', 'un.', 0, PRECIO_CODO_CAJA_BANDEJA);
+          add('Ménsula para bandeja', 'un.', nMensulas, precios.mensulaBandeja);
+          add('Taco fischer 10mm', 'un.', nMensulas * 2, precios.tacoFischer10mm);
+          add('Tornillo cabeza tuerca para taco 10mm', 'un.', nMensulas * 2, precios.tornilloTuercaTaco10mm);
+          add('Tornillo con tuerca 8mm', 'un.', nMensulas * 2, precios.tornilloTuerca8mm);
+          add('Codo / caja de pase para bandeja ' + ancho + ' mm (cambio de dirección)', 'un.', 0, precios.codoCajaBandeja);
         } else if (c.metodo !== 'aire') {
           // embutido, enterrado, o metodo viejo/desconocido: caño corrugado (comportamiento por defecto)
-          add('Caño corrugado ' + d + ' mm', 'm', largo, PRECIO_CANO_CORRUGADO[d] || 0);
+          add('Caño corrugado ' + d + ' mm', 'm', largo, precios.canoCorrugado[d] || 0);
         }
         // 'aire' (aire libre): sin canalización
       }
       const tipoTermica = c.fases === 1 ? 'bipolar' : 'tetrapolar';
-      add('Térmica ' + tipoTermica + ' ' + calc.breaker + 'A curva ' + calc.curva, 'un.', 1, precioTermica(tipoTermica, calc.breaker));
+      add('Térmica ' + tipoTermica + ' ' + calc.breaker + 'A curva ' + calc.curva, 'un.', 1, precioTermica(tipoTermica, calc.breaker, precios));
     });
     // Puntos de luz y de toma, según la cantidad cargada en cada carga del relevamiento.
     // Quedan como cualquier otro material: editables a mano si la cantidad real difiere.
@@ -1852,23 +1900,27 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       const n = Number(carga.cantidad) || 0;
       if (n <= 0) return;
       if (carga.categoria === 'iluminacion') {
-        add('Caja de embutir octogonal', 'un.', n, PRECIO_CAJA_OCTOGONAL);
-        add('Portalámparas', 'un.', n, PRECIO_PORTALAMPARAS);
-        add('Llave de luz simple', 'un.', n, PRECIO_LLAVE_LUZ_SIMPLE);
+        add('Caja de embutir octogonal', 'un.', n, precios.cajaOctogonal);
+        add('Portalámparas', 'un.', n, precios.portalamparas);
+        add('Llave de luz simple', 'un.', n, precios.llaveLuzSimple);
       } else if (carga.categoria === 'tomacorrientes') {
-        add('Caja de embutir rectangular', 'un.', n, PRECIO_CAJA_RECTANGULAR);
-        add('Tomacorriente', 'un.', n, PRECIO_TOMACORRIENTE);
+        add('Caja de embutir rectangular', 'un.', n, precios.cajaRectangular);
+        add('Tomacorriente', 'un.', n, precios.tomacorriente);
       }
     });
     if (draft && draft.obra && draft.obra.naturaleza === 'Instalación nueva') {
       const nLlaves = circuitos.length + 2; // + térmica general + diferencial general
-      add('Tablero eléctrico (' + nLlaves + ' módulos)', 'un.', 1, precioTablero(nLlaves));
-      add('Caja para medidor', 'un.', 1, PRECIO_CAJA_MEDIDOR);
-      add('Jabalina / electrodo de puesta a tierra', 'un.', 1, PRECIO_JABALINA);
-      add('Caño PVC 1" x 3m (puesta a tierra)', 'un.', 2, PRECIO_CANO_PVC_1PULG_3M);
-      add('Codo PVC 1" (puesta a tierra)', 'un.', 6, PRECIO_CODO_PVC_1PULG);
+      add('Tablero eléctrico (' + nLlaves + ' módulos)', 'un.', 1, precioTablero(nLlaves, precios));
+      add('Caja para medidor', 'un.', 1, precios.cajaMedidor);
+      add('Jabalina / electrodo de puesta a tierra', 'un.', 1, precios.jabalina);
+      add('Caño PVC 1" x 3m (puesta a tierra)', 'un.', 2, precios.canoPvc1pulg3m);
+      add('Codo PVC 1" (puesta a tierra)', 'un.', 6, precios.codoPvc1pulg);
     }
     return Object.values(mapa);
+  }
+  function calcularManoObra(plazoDias) {
+    const mo = DB.settings.manoObra;
+    return Math.round((Number(plazoDias) || 0) * mo.horasJornada * mo.tarifaHora);
   }
 
   /* ============================================================
@@ -1876,11 +1928,17 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
      ============================================================ */
   const STORAGE_KEY = 'adonai_ht_v1';
   function defaultDB() {
-    return { trabajos: [], presupuestos: [], settings: { margen: 30, iva: 22 }, seq: { trabajo: 0, presupuesto: 0 }, _seeded: false };
+    return {
+      trabajos: [], presupuestos: [],
+      settings: { margen: 30, iva: 22, precios: clonePrecios(DEFAULT_PRECIOS), manoObra: { ...DEFAULT_MANO_OBRA } },
+      seq: { trabajo: 0, presupuesto: 0 }, _seeded: false,
+    };
   }
   let DB;
   try { DB = JSON.parse(localStorage.getItem(STORAGE_KEY)) || defaultDB(); } catch (e) { DB = defaultDB(); }
   if (!DB.settings) DB.settings = { margen: 30, iva: 22 };
+  if (!DB.settings.precios) DB.settings.precios = clonePrecios(DEFAULT_PRECIOS);
+  if (!DB.settings.manoObra) DB.settings.manoObra = { ...DEFAULT_MANO_OBRA };
   if (!DB.seq) DB.seq = { trabajo: 0, presupuesto: 0 };
 
   function saveDB() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); } catch (e) {} }
@@ -1981,6 +2039,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     if (id === 'trabajos') renderTrabajos();
     if (id === 'presupuestos') renderPresupuestos();
     if (id === 'perfil') renderPerfil();
+    if (id === 'catalogo-precios') renderCatalogoPrecios();
   }
 
   /* ============================================================
@@ -2508,8 +2567,156 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     $('#perfil-count-presupuestos').textContent = DB.presupuestos.length;
     $('#perfil-margen').value = DB.settings.margen;
     $('#perfil-iva').value = DB.settings.iva;
+    $('#perfil-tarifahora').value = DB.settings.manoObra.tarifaHora;
+    $('#perfil-horasjornada').value = DB.settings.manoObra.horasJornada;
     renderPerfilNormativa();
     renderPerfilSeguridad();
+  }
+
+  /* ============================================================
+     CATÁLOGO DE PRECIOS — pantalla propia (Perfil → Catálogo de precios)
+     ============================================================ */
+  const CATALOGO_PRECIOS_GRUPOS = [
+    {
+      titulo: 'Cables unipolares ($/m)',
+      campos: [{ key: 'cableUnipolar', tipo: 'mapa', etiqueta: (s) => s + ' mm²' }],
+    },
+    {
+      titulo: 'Canalizaciones ($/m)',
+      campos: [
+        { key: 'canoCorrugado', tipo: 'mapa', etiqueta: (d) => 'Caño corrugado ' + d + ' mm' },
+        { key: 'canoPvcRigido', tipo: 'mapa', etiqueta: (d) => 'Caño PVC rígido ' + d + ' mm' },
+        { key: 'canoGalvanizado', tipo: 'mapa', etiqueta: (d) => 'Caño de acero galvanizado ' + d + ' mm' },
+        { key: 'bandeja', tipo: 'mapa', etiqueta: (a) => 'Bandeja portacable ' + a + ' mm' },
+      ],
+    },
+    {
+      titulo: 'Herrajes y codos ($/un.)',
+      campos: [
+        { key: 'grampaOmega', tipo: 'plano', etiqueta: 'Grampa omega' },
+        { key: 'mensulaBandeja', tipo: 'plano', etiqueta: 'Ménsula para bandeja' },
+        { key: 'tacoFischer10mm', tipo: 'plano', etiqueta: 'Taco fischer 10mm' },
+        { key: 'tornilloTuercaTaco10mm', tipo: 'plano', etiqueta: 'Tornillo cabeza tuerca para taco 10mm' },
+        { key: 'tornilloTuerca8mm', tipo: 'plano', etiqueta: 'Tornillo con tuerca 8mm' },
+        { key: 'codoPvcRigido', tipo: 'plano', etiqueta: 'Codo PVC rígido (cambio de dirección)' },
+        { key: 'codoGalvanizado', tipo: 'plano', etiqueta: 'Codo caño galvanizado (cambio de dirección)' },
+        { key: 'codoCajaBandeja', tipo: 'plano', etiqueta: 'Codo / caja de pase para bandeja' },
+      ],
+    },
+    {
+      titulo: 'Térmicas ($/un.)',
+      campos: [
+        { key: 'termicaBipolarBase', tipo: 'plano', etiqueta: 'Térmica bipolar (hasta 40A)' },
+        { key: 'termicaTetrapolarBase', tipo: 'plano', etiqueta: 'Térmica tetrapolar (hasta 40A)' },
+      ],
+      nota: 'De 50 a 63A se cobra 1,5× este valor; de 80 a 100A, 2,5× — no relevado, es un escalón proporcional.',
+    },
+    {
+      titulo: 'Puntos de luz y de toma ($/un.)',
+      campos: [
+        { key: 'cajaOctogonal', tipo: 'plano', etiqueta: 'Caja de embutir octogonal' },
+        { key: 'portalamparas', tipo: 'plano', etiqueta: 'Portalámparas' },
+        { key: 'llaveLuzSimple', tipo: 'plano', etiqueta: 'Llave de luz simple' },
+        { key: 'cajaRectangular', tipo: 'plano', etiqueta: 'Caja de embutir rectangular' },
+        { key: 'tomacorriente', tipo: 'plano', etiqueta: 'Tomacorriente' },
+      ],
+    },
+    {
+      titulo: 'Tablero eléctrico ($/un. según módulos)',
+      campos: [{ key: 'tableroPuntos', tipo: 'tablero' }],
+    },
+    {
+      titulo: 'Kit de suministro nuevo ($/un.)',
+      campos: [
+        { key: 'cajaMedidor', tipo: 'plano', etiqueta: 'Caja para medidor' },
+        { key: 'jabalina', tipo: 'plano', etiqueta: 'Jabalina / electrodo de puesta a tierra' },
+        { key: 'canoPvc1pulg3m', tipo: 'plano', etiqueta: 'Caño PVC 1" x 3m (puesta a tierra)' },
+        { key: 'codoPvc1pulg', tipo: 'plano', etiqueta: 'Codo PVC 1" (puesta a tierra)' },
+      ],
+    },
+  ];
+  function precioRowHtml(labelHtml, value, onSet) {
+    const inputId = 'pc-' + Math.random().toString(36).slice(2, 9);
+    return { id: inputId, html: '<div class="light-stat-row"><span class="lbl">' + labelHtml + '</span><span class="val"><input class="input" style="min-height:34px;width:100px;text-align:right" type="number" id="' + inputId + '" value="' + value + '"></span></div>', onSet };
+  }
+  function renderCatalogoPrecios() {
+    const wrap = $('#catalogo-precios-list');
+    wrap.innerHTML = '';
+    const precios = DB.settings.precios;
+    const setters = [];
+    CATALOGO_PRECIOS_GRUPOS.forEach((grupo) => {
+      const rows = [];
+      grupo.campos.forEach((campo) => {
+        if (campo.tipo === 'plano') {
+          const r = precioRowHtml(escapeHtml(campo.etiqueta), precios[campo.key], (v) => { precios[campo.key] = v; });
+          rows.push(r);
+        } else if (campo.tipo === 'mapa') {
+          Object.keys(precios[campo.key]).map(Number).sort((a, b) => a - b).forEach((k) => {
+            const r = precioRowHtml(escapeHtml(campo.etiqueta(k)), precios[campo.key][k], (v) => { precios[campo.key][k] = v; });
+            rows.push(r);
+          });
+        } else if (campo.tipo === 'tablero') {
+          precios.tableroPuntos.forEach((pt, i) => {
+            const r = precioRowHtml('Hasta ' + pt.n + ' módulos', pt.p, (v) => { precios.tableroPuntos[i].p = v; });
+            rows.push(r);
+          });
+        }
+      });
+      const details = el('details', { class: 'card card-pad' });
+      details.innerHTML = '<summary class="section-label" style="margin:0">' + escapeHtml(grupo.titulo) + '</summary>' +
+        (grupo.nota ? '<p style="font-size:0.76rem;color:var(--steel);margin:10px 0 0">' + escapeHtml(grupo.nota) + '</p>' : '') +
+        '<div class="stack-sm" style="margin-top:10px">' + rows.map((r) => r.html).join('') + '</div>';
+      wrap.appendChild(details);
+      rows.forEach((r) => setters.push(r));
+    });
+    setters.forEach((r) => {
+      $('#' + r.id).addEventListener('change', (e) => {
+        r.onSet(Number(e.target.value) || 0);
+        saveDB();
+      });
+    });
+  }
+  function resetCatalogoPrecios() {
+    if (!confirm('Esto reemplaza todos los precios del catálogo por los valores de fábrica. ¿Continuar?')) return;
+    DB.settings.precios = clonePrecios(DEFAULT_PRECIOS);
+    saveDB();
+    renderCatalogoPrecios();
+    toast('Catálogo restablecido a los precios de fábrica');
+  }
+
+  /* ============================================================
+     COPIA DE SEGURIDAD — exportar/importar todo el localStorage
+     ============================================================ */
+  function exportarBackup() {
+    const fecha = new Date().toISOString().slice(0, 10);
+    const blob = new Blob([JSON.stringify(DB, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'adonai-backup-' + fecha + '.json';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast('Copia de seguridad descargada');
+  }
+  function importarBackup(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      let data;
+      try { data = JSON.parse(reader.result); } catch (e) { toast('Archivo inválido'); return; }
+      if (!data || !Array.isArray(data.trabajos) || !Array.isArray(data.presupuestos) || !data.settings) {
+        toast('Archivo inválido'); return;
+      }
+      if (!confirm('Esto reemplaza TODOS los datos actuales de este dispositivo por los del archivo. ¿Continuar?')) return;
+      DB = data;
+      if (!DB.settings.precios) DB.settings.precios = clonePrecios(DEFAULT_PRECIOS);
+      if (!DB.settings.manoObra) DB.settings.manoObra = { ...DEFAULT_MANO_OBRA };
+      if (!DB.seq) DB.seq = { trabajo: 0, presupuesto: 0 };
+      saveDB();
+      location.reload();
+    };
+    reader.readAsText(file);
   }
 
   /* ============================================================
@@ -2530,7 +2737,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     const p = {
       id: uid('P'), codigo: 'AE-' + new Date().getFullYear() + '-' + String(DB.presupuestos.length + 1).padStart(4, '0'),
       trabajoId: trabajoId || null, clienteNombre: t ? t.cliente.nombre : '',
-      materiales: materialesCosto, manoObra: 0, traslados: 0, otros: 0,
+      materiales: materialesCosto, manoObra: calcularManoObra(5), traslados: 0, otros: 0,
       margen: DB.settings.margen, iva: DB.settings.iva, validez: 15, formaPago: '50% anticipo / 50% final', plazo: 5,
       estado: 'borrador', createdAt: Date.now(), updatedAt: Date.now(),
     };
@@ -2699,8 +2906,16 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       $('#pres-vista-interno').hidden = vista !== 'interno';
       $('#pres-vista-cliente').hidden = vista !== 'cliente';
     }));
-    ['#pi-manoobra', '#pi-traslados', '#pi-otros', '#pi-margen', '#pi-iva', '#pi-validez', '#pi-formapago', '#pi-plazo', '#pres-cliente-nombre']
+    ['#pi-manoobra', '#pi-traslados', '#pi-otros', '#pi-margen', '#pi-iva', '#pi-validez', '#pi-formapago', '#pres-cliente-nombre']
       .forEach((sel) => $(sel).addEventListener('input', () => { recalcPresupuesto(); savePresupuesto(); }));
+    // El plazo maneja la mano de obra (días × horas × tarifa, ver Perfil). Se puede seguir
+    // ajustando "Mano de obra" a mano después — ese valor manual queda hasta que el plazo
+    // vuelva a cambiar, igual que "Regenerar materiales" no persigue una edición manual.
+    $('#pi-plazo').addEventListener('input', () => {
+      $('#pi-manoobra').value = calcularManoObra($('#pi-plazo').value);
+      recalcPresupuesto();
+      savePresupuesto();
+    });
     $('#btn-pres-aprobar').addEventListener('click', () => {
       presActual.estado = 'aprobado';
       savePresupuesto();
@@ -2859,6 +3074,16 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   function wirePerfil() {
     $('#perfil-margen').addEventListener('change', () => { DB.settings.margen = Number($('#perfil-margen').value) || 0; saveDB(); });
     $('#perfil-iva').addEventListener('change', () => { DB.settings.iva = Number($('#perfil-iva').value) || 0; saveDB(); });
+    $('#perfil-tarifahora').addEventListener('change', () => { DB.settings.manoObra.tarifaHora = Number($('#perfil-tarifahora').value) || 0; saveDB(); });
+    $('#perfil-horasjornada').addEventListener('change', () => { DB.settings.manoObra.horasJornada = Number($('#perfil-horasjornada').value) || 0; saveDB(); });
+    $('#btn-abrir-catalogo').addEventListener('click', () => { showView('catalogo-precios'); });
+    $('#btn-exportar-backup').addEventListener('click', exportarBackup);
+    $('#btn-importar-backup').addEventListener('click', () => { $('#input-importar-backup').click(); });
+    $('#input-importar-backup').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) importarBackup(file);
+      e.target.value = '';
+    });
     $('#btn-instalar').addEventListener('click', () => {
       if (window.deferredInstallPrompt) {
         window.deferredInstallPrompt.prompt();
@@ -2868,6 +3093,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     });
     $('#btn-pin-activar').addEventListener('click', activarPin);
     $('#btn-pin-quitar').addEventListener('click', quitarPin);
+  }
+  function wireCatalogoPrecios() {
+    $('#btn-restablecer-precios').addEventListener('click', resetCatalogoPrecios);
   }
 
   function renderPerfilNormativa() {
@@ -3005,6 +3233,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     wireConductor();
     wirePresupuesto();
     wirePerfil();
+    wireCatalogoPrecios();
     renderCondTensiones();
     renderCondDatoLabel();
     calcularConductorForm();

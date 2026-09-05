@@ -338,6 +338,11 @@
     transition:opacity .2s ease, transform .2s ease; z-index:100; max-width:88%; text-align:center; }
   .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
 
+  /* ============================================================
+     CATÁLOGO DE PRECIOS (details/summary nativos, sin JS de acordeón)
+     ============================================================ */
+  details summary{ cursor:pointer; }
+
   .fab-add{ display:flex; align-items:center; justify-content:center; gap:6px; }
   .divider-label{ font-size:0.78rem; font-weight:700; color:var(--steel); margin:4px 0 -4px; }
   .chips{ display:flex; flex-wrap:wrap; gap:8px; }

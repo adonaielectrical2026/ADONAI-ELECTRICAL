@@ -578,10 +578,28 @@
         </div>
       </div>
       <div class="card card-pad stack-sm">
+        <div class="section-label">Mano de obra</div>
+        <div class="grid-2">
+          <div class="field"><label>Tarifa por hora ($)</label><input class="input" type="number" id="perfil-tarifahora" value="500"></div>
+          <div class="field"><label>Horas por jornada</label><input class="input" type="number" id="perfil-horasjornada" value="8"></div>
+        </div>
+        <p style="font-size:0.78rem;color:var(--steel);margin:2px 0 0">Mano de obra = Plazo estimado (días) × horas × tarifa. Se puede ajustar a mano en cada presupuesto.</p>
+      </div>
+      <div class="card card-pad stack-sm">
+        <div class="section-label">Catálogo de precios</div>
+        <p style="font-size:0.78rem;color:var(--steel);margin:0">Precios de referencia que usan los materiales generados automáticamente en cada relevamiento.</p>
+        <button class="btn btn-outline btn-block" id="btn-abrir-catalogo">Editar catálogo de precios</button>
+      </div>
+      <div class="card card-pad stack-sm">
         <div class="section-label">Datos</div>
         <div class="light-stat-row"><span class="lbl">Trabajos guardados</span><span class="val" id="perfil-count-trabajos">0</span></div>
         <div class="light-stat-row"><span class="lbl">Presupuestos</span><span class="val" id="perfil-count-presupuestos">0</span></div>
         <p style="font-size:0.78rem;color:var(--steel);margin:6px 0 0">Todos los datos se guardan solo en este dispositivo.</p>
+        <div class="grid-2" style="margin-top:4px">
+          <button class="btn btn-outline" id="btn-exportar-backup">Exportar copia de seguridad</button>
+          <button class="btn btn-outline" id="btn-importar-backup">Importar copia de seguridad</button>
+        </div>
+        <input type="file" accept="application/json" id="input-importar-backup" hidden>
       </div>
 
       <div class="card card-pad stack-sm">
@@ -610,6 +628,21 @@
       </div>
 
       <button class="btn btn-outline btn-block" id="btn-instalar">📲 Instalar en este dispositivo</button>
+    </div>
+  </main>
+
+  <main class="view" id="view-catalogo-precios" hidden>
+    <div class="topbar">
+      <div class="topbar-row">
+        <button class="icon-btn" data-back="perfil"><svg><use href="#ic-chevron-left"/></svg></button>
+        <div class="topbar-title">Catálogo de precios</div>
+        <span style="width:36px"></span>
+      </div>
+    </div>
+    <div class="stack" style="padding-top:14px">
+      <p class="page-sub" style="margin:0">Precios de referencia de los materiales que la app genera sola en cada relevamiento. Tocá una categoría para abrirla y editar los valores.</p>
+      <div id="catalogo-precios-list" class="stack"></div>
+      <button class="btn btn-outline btn-block" id="btn-restablecer-precios">Restablecer precios de fábrica</button>
     </div>
   </main>
 
