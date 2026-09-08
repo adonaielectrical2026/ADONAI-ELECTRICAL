@@ -630,6 +630,11 @@
      ============================================================ */
   const VIEWS_WITH_NAV = ['home', 'trabajos', 'presupuestos', 'perfil'];
   let currentView = 'home';
+  // Cada pantalla que se muestra queda como una entrada en el historial del navegador (ver
+  // showView más abajo), así el botón "atrás" del celular navega DENTRO de la app en vez de
+  // cerrarla — sin esto, en una PWA instalada esa sola entrada inicial hace que "atrás" salga
+  // directo de la app apenas se navega a una sub-pantalla (ej. un presupuesto abierto).
+  let suppressHistoryPush = false;
   function showView(id) {
     $$('.view').forEach((v) => { v.hidden = v.id !== 'view-' + id; });
     currentView = id;
@@ -637,12 +642,22 @@
     $$('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.nav === id));
     $('.shell').scrollTop = 0;
     window.scrollTo(0, 0);
+    if (!suppressHistoryPush) {
+      if (history.state && history.state.appView) history.pushState({ appView: id }, '', '#' + id);
+      else history.replaceState({ appView: id }, '', '#' + id);
+    }
     if (id === 'home') renderHome();
     if (id === 'trabajos') renderTrabajos();
     if (id === 'presupuestos') renderPresupuestos();
     if (id === 'perfil') renderPerfil();
     if (id === 'catalogo-precios') renderCatalogoPrecios();
   }
+  window.addEventListener('popstate', (e) => {
+    const id = (e.state && e.state.appView) || 'home';
+    suppressHistoryPush = true;
+    showView(id);
+    suppressHistoryPush = false;
+  });
 
   /* ============================================================
      PANTALLA: INICIO
@@ -1409,7 +1424,9 @@
     $$('[data-back]').forEach((b) => b.addEventListener('click', () => {
       if (b.closest('#view-relevamiento')) { persistDraft(); }
       if (b.closest('#view-presupuesto-detalle')) { savePresupuesto(); }
-      showView(b.dataset.back);
+      // Retrocede en el historial (igual que el botón físico/gesto de "atrás"), en vez de
+      // apilar una pantalla nueva — así los dos caminos de volver quedan sincronizados.
+      history.back();
     }));
     $$('.action-tile[data-action]').forEach((b) => b.addEventListener('click', () => {
       const a = b.dataset.action;
