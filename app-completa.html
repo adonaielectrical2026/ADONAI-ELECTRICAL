@@ -1638,12 +1638,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     aire: 'Aire libre',
     enterrado: 'Enterrado bajo tierra',
   };
-  // Hasta 100 A son térmicas DIN. De 125 A para arriba ya se entra en
-  // interruptores de caja moldeada, que son otra categoría de producto: cuestan
-  // bastante más y ocupan mucho más lugar en el tablero. El cálculo los usa
-  // igual, pero el precio y el dibujo los tratan aparte.
-  const BREAKER_RATINGS = [6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200];
-  const AMP_CAJA_MOLDEADA = 100;
+  const BREAKER_RATINGS = [6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125];
   const CURVA_SUGERIDA = { iluminacion: 'B', tomacorrientes: 'C', fuerza: 'C' };
   // Secciones minimas por resistencia mecanica, RBT-UTE Anexo S9: derivacion para
   // alumbrado 0,75mm2; derivacion para tomacorrientes "en salto" 1,5mm2 (mas conservador
@@ -1887,11 +1882,6 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     codoCajaBandeja: 0,
     // Las térmicas DIN residenciales cotizaron parejo entre 6 y 40A en Fivisa; para 50A+ se
     // aplica un escalón proporcional (no relevado) porque suelen pasar a otro bastidor/marco.
-    // Arrancan en 0 a propósito: no están relevados y valen mucho más que una
-    // térmica DIN. Así aparecen en el presupuesto como un ítem en $0, bien
-    // visible, en vez de colarse con un precio inventado.
-    termicaCajaMoldeadaBipolar: 0,
-    termicaCajaMoldeadaTetrapolar: 0,
     termicaBipolarBase: 277,
     termicaTetrapolarBase: 294,
     cajaOctogonal: 72,
@@ -1907,9 +1897,6 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   };
   const DEFAULT_MANO_OBRA = { tarifaHora: 500, horasJornada: 8 };
   function precioTermica(tipo, amp, precios) {
-    if (amp > AMP_CAJA_MOLDEADA) {
-      return Number(tipo === 'bipolar' ? precios.termicaCajaMoldeadaBipolar : precios.termicaCajaMoldeadaTetrapolar) || 0;
-    }
     const base = tipo === 'bipolar' ? precios.termicaBipolarBase : precios.termicaTetrapolarBase;
     if (amp <= 40) return base;
     if (amp <= 63) return Math.round(base * 1.5);
@@ -1974,10 +1961,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         // 'aire' (aire libre): sin canalización
       }
       const tipoTermica = c.fases === 1 ? 'bipolar' : 'tetrapolar';
-      const nombreLlave = calc.breaker > AMP_CAJA_MOLDEADA
-        ? 'Interruptor de caja moldeada ' + tipoTermica + ' ' + calc.breaker + 'A'
-        : 'Térmica ' + tipoTermica + ' ' + calc.breaker + 'A curva ' + calc.curva;
-      add(nombreLlave, 'un.', 1, precioTermica(tipoTermica, calc.breaker, precios));
+      add('Térmica ' + tipoTermica + ' ' + calc.breaker + 'A curva ' + calc.curva, 'un.', 1, precioTermica(tipoTermica, calc.breaker, precios));
     });
     // Puntos de luz y de toma, según la cantidad cargada en cada carga del relevamiento.
     // Quedan como cualquier otro material: editables a mano si la cantidad real difiere.
@@ -2056,20 +2040,10 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     return m ? m.nombre : '';
   }
 
-  // Ancho en módulos de cada llave. Hasta 63 A son térmicas DIN de un módulo
-  // por polo (monofásico = bipolar, trifásico = tetrapolar). De 80 a 100 A el
-  // cuerpo es más ancho, y por encima de 100 A ya es un interruptor de caja
-  // moldeada, bastante más grande. El ancho exacto cambia según el modelo: acá
-  // se usa un valor representativo para que el dibujo no muestre un 200 A del
-  // mismo tamaño que un 10 A.
-  function polosLlave(fases) {
+  // Ancho en módulos de cada llave. Mismo criterio que la lista de materiales:
+  // monofásico = bipolar (2 módulos), trifásico = tetrapolar (4 módulos).
+  function modulosLlave(fases) {
     return fases === 1 ? 2 : 4;
-  }
-  function modulosLlave(fases, amp) {
-    const polos = polosLlave(fases);
-    if (!amp || amp <= 63) return polos;
-    if (amp <= AMP_CAJA_MOLDEADA) return Math.round(polos * 1.5);
-    return polos * 3;
   }
 
   function tableroDispositivos(draft) {
@@ -2079,14 +2053,13 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     const pg = calcularProteccionGeneral(draft);
     if (pg.aplica) {
       items.push({
-        tipo: 'termica', general: true, modulos: modulosLlave(sistema.fases, pg.termicaIn),
-        cara: pg.termicaIn > AMP_CAJA_MOLDEADA ? pg.termicaIn + 'A' : pg.termicaCurva + pg.termicaIn,
-        caraSub: pg.termicaPolos + 'P',
-        rotulo: 'GENERAL', etiqueta: pg.termicaIn > AMP_CAJA_MOLDEADA ? 'Interruptor general' : 'Térmica general',
-        detalle: pg.termicaIn + ' A · ' + pg.termicaPolos + 'P' + (pg.termicaIn > AMP_CAJA_MOLDEADA ? ' · caja moldeada' : ' · curva ' + pg.termicaCurva),
+        tipo: 'termica', general: true, modulos: pg.termicaPolos,
+        cara: pg.termicaCurva + pg.termicaIn, caraSub: pg.termicaPolos + 'P',
+        rotulo: 'GENERAL', etiqueta: 'Térmica general',
+        detalle: pg.termicaIn + ' A · ' + pg.termicaPolos + 'P · curva ' + pg.termicaCurva,
       });
       items.push({
-        tipo: 'diferencial', general: true, modulos: modulosLlave(sistema.fases, pg.diferencialIn),
+        tipo: 'diferencial', general: true, modulos: modulosLlave(sistema.fases),
         cara: pg.diferencialIn + 'A', caraSub: pg.diferencialSensibilidad + 'mA',
         rotulo: 'DIFERENCIAL', etiqueta: 'Diferencial general',
         detalle: pg.diferencialIn + ' A · ' + pg.diferencialSensibilidad + ' mA · tipo ' + pg.diferencialTipo,
@@ -2096,12 +2069,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       const calc = calcularCircuito(c);
       const nombre = c.nombre || ('Circuito ' + (i + 1));
       items.push({
-        tipo: 'termica', general: false, n: i + 1, modulos: modulosLlave(c.fases, calc.breaker),
-        cara: !calc.apto ? '?' : (calc.breaker > AMP_CAJA_MOLDEADA ? calc.breaker + 'A' : calc.curva + calc.breaker),
-        caraSub: polosLlave(c.fases) + 'P',
+        tipo: 'termica', general: false, n: i + 1, modulos: modulosLlave(c.fases),
+        cara: calc.apto ? calc.curva + calc.breaker : '?', caraSub: modulosLlave(c.fases) + 'P',
         rotulo: nombre, etiqueta: nombre,
         detalle: calc.apto
-          ? calc.breaker + ' A · ' + (calc.breaker > AMP_CAJA_MOLDEADA ? 'caja moldeada' : 'curva ' + calc.curva) + ' · ' + calc.seccionAdoptada + ' mm²'
+          ? calc.breaker + ' A · curva ' + calc.curva + ' · ' + calc.seccionAdoptada + ' mm²'
           : 'sin protección definida',
         pendiente: !calc.apto,
       });
@@ -2409,12 +2381,6 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   try { DB = JSON.parse(localStorage.getItem(STORAGE_KEY)) || defaultDB(); } catch (e) { DB = defaultDB(); }
   if (!DB.settings) DB.settings = { margen: 30, iva: 22 };
   if (!DB.settings.precios) DB.settings.precios = clonePrecios(DEFAULT_PRECIOS);
-  // Un catálogo guardado en una versión anterior de la app no tiene las claves
-  // que se agregaron después. Se completan con el valor de fábrica, sin tocar
-  // los precios que el usuario ya editó.
-  Object.keys(DEFAULT_PRECIOS).forEach((k) => {
-    if (DB.settings.precios[k] === undefined) DB.settings.precios[k] = clonePrecios(DEFAULT_PRECIOS[k]);
-  });
   if (!DB.settings.manoObra) DB.settings.manoObra = { ...DEFAULT_MANO_OBRA };
   if (!DB.seq) DB.seq = { trabajo: 0, presupuesto: 0 };
 
@@ -3229,10 +3195,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       campos: [
         { key: 'termicaBipolarBase', tipo: 'plano', etiqueta: 'Térmica bipolar (hasta 40A)' },
         { key: 'termicaTetrapolarBase', tipo: 'plano', etiqueta: 'Térmica tetrapolar (hasta 40A)' },
-        { key: 'termicaCajaMoldeadaBipolar', tipo: 'plano', etiqueta: 'Caja moldeada bipolar (125 a 200A)' },
-        { key: 'termicaCajaMoldeadaTetrapolar', tipo: 'plano', etiqueta: 'Caja moldeada tetrapolar (125 a 200A)' },
       ],
-      nota: 'De 50 a 63A se cobra 1,5× la térmica base; de 80 a 100A, 2,5× — no relevado, es un escalón proporcional. De 125A para arriba ya no es una térmica DIN sino un interruptor de caja moldeada: viene en $0 hasta que cargues el precio real, así no se cuela una cifra inventada en el presupuesto.',
+      nota: 'De 50 a 63A se cobra 1,5× este valor; de 80 a 125A, 2,5× — no relevado, es un escalón proporcional.',
     },
     {
       titulo: 'Puntos de luz y de toma ($/un.)',
