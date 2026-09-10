@@ -171,7 +171,7 @@
     aire: 'Aire libre',
     enterrado: 'Enterrado bajo tierra',
   };
-  const BREAKER_RATINGS = [6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100];
+  const BREAKER_RATINGS = [6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125];
   const CURVA_SUGERIDA = { iluminacion: 'B', tomacorrientes: 'C', fuerza: 'C' };
   // Secciones minimas por resistencia mecanica, RBT-UTE Anexo S9: derivacion para
   // alumbrado 0,75mm2; derivacion para tomacorrientes "en salto" 1,5mm2 (mas conservador
@@ -1226,7 +1226,7 @@
         { key: 'termicaBipolarBase', tipo: 'plano', etiqueta: 'Térmica bipolar (hasta 40A)' },
         { key: 'termicaTetrapolarBase', tipo: 'plano', etiqueta: 'Térmica tetrapolar (hasta 40A)' },
       ],
-      nota: 'De 50 a 63A se cobra 1,5× este valor; de 80 a 100A, 2,5× — no relevado, es un escalón proporcional.',
+      nota: 'De 50 a 63A se cobra 1,5× este valor; de 80 a 125A, 2,5× — no relevado, es un escalón proporcional.',
     },
     {
       titulo: 'Puntos de luz y de toma ($/un.)',
