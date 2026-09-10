@@ -4,3 +4,6 @@
 # Caché que genera Python al ejecutar los scripts de herramientas/
 __pycache__/
 *.pyc
+
+# Carpeta temporal que arma el build de Netlify
+_publicar/
