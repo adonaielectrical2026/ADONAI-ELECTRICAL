@@ -16,19 +16,13 @@ App interna de relevamientos, cálculos eléctricos y presupuestos.
 
 ## Cómo instalarla en el celular
 
-Para que se instale como app (ícono propio, pantalla completa, sin barra del navegador) el celular tiene que abrirla desde una dirección web (`https://`), no desde un archivo suelto. Hay dos caminos:
+Para que se instale como app (ícono propio, pantalla completa, sin barra del navegador) el celular tiene que abrirla desde una dirección web (`https://`), no desde un archivo suelto.
 
-**Camino A — rápido, solo para vos**
-1. Abrí en el celular el link del artifact que te pasaron en el chat (tenés que estar con tu cuenta de Claude iniciada en ese celular).
-2. Seguí los pasos de "Android" o "iPhone" de más abajo.
+La app ya está publicada acá:
 
-**Camino B — recomendado, para que la use todo el equipo**
-1. Entrá a [app.netlify.com/drop](https://app.netlify.com/drop).
-2. Arrastrá la carpeta `codigo` completa a esa página.
-3. En unos segundos te da una dirección fija tipo `https://algo-random.netlify.app` — esa dirección la puede abrir cualquier técnico, sin cuenta de Claude y sin contraseña.
-4. Pasale ese link a los técnicos y que sigan los pasos de acá abajo.
+**https://adonaielectrical.netlify.app**
 
-(Es gratis. Si después querés, se le puede poner un dominio propio.)
+Ese link lo puede abrir cualquier técnico, sin cuenta y sin contraseña. Pasáselo y que siga los pasos de acá abajo según su celular.
 
 **Android (Chrome)**
 1. Abrí el link en Chrome.
@@ -51,6 +45,18 @@ Sí, funciona igual que en el celular y se instala con los mismos pasos (Android
 Doble clic en `app-completa.html` y se abre en el navegador. Funciona todo: cálculos, relevamientos, presupuestos y el PDF.
 
 También se puede instalar como app de escritorio si en vez del archivo abrís la dirección web del Camino B: en Chrome/Edge aparece un ícono de instalar a la derecha de la barra de direcciones.
+
+## Cómo se publica
+
+El sitio está conectado al repositorio: **cada cambio que llega a `main` se publica solo**, sin hacer nada a mano.
+
+Netlify arma el sitio con las instrucciones de `netlify.toml`: toma el contenido de `codigo/` y le suma `app-completa.html`, para que el archivo único también se pueda descargar desde el sitio.
+
+Si alguna vez hace falta publicar a mano (por ejemplo para probar algo sin pasar por `main`):
+
+```
+netlify deploy --prod --build
+```
 
 ## Dónde se guardan los datos
 
