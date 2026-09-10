@@ -1,2 +1,6 @@
 # Local Netlify folder
 .netlify
+
+# Caché que genera Python al ejecutar los scripts de herramientas/
+__pycache__/
+*.pyc
