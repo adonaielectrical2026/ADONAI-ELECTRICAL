@@ -526,6 +526,302 @@
   }
 
   /* ============================================================
+     TABLERO — VISTA DEL FRENTE
+     Dibuja el frente del tablero a partir de lo que ya se calculó: la
+     protección general y la térmica de cada circuito. No pide ningún dato
+     nuevo al técnico.
+
+     Todo se construye sobre la grilla del módulo DIN normalizado (17,5 mm):
+     cada llave ocupa un número entero de módulos y el gabinete se elige
+     entre las medidas comerciales que ya usa el catálogo de precios.
+
+     Las llaves se dibujan con una forma genérica propia de ADONAI: no
+     reproducen la carcasa, el color ni el logotipo de ningún fabricante.
+     ============================================================ */
+
+  const TAB_GABINETES = [6, 12, 18, 24, 36, 54];
+  // Cómo se reparten los módulos de cada gabinete comercial en filas de riel.
+  const TAB_FILAS = { 6: [6], 12: [12], 18: [18], 24: [12, 12], 36: [12, 12, 12], 54: [18, 18, 18] };
+
+  // Geometría del dibujo, en unidades del viewBox. TAB_MOD_W es un módulo DIN.
+  const TAB_MOD_W = 34;
+  const TAB_DEV_H = 94;
+  const TAB_LABEL_H = 21;
+  const TAB_ROW_GAP = 18;
+  const TAB_PAD = 20;
+  const TAB_HEAD_H = 40;
+  const TAB_LEY_ROW_H = 19;
+
+  // Ancho en módulos de cada llave. Mismo criterio que la lista de materiales:
+  // monofásico = bipolar (2 módulos), trifásico = tetrapolar (4 módulos).
+  function modulosLlave(fases) {
+    return fases === 1 ? 2 : 4;
+  }
+
+  function tableroDispositivos(draft) {
+    if (!draft) return [];
+    const sistema = SISTEMAS[draft.sistemaId] || SISTEMAS.tri_tt;
+    const items = [];
+    const pg = calcularProteccionGeneral(draft);
+    if (pg.aplica) {
+      items.push({
+        tipo: 'termica', general: true, modulos: pg.termicaPolos,
+        cara: pg.termicaCurva + pg.termicaIn, caraSub: pg.termicaPolos + 'P',
+        rotulo: 'GENERAL', etiqueta: 'Térmica general',
+        detalle: pg.termicaIn + ' A · ' + pg.termicaPolos + 'P · curva ' + pg.termicaCurva,
+      });
+      items.push({
+        tipo: 'diferencial', general: true, modulos: modulosLlave(sistema.fases),
+        cara: pg.diferencialIn + 'A', caraSub: pg.diferencialSensibilidad + 'mA',
+        rotulo: 'DIFERENCIAL', etiqueta: 'Diferencial general',
+        detalle: pg.diferencialIn + ' A · ' + pg.diferencialSensibilidad + ' mA · tipo ' + pg.diferencialTipo,
+      });
+    }
+    (draft.circuitos || []).forEach((c, i) => {
+      const calc = calcularCircuito(c);
+      const nombre = c.nombre || ('Circuito ' + (i + 1));
+      items.push({
+        tipo: 'termica', general: false, n: i + 1, modulos: modulosLlave(c.fases),
+        cara: calc.apto ? calc.curva + calc.breaker : '?', caraSub: modulosLlave(c.fases) + 'P',
+        rotulo: nombre, etiqueta: nombre,
+        detalle: calc.apto
+          ? calc.breaker + ' A · curva ' + calc.curva + ' · ' + calc.seccionAdoptada + ' mm²'
+          : 'sin protección definida',
+        pendiente: !calc.apto,
+      });
+    });
+    return items;
+  }
+
+  // Reparte las llaves en las filas del gabinete respetando el orden y sin
+  // partir una llave entre dos filas. Devuelve null si no entran.
+  function empaquetarTablero(items, capacidades) {
+    const filas = capacidades.map((cap) => ({ cap, usado: 0, items: [] }));
+    let f = 0;
+    for (const it of items) {
+      while (f < filas.length && filas[f].usado + it.modulos > filas[f].cap) f++;
+      if (f >= filas.length) return null;
+      filas[f].items.push(it);
+      filas[f].usado += it.modulos;
+    }
+    return filas;
+  }
+
+  function tableroLayout(draft) {
+    const items = tableroDispositivos(draft);
+    if (!items.length) return null;
+    const modulos = items.reduce((a, it) => a + it.modulos, 0);
+    for (const g of TAB_GABINETES) {
+      const filas = empaquetarTablero(items, TAB_FILAS[g]);
+      if (filas) return { items, filas, gabinete: g, modulos };
+    }
+    // Más grande que el mayor gabinete de catálogo: se sigue con filas de 18.
+    for (let n = 4; n <= 12; n++) {
+      const filas = empaquetarTablero(items, new Array(n).fill(18));
+      if (filas) return { items, filas, gabinete: n * 18, modulos };
+    }
+    return null;
+  }
+
+  /* ---------- dibujo ---------- */
+
+  function svgTxt(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  }
+  // Recorta el texto al ancho disponible de la franja de etiquetas.
+  function recortar(s, maxChars) {
+    s = String(s || '');
+    return s.length <= maxChars ? s : s.slice(0, Math.max(1, maxChars - 1)).trimEnd() + '…';
+  }
+
+  // Una llave: cuerpo, borneras con tornillos, separación de polos, palanca en
+  // posición de cerrado y el valor impreso en la cara.
+  function svgLlave(it, x, y) {
+    const w = it.modulos * TAB_MOD_W;
+    const h = TAB_DEV_H;
+    const cx = x + w / 2;
+    const bandH = 15;
+    const o = [];
+    o.push('<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="3" fill="url(#tabCuerpo)" stroke="#c3c6cb" stroke-width="1"/>');
+    // borneras superior e inferior
+    o.push('<rect x="' + (x + 1) + '" y="' + (y + 1) + '" width="' + (w - 2) + '" height="' + bandH + '" fill="#dcdee2"/>');
+    o.push('<rect x="' + (x + 1) + '" y="' + (y + h - bandH - 1) + '" width="' + (w - 2) + '" height="' + bandH + '" fill="#dcdee2"/>');
+    o.push('<line x1="' + x + '" y1="' + (y + bandH + 1) + '" x2="' + (x + w) + '" y2="' + (y + bandH + 1) + '" stroke="#c3c6cb" stroke-width="1"/>');
+    o.push('<line x1="' + x + '" y1="' + (y + h - bandH - 1) + '" x2="' + (x + w) + '" y2="' + (y + h - bandH - 1) + '" stroke="#c3c6cb" stroke-width="1"/>');
+    // un tornillo por polo, arriba y abajo
+    for (let k = 0; k < it.modulos; k++) {
+      const sx = x + k * TAB_MOD_W + TAB_MOD_W / 2;
+      [y + bandH / 2 + 1, y + h - bandH / 2 - 1].forEach((sy) => {
+        o.push('<circle cx="' + sx + '" cy="' + sy + '" r="4.2" fill="#cbced3" stroke="#adb1b7" stroke-width="0.9"/>');
+        o.push('<line x1="' + (sx - 2.6) + '" y1="' + sy + '" x2="' + (sx + 2.6) + '" y2="' + sy + '" stroke="#8d9198" stroke-width="1.1"/>');
+      });
+      // separación entre polos
+      if (k > 0) {
+        const lx = x + k * TAB_MOD_W;
+        o.push('<line x1="' + lx + '" y1="' + (y + bandH + 1) + '" x2="' + lx + '" y2="' + (y + h - bandH - 1) + '" stroke="#dcdee2" stroke-width="1"/>');
+      }
+    }
+    // Valor impreso en la cara. El cuerpo de letra acompaña el ancho de la
+    // llave: con un tamaño fijo, una tetrapolar queda con la cara vacía.
+    const caraSize = 11.5 + (it.modulos - 2) * 1.7;
+    o.push('<text x="' + cx + '" y="' + (y + bandH + 15) + '" text-anchor="middle" font-size="' + caraSize + '" font-weight="700" fill="#2f3033" letter-spacing="0.2">' + svgTxt(it.cara) + '</text>');
+    if (it.caraSub) {
+      o.push('<text x="' + cx + '" y="' + (y + bandH + 26) + '" text-anchor="middle" font-size="8" font-weight="600" fill="#6f7277">' + svgTxt(it.caraSub) + '</text>');
+    }
+    // botón de prueba del diferencial
+    if (it.tipo === 'diferencial') {
+      const bx = x + w - 15, by = y + bandH + 5;
+      o.push('<rect x="' + bx + '" y="' + by + '" width="11" height="11" rx="1.5" fill="#171719"/>');
+      o.push('<text x="' + (bx + 5.5) + '" y="' + (by + 8.2) + '" text-anchor="middle" font-size="7.5" font-weight="700" fill="#ffffff">T</text>');
+    }
+    // Hueco y palanca, en posición de cerrado (banda roja a la vista). En las
+    // llaves de varios polos la palanca es una barra que los une y ocupa buena
+    // parte del frente, igual que en una llave real: si se dibujara del mismo
+    // ancho que en una bipolar, una tetrapolar quedaría casi vacía.
+    const palancaW = 15 + (it.modulos - 1) * 9;
+    const huecoW = palancaW + 14;
+    const ry = y + h / 2 - 3;
+    const huecoH = 33;
+    o.push('<rect x="' + (cx - huecoW / 2) + '" y="' + ry + '" width="' + huecoW + '" height="' + huecoH + '" rx="3" fill="#dfe1e5" stroke="#c9ccd1" stroke-width="0.9"/>');
+    o.push('<rect x="' + (cx - palancaW / 2) + '" y="' + (ry + 3.5) + '" width="' + palancaW + '" height="' + (huecoH - 7) + '" rx="2.5" fill="url(#tabPalanca)"/>');
+    o.push('<rect x="' + (cx - palancaW / 2) + '" y="' + (ry + 3.5) + '" width="' + palancaW + '" height="6" rx="2.5" fill="#b3261e"/>');
+    // estrías de agarre de la palanca
+    const ribW = Math.min(palancaW - 8, 26);
+    [15, 19, 23].forEach((dy) => {
+      o.push('<line x1="' + (cx - ribW / 2) + '" y1="' + (ry + dy) + '" x2="' + (cx + ribW / 2) + '" y2="' + (ry + dy) + '" stroke="#71757b" stroke-width="1"/>');
+    });
+    return o.join('');
+  }
+
+  // Tapa ciega: los módulos libres del gabinete.
+  function svgTapaCiega(x, y, modulos) {
+    const w = modulos * TAB_MOD_W;
+    const o = [];
+    o.push('<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + TAB_DEV_H + '" rx="3" fill="#e3e5e8" stroke="#cdd0d5" stroke-width="1"/>');
+    for (let k = 0; k < modulos; k++) {
+      const lx = x + k * TAB_MOD_W;
+      if (k > 0) o.push('<line x1="' + lx + '" y1="' + (y + 4) + '" x2="' + lx + '" y2="' + (y + TAB_DEV_H - 4) + '" stroke="#d5d8dc" stroke-width="1"/>');
+      const mx = lx + TAB_MOD_W / 2;
+      [-4, 0, 4].forEach((dy) => {
+        o.push('<line x1="' + (mx - 8) + '" y1="' + (y + TAB_DEV_H / 2 + dy) + '" x2="' + (mx + 8) + '" y2="' + (y + TAB_DEV_H / 2 + dy) + '" stroke="#c8cbd0" stroke-width="1.5"/>');
+      });
+    }
+    return o.join('');
+  }
+
+  /**
+   * Devuelve el SVG del frente del tablero.
+   * opts: { titulo, subtitulo, leyenda }
+   */
+  function tableroSvg(layout, opts) {
+    opts = opts || {};
+    const filas = layout.filas;
+    const anchoFila = Math.max.apply(null, filas.map((f) => f.cap));
+    const W = TAB_PAD * 2 + anchoFila * TAB_MOD_W;
+    const filaAlto = TAB_DEV_H + TAB_LABEL_H;
+    const primeraFilaY = 12 + TAB_HEAD_H + 20;
+    const gabH = primeraFilaY + filas.length * filaAlto + (filas.length - 1) * TAB_ROW_GAP + 22;
+    const leyenda = opts.leyenda !== false;
+    const leyH = leyenda ? 16 + 20 + layout.items.length * TAB_LEY_ROW_H + 22 : 0;
+    const H = gabH + leyH;
+
+    const o = [];
+    o.push('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" font-family="Helvetica, Arial, sans-serif">');
+    o.push('<defs>' +
+      '<linearGradient id="tabCuerpo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbfbfc"/><stop offset="0.55" stop-color="#f1f2f3"/><stop offset="1" stop-color="#e4e6e9"/></linearGradient>' +
+      '<linearGradient id="tabPalanca" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a4d52"/><stop offset="1" stop-color="#25272a"/></linearGradient>' +
+      '<linearGradient id="tabTapa" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2f3f4"/><stop offset="1" stop-color="#e6e8ea"/></linearGradient>' +
+      '<linearGradient id="tabHueco" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b9bcc1"/><stop offset="0.12" stop-color="#d2d5d9"/><stop offset="1" stop-color="#dfe1e4"/></linearGradient>' +
+      '</defs>');
+    o.push('<rect width="' + W + '" height="' + H + '" fill="#ffffff"/>');
+
+    // gabinete: marco oscuro + tapa
+    o.push('<rect x="0" y="0" width="' + W + '" height="' + gabH + '" rx="12" fill="#17181b"/>');
+    o.push('<rect x="7" y="7" width="' + (W - 14) + '" height="' + (gabH - 14) + '" rx="7" fill="url(#tabTapa)" stroke="#cdd0d5" stroke-width="1"/>');
+    // tornillos de la tapa
+    [[16, 16], [W - 16, 16], [16, gabH - 16], [W - 16, gabH - 16]].forEach((p) => {
+      o.push('<circle cx="' + p[0] + '" cy="' + p[1] + '" r="3.4" fill="#d3d6da" stroke="#b0b4b9" stroke-width="0.9"/>');
+    });
+
+    // chapa de identificación
+    const hx = TAB_PAD, hy = 14, hw = W - TAB_PAD * 2;
+    o.push('<rect x="' + hx + '" y="' + hy + '" width="' + hw + '" height="' + TAB_HEAD_H + '" rx="5" fill="#0b0b0c"/>');
+    o.push('<text x="' + (hx + 14) + '" y="' + (hy + 18) + '" font-size="12.5" fill="#ffffff" letter-spacing="1.6">ADONAI<tspan font-weight="800"> ELECTRICAL</tspan></text>');
+    o.push('<text x="' + (hx + 14) + '" y="' + (hy + 31) + '" font-size="8.5" fill="#9b9da3" letter-spacing="0.6">' + svgTxt(opts.subtitulo || 'Energía con propósito') + '</text>');
+    if (opts.titulo) {
+      o.push('<text x="' + (hx + hw - 14) + '" y="' + (hy + 25) + '" text-anchor="end" font-size="10" font-weight="700" fill="#ffffff">' + svgTxt(recortar(opts.titulo, Math.floor((hw - 210) / 5.6))) + '</text>');
+    }
+
+    // filas
+    filas.forEach((fila, fi) => {
+      const filaY = primeraFilaY + fi * (filaAlto + TAB_ROW_GAP);
+      const filaW = fila.cap * TAB_MOD_W;
+      const filaX = TAB_PAD + (anchoFila - fila.cap) * TAB_MOD_W / 2;
+      // ventana de la tapa
+      o.push('<rect x="' + (filaX - 7) + '" y="' + (filaY - 7) + '" width="' + (filaW + 14) + '" height="' + (TAB_DEV_H + 14) + '" rx="5" fill="url(#tabHueco)" stroke="#c2c5ca" stroke-width="1"/>');
+      let x = filaX;
+      fila.items.forEach((it) => {
+        o.push(svgLlave(it, x, filaY));
+        // franja de rótulo debajo de cada llave
+        const w = it.modulos * TAB_MOD_W;
+        const ly = filaY + TAB_DEV_H + 11;
+        o.push('<rect x="' + (x + 1) + '" y="' + (ly - 2) + '" width="' + (w - 2) + '" height="' + (TAB_LABEL_H - 6) + '" rx="2" fill="#ffffff" stroke="#d8dade" stroke-width="0.8"/>');
+        const pre = it.n ? it.n + '·' : '';
+        o.push('<text x="' + (x + w / 2) + '" y="' + (ly + 8.5) + '" text-anchor="middle" font-size="7.5" font-weight="600" fill="#2f3033">' +
+          svgTxt(recortar(pre + it.rotulo, Math.floor((w - 6) / 4.2))) + '</text>');
+        x += w;
+      });
+      const libres = fila.cap - fila.usado;
+      if (libres > 0) o.push(svgTapaCiega(x, filaY, libres));
+    });
+
+    // leyenda
+    if (leyenda) {
+      let ly = gabH + 26;
+      o.push('<text x="1" y="' + ly + '" font-size="9" font-weight="700" fill="#6f7277" letter-spacing="1.2">DETALLE DEL TABLERO</text>');
+      ly += 18;
+      layout.items.forEach((it) => {
+        const marca = it.n ? String(it.n) : '•';
+        o.push('<rect x="1" y="' + (ly - 9) + '" width="15" height="13" rx="3" fill="' + (it.n ? '#0b0b0c' : '#6f7277') + '"/>');
+        o.push('<text x="8.5" y="' + (ly + 0.5) + '" text-anchor="middle" font-size="8" font-weight="700" fill="#ffffff">' + svgTxt(marca) + '</text>');
+        o.push('<text x="22" y="' + ly + '" font-size="9.5" font-weight="600" fill="#171719">' + svgTxt(recortar(it.etiqueta, 34)) + '</text>');
+        o.push('<text x="' + (W - 4) + '" y="' + ly + '" text-anchor="end" font-size="9.5" fill="' + (it.pendiente ? '#b3261e' : '#6f7277') + '">' + svgTxt(it.detalle) + '</text>');
+        o.push('<line x1="1" y1="' + (ly + 6) + '" x2="' + (W - 4) + '" y2="' + (ly + 6) + '" stroke="#e8e9eb" stroke-width="0.8"/>');
+        ly += TAB_LEY_ROW_H;
+      });
+      o.push('<text x="1" y="' + (ly + 8) + '" font-size="8" font-style="italic" fill="#9b9da3">' +
+        svgTxt('Esquema ilustrativo del frente — ' + layout.modulos + ' de ' + layout.gabinete + ' módulos ocupados. No es un plano constructivo.') + '</text>');
+    }
+
+    o.push('</svg>');
+    return o.join('');
+  }
+
+  // Convierte el SVG a PNG usando el canvas del navegador. Sirve tanto para
+  // descargar la imagen como para insertarla en el PDF del presupuesto.
+  function tableroPng(svg, escala) {
+    return new Promise((resolve, reject) => {
+      const m = svg.match(/viewBox="0 0 ([\d.]+) ([\d.]+)"/);
+      const w = m ? Number(m[1]) : 800;
+      const h = m ? Number(m[2]) : 600;
+      const s = escala || 3;
+      const img = new Image();
+      img.onload = () => {
+        const cv = document.createElement('canvas');
+        cv.width = Math.round(w * s);
+        cv.height = Math.round(h * s);
+        const ctx = cv.getContext('2d');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.drawImage(img, 0, 0, cv.width, cv.height);
+        resolve({ dataUrl: cv.toDataURL('image/png'), w, h });
+      };
+      img.onerror = () => reject(new Error('No se pudo rasterizar el tablero'));
+      img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+    });
+  }
+
+  /* ============================================================
      PERSISTENCIA
      ============================================================ */
   const STORAGE_KEY = 'adonai_ht_v1';
@@ -651,6 +947,7 @@
     if (id === 'presupuestos') renderPresupuestos();
     if (id === 'perfil') renderPerfil();
     if (id === 'catalogo-precios') renderCatalogoPrecios();
+    if (id === 'tablero' && draft) renderTablero();
   }
   window.addEventListener('popstate', (e) => {
     const id = (e.state && e.state.appView) || 'home';
@@ -1064,6 +1361,126 @@
     if (draft.materiales.length > 3) mWrap.appendChild(el('div', { class: 'light-stat-row', html: '<span class="lbl" style="color:var(--steel)">+' + (draft.materiales.length - 3) + ' más</span><span></span>' }));
 
     $('#resumen-observaciones').value = draft.observaciones;
+    renderTableroPreview();
+  }
+
+  /* ============================================================
+     PANTALLA: FRENTE DEL TABLERO
+     ============================================================ */
+  function renderTableroPreview() {
+    const card = $('#resumen-tablero-card');
+    if (!card) return;
+    const layout = tableroLayout(draft);
+    card.hidden = !layout;
+    if (!layout) return;
+    $('#resumen-tablero-modulos').textContent = layout.modulos + ' de ' + layout.gabinete + ' módulos';
+    // La miniatura va sin leyenda: acá alcanza con ver la forma del frente.
+    $('#resumen-tablero-preview').innerHTML = tableroSvg(layout, { leyenda: false, titulo: draft.obra.nombre });
+  }
+
+  function openTablero() {
+    persistDraft();
+    showView('tablero');
+    renderTablero();
+  }
+
+  function tableroSvgActual() {
+    const layout = tableroLayout(draft);
+    if (!layout) return null;
+    return {
+      layout,
+      svg: tableroSvg(layout, {
+        titulo: draft.obra.nombre,
+        subtitulo: draft.cliente.nombre || 'Energía con propósito',
+      }),
+    };
+  }
+
+  function renderTablero() {
+    $('#tablero-obra').textContent = draft.obra.nombre || 'Obra sin nombre';
+    $('#tablero-cliente').textContent = draft.cliente.nombre || 'Cliente sin definir';
+    const actual = tableroSvgActual();
+    const stage = $('#tablero-stage');
+    const statsCard = $('#tablero-resumen-card');
+    if (!actual) {
+      stage.innerHTML = '<div class="tablero-empty">Todavía no hay llaves para dibujar. Cargá circuitos en el relevamiento.</div>';
+      statsCard.hidden = true;
+      $('#btn-tablero-png').disabled = true;
+      $('#btn-tablero-whatsapp').disabled = true;
+      return;
+    }
+    $('#btn-tablero-png').disabled = false;
+    $('#btn-tablero-whatsapp').disabled = false;
+    stage.innerHTML = actual.svg;
+    statsCard.hidden = false;
+    const l = actual.layout;
+    const pendientes = l.items.filter((it) => it.pendiente).length;
+    $('#tablero-stats').innerHTML =
+      '<div class="light-stat-row"><span class="lbl">Gabinete sugerido</span><span class="val strong">' + l.gabinete + ' módulos</span></div>' +
+      '<div class="light-stat-row"><span class="lbl">Módulos ocupados</span><span class="val strong">' + l.modulos + '</span></div>' +
+      '<div class="light-stat-row"><span class="lbl">Filas de riel</span><span class="val">' + l.filas.length + '</span></div>' +
+      '<div class="light-stat-row"><span class="lbl">Llaves</span><span class="val">' + l.items.length + '</span></div>' +
+      (pendientes ? '<div class="alert-error" style="margin-top:8px">' + pendientes + ' circuito(s) sin protección definida: aparecen con "?" en el dibujo. Revisá los parámetros en el paso Circuitos.</div>' : '');
+  }
+
+  function nombreArchivoTablero() {
+    const base = (draft.obra.nombre || draft.cliente.nombre || 'tablero')
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'tablero';
+    return 'tablero-' + base + '.png';
+  }
+
+  async function descargarTableroPng() {
+    const actual = tableroSvgActual();
+    if (!actual) return;
+    try {
+      const { dataUrl } = await tableroPng(actual.svg, 3);
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = nombreArchivoTablero();
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      toast('Imagen del tablero descargada');
+    } catch (e) {
+      toast('No se pudo generar la imagen');
+    }
+  }
+
+  async function compartirTableroPorWhatsapp() {
+    const actual = tableroSvgActual();
+    if (!actual) return;
+    let blob = null;
+    try {
+      const { dataUrl } = await tableroPng(actual.svg, 3);
+      blob = await (await fetch(dataUrl)).blob();
+    } catch (e) {
+      toast('No se pudo generar la imagen');
+      return;
+    }
+    const file = new File([blob], nombreArchivoTablero(), { type: 'image/png' });
+    const mensaje = 'Así queda el tablero de ' + (draft.obra.nombre || 'la obra') + '.';
+    // En el celular, el menú nativo comparte la imagen ya adjunta.
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], text: mensaje });
+        return;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+      }
+    }
+    // En escritorio no se puede adjuntar: se descarga la imagen y se abre el chat.
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = nombreArchivoTablero();
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+    const numero = numeroWhatsapp(draft.cliente.whatsapp || draft.cliente.telefono);
+    const url = 'https://api.whatsapp.com/send?' + (numero ? 'phone=' + numero + '&' : '') +
+      'text=' + encodeURIComponent(mensaje + ' Te la adjunto en este chat.');
+    window.open(url, '_blank');
   }
 
   function syncFormToDraftSoft() {
@@ -1470,7 +1887,12 @@
     $('#resumen-estado').addEventListener('change', () => { draft.estado = $('#resumen-estado').value; });
     $('#resumen-diferencial-sensibilidad').addEventListener('change', () => {
       draft.proteccionGeneral.diferencialSensibilidad = Number($('#resumen-diferencial-sensibilidad').value);
+      // el valor va impreso en la cara del diferencial, hay que redibujar
+      renderTableroPreview();
     });
+    $('#btn-ver-tablero').addEventListener('click', openTablero);
+    $('#btn-tablero-png').addEventListener('click', descargarTableroPng);
+    $('#btn-tablero-whatsapp').addEventListener('click', compartirTableroPorWhatsapp);
     $('#btn-enviar-revision').addEventListener('click', () => { persistDraft('revision'); toast('Enviado a revisión'); showView('home'); });
     $('#btn-crear-presupuesto').addEventListener('click', () => {
       persistDraft();
@@ -1687,6 +2109,35 @@
 
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(111, 114, 119);
     doc.text('Validez: ' + p.validez + ' días · Forma de pago: ' + p.formaPago, margin, y);
+
+    // Última hoja: el frente del tablero, para que el cliente vea qué le queda
+    // instalado. Si el navegador no puede rasterizar el SVG, el presupuesto sale igual.
+    const layoutTablero = trabajo ? tableroLayout(trabajo) : null;
+    if (layoutTablero) {
+      try {
+        const svgTablero = tableroSvg(layoutTablero, {
+          titulo: trabajo.obra.nombre,
+          subtitulo: p.clienteNombre || 'Energía con propósito',
+        });
+        const png = await tableroPng(svgTablero, 2.5);
+        doc.addPage();
+        let ty = 18;
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(23, 23, 25);
+        doc.text('Frente del tablero', margin, ty);
+        ty += 6;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(111, 114, 119);
+        const notaLines = doc.splitTextToSize('Esquema ilustrativo de cómo queda el tablero terminado, armado con las protecciones calculadas para esta obra. No es un plano constructivo.', pageWidth - 2 * margin);
+        doc.text(notaLines, margin, ty);
+        ty += notaLines.length * 4 + 6;
+        const maxW = pageWidth - 2 * margin;
+        const maxH = doc.internal.pageSize.getHeight() - ty - 18;
+        let iw = maxW, ih = (png.h / png.w) * iw;
+        if (ih > maxH) { ih = maxH; iw = (png.w / png.h) * ih; }
+        // Sin comprimir, el dibujo se guarda como mapa de bits crudo y el
+        // presupuesto pasa de ~200 KB a varios MB — impresentable por WhatsApp.
+        doc.addImage(png.dataUrl, 'PNG', margin + (maxW - iw) / 2, ty, iw, ih, undefined, 'FAST');
+      } catch (e) { /* sin hoja de tablero */ }
+    }
 
     return { doc, filename: p.codigo + '.pdf' };
   }

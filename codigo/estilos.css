@@ -348,3 +348,21 @@
   .chips{ display:flex; flex-wrap:wrap; gap:8px; }
   .chip{ border:1px solid var(--line); background:var(--white); border-radius:var(--radius-pill); padding:7px 14px; font-size:0.8rem; font-weight:600; cursor:pointer; }
   .chip:hover{ border-color:var(--steel); }
+
+  /* ============================================================
+     FRENTE DEL TABLERO
+     El dibujo representa un objeto físico (gabinete, llaves), así que
+     conserva sus colores reales en modo claro y oscuro: se lo apoya sobre
+     una base propia en vez de dejar que herede el fondo del tema.
+     ============================================================ */
+  .tablero-preview, .tablero-stage{
+    background:#eceef0; border:1px solid var(--line); border-radius:var(--radius-md);
+    padding:12px; overflow-x:auto; -webkit-overflow-scrolling:touch;
+  }
+  .tablero-stage{ padding:14px; box-shadow:var(--shadow-sm); }
+  .tablero-preview svg, .tablero-stage svg{ display:block; height:auto; width:100%; }
+  /* por debajo de este ancho el rótulo de cada llave deja de leerse: se
+     prefiere que la tarjeta scrollee en horizontal antes que encoger más. */
+  .tablero-stage svg{ min-width:520px; }
+  .tablero-preview svg{ min-width:360px; }
+  .tablero-empty{ font-size:0.82rem; color:var(--steel); text-align:center; padding:22px 10px; }

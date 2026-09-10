@@ -64,6 +64,7 @@
     <symbol id="ic-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
     <symbol id="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.85 1.85M17.55 17.55l1.85 1.85M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.85-1.85M17.55 6.45l1.85-1.85"/></symbol>
     <symbol id="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"/></symbol>
+    <symbol id="ic-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7.5 11 4.5 4.5L16.5 11"/><path d="M4 20h16"/></symbol>
   </defs>
 </svg>
 
@@ -337,6 +338,16 @@
         </div>
       </div>
 
+      <div class="card card-pad" id="resumen-tablero-card" hidden>
+        <div class="row-between" style="margin-bottom:4px">
+          <div class="section-label" style="margin:0">Frente del tablero</div>
+          <span id="resumen-tablero-modulos" style="font-size:0.78rem;color:var(--steel)"></span>
+        </div>
+        <p style="font-size:0.78rem;color:var(--steel);margin:0 0 12px">Dibujado con las llaves que salieron del cálculo. Sirve para mostrarle al cliente cómo va a quedar.</p>
+        <div class="tablero-preview" id="resumen-tablero-preview"></div>
+        <button class="btn btn-outline btn-block" id="btn-ver-tablero" style="margin-top:12px"><svg><use href="#ic-eye"/></svg> Ver en grande</button>
+      </div>
+
       <div class="card card-pad">
         <div class="row-between" style="margin-bottom:10px">
           <div class="section-label" style="margin:0">Materiales</div>
@@ -356,6 +367,35 @@
       </div>
       <button class="btn btn-primary btn-block" id="btn-crear-presupuesto"><svg><use href="#ic-file-dollar"/></svg> Crear presupuesto</button>
     </section>
+  </main>
+
+  <!-- ============================================================
+       FRENTE DEL TABLERO
+       ============================================================ -->
+  <main class="view" id="view-tablero" hidden>
+    <div class="topbar">
+      <div class="topbar-row">
+        <button class="icon-btn" data-back="relevamiento"><svg><use href="#ic-chevron-left"/></svg></button>
+        <div class="topbar-title">Frente del tablero</div>
+        <div class="brand-mini"><span class="brand-logo-plate"><img data-logo alt="ADONAI ELECTRICAL"></span></div>
+      </div>
+    </div>
+    <div class="stack" style="padding-top:14px">
+      <div class="card card-pad stack-sm" id="tablero-datos">
+        <div class="eyebrow">Obra</div>
+        <div style="font-weight:800;font-size:1.02rem" id="tablero-obra">—</div>
+        <div style="font-size:0.8rem;color:var(--steel)" id="tablero-cliente">—</div>
+      </div>
+      <div class="tablero-stage" id="tablero-stage"></div>
+      <p style="font-size:0.74rem;color:var(--steel);margin:0;text-align:center">Pellizcá o girá el celular para verlo más grande.</p>
+      <div class="card card-pad" id="tablero-resumen-card">
+        <div class="section-label" style="margin-bottom:10px">Composición</div>
+        <div class="stack-sm" id="tablero-stats"></div>
+      </div>
+      <button class="btn btn-primary btn-block" id="btn-tablero-png"><svg><use href="#ic-download"/></svg> Descargar imagen</button>
+      <button class="btn btn-outline btn-block" id="btn-tablero-whatsapp"><svg><use href="#ic-send"/></svg> Compartir por WhatsApp</button>
+      <p style="font-size:0.72rem;color:var(--steel);margin:0 0 8px;text-align:center">Esquema ilustrativo para presentación al cliente. No reemplaza el plano de obra.</p>
+    </div>
   </main>
 
   <!-- ============================================================
