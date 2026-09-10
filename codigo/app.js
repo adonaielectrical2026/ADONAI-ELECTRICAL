@@ -171,7 +171,12 @@
     aire: 'Aire libre',
     enterrado: 'Enterrado bajo tierra',
   };
-  const BREAKER_RATINGS = [6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100];
+  // Hasta 100 A son térmicas DIN. De 125 A para arriba ya se entra en
+  // interruptores de caja moldeada, que son otra categoría de producto: cuestan
+  // bastante más y ocupan mucho más lugar en el tablero. El cálculo los usa
+  // igual, pero el precio y el dibujo los tratan aparte.
+  const BREAKER_RATINGS = [6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125, 160, 200];
+  const AMP_CAJA_MOLDEADA = 100;
   const CURVA_SUGERIDA = { iluminacion: 'B', tomacorrientes: 'C', fuerza: 'C' };
   // Secciones minimas por resistencia mecanica, RBT-UTE Anexo S9: derivacion para
   // alumbrado 0,75mm2; derivacion para tomacorrientes "en salto" 1,5mm2 (mas conservador
@@ -415,6 +420,11 @@
     codoCajaBandeja: 0,
     // Las térmicas DIN residenciales cotizaron parejo entre 6 y 40A en Fivisa; para 50A+ se
     // aplica un escalón proporcional (no relevado) porque suelen pasar a otro bastidor/marco.
+    // Arrancan en 0 a propósito: no están relevados y valen mucho más que una
+    // térmica DIN. Así aparecen en el presupuesto como un ítem en $0, bien
+    // visible, en vez de colarse con un precio inventado.
+    termicaCajaMoldeadaBipolar: 0,
+    termicaCajaMoldeadaTetrapolar: 0,
     termicaBipolarBase: 277,
     termicaTetrapolarBase: 294,
     cajaOctogonal: 72,
@@ -430,6 +440,9 @@
   };
   const DEFAULT_MANO_OBRA = { tarifaHora: 500, horasJornada: 8 };
   function precioTermica(tipo, amp, precios) {
+    if (amp > AMP_CAJA_MOLDEADA) {
+      return Number(tipo === 'bipolar' ? precios.termicaCajaMoldeadaBipolar : precios.termicaCajaMoldeadaTetrapolar) || 0;
+    }
     const base = tipo === 'bipolar' ? precios.termicaBipolarBase : precios.termicaTetrapolarBase;
     if (amp <= 40) return base;
     if (amp <= 63) return Math.round(base * 1.5);
@@ -494,7 +507,10 @@
         // 'aire' (aire libre): sin canalización
       }
       const tipoTermica = c.fases === 1 ? 'bipolar' : 'tetrapolar';
-      add('Térmica ' + tipoTermica + ' ' + calc.breaker + 'A curva ' + calc.curva, 'un.', 1, precioTermica(tipoTermica, calc.breaker, precios));
+      const nombreLlave = calc.breaker > AMP_CAJA_MOLDEADA
+        ? 'Interruptor de caja moldeada ' + tipoTermica + ' ' + calc.breaker + 'A'
+        : 'Térmica ' + tipoTermica + ' ' + calc.breaker + 'A curva ' + calc.curva;
+      add(nombreLlave, 'un.', 1, precioTermica(tipoTermica, calc.breaker, precios));
     });
     // Puntos de luz y de toma, según la cantidad cargada en cada carga del relevamiento.
     // Quedan como cualquier otro material: editables a mano si la cantidad real difiere.
@@ -545,17 +561,48 @@
 
   // Geometría del dibujo, en unidades del viewBox. TAB_MOD_W es un módulo DIN.
   const TAB_MOD_W = 34;
-  const TAB_DEV_H = 94;
-  const TAB_LABEL_H = 21;
-  const TAB_ROW_GAP = 18;
-  const TAB_PAD = 20;
+  const TAB_DEV_H = 104;
+  const TAB_LABEL_H = 36;
+  const TAB_ROW_GAP = 14;
+  const TAB_PAD = 26;
   const TAB_HEAD_H = 40;
   const TAB_LEY_ROW_H = 19;
 
-  // Ancho en módulos de cada llave. Mismo criterio que la lista de materiales:
-  // monofásico = bipolar (2 módulos), trifásico = tetrapolar (4 módulos).
-  function modulosLlave(fases) {
+  // Marcas de llaves DIN que se consiguen en plaza. Sólo se imprime el nombre
+  // en la cara de la llave, como referencia de qué se va a instalar: no se
+  // reproduce el logotipo ni la carcasa de ningún fabricante. El dibujo lleva
+  // aclarado que la marca es ilustrativa y que la definitiva la fija el
+  // presupuesto aprobado.
+  const TAB_MARCAS = [
+    { id: 'generica', etiqueta: 'Sin marca (genérica)', nombre: '' },
+    { id: 'schneider', etiqueta: 'Schneider Electric', nombre: 'Schneider' },
+    { id: 'abb', etiqueta: 'ABB', nombre: 'ABB' },
+    { id: 'siemens', etiqueta: 'Siemens', nombre: 'Siemens' },
+    { id: 'legrand', etiqueta: 'Legrand', nombre: 'Legrand' },
+    { id: 'hager', etiqueta: 'Hager', nombre: 'Hager' },
+    { id: 'chint', etiqueta: 'Chint', nombre: 'Chint' },
+    { id: 'baw', etiqueta: 'BAW', nombre: 'BAW' },
+    { id: 'steck', etiqueta: 'Steck', nombre: 'Steck' },
+  ];
+  function marcaNombre(id) {
+    const m = TAB_MARCAS.find((x) => x.id === id);
+    return m ? m.nombre : '';
+  }
+
+  // Ancho en módulos de cada llave. Hasta 63 A son térmicas DIN de un módulo
+  // por polo (monofásico = bipolar, trifásico = tetrapolar). De 80 a 100 A el
+  // cuerpo es más ancho, y por encima de 100 A ya es un interruptor de caja
+  // moldeada, bastante más grande. El ancho exacto cambia según el modelo: acá
+  // se usa un valor representativo para que el dibujo no muestre un 200 A del
+  // mismo tamaño que un 10 A.
+  function polosLlave(fases) {
     return fases === 1 ? 2 : 4;
+  }
+  function modulosLlave(fases, amp) {
+    const polos = polosLlave(fases);
+    if (!amp || amp <= 63) return polos;
+    if (amp <= AMP_CAJA_MOLDEADA) return Math.round(polos * 1.5);
+    return polos * 3;
   }
 
   function tableroDispositivos(draft) {
@@ -565,13 +612,14 @@
     const pg = calcularProteccionGeneral(draft);
     if (pg.aplica) {
       items.push({
-        tipo: 'termica', general: true, modulos: pg.termicaPolos,
-        cara: pg.termicaCurva + pg.termicaIn, caraSub: pg.termicaPolos + 'P',
-        rotulo: 'GENERAL', etiqueta: 'Térmica general',
-        detalle: pg.termicaIn + ' A · ' + pg.termicaPolos + 'P · curva ' + pg.termicaCurva,
+        tipo: 'termica', general: true, modulos: modulosLlave(sistema.fases, pg.termicaIn),
+        cara: pg.termicaIn > AMP_CAJA_MOLDEADA ? pg.termicaIn + 'A' : pg.termicaCurva + pg.termicaIn,
+        caraSub: pg.termicaPolos + 'P',
+        rotulo: 'GENERAL', etiqueta: pg.termicaIn > AMP_CAJA_MOLDEADA ? 'Interruptor general' : 'Térmica general',
+        detalle: pg.termicaIn + ' A · ' + pg.termicaPolos + 'P' + (pg.termicaIn > AMP_CAJA_MOLDEADA ? ' · caja moldeada' : ' · curva ' + pg.termicaCurva),
       });
       items.push({
-        tipo: 'diferencial', general: true, modulos: modulosLlave(sistema.fases),
+        tipo: 'diferencial', general: true, modulos: modulosLlave(sistema.fases, pg.diferencialIn),
         cara: pg.diferencialIn + 'A', caraSub: pg.diferencialSensibilidad + 'mA',
         rotulo: 'DIFERENCIAL', etiqueta: 'Diferencial general',
         detalle: pg.diferencialIn + ' A · ' + pg.diferencialSensibilidad + ' mA · tipo ' + pg.diferencialTipo,
@@ -581,11 +629,12 @@
       const calc = calcularCircuito(c);
       const nombre = c.nombre || ('Circuito ' + (i + 1));
       items.push({
-        tipo: 'termica', general: false, n: i + 1, modulos: modulosLlave(c.fases),
-        cara: calc.apto ? calc.curva + calc.breaker : '?', caraSub: modulosLlave(c.fases) + 'P',
+        tipo: 'termica', general: false, n: i + 1, modulos: modulosLlave(c.fases, calc.breaker),
+        cara: !calc.apto ? '?' : (calc.breaker > AMP_CAJA_MOLDEADA ? calc.breaker + 'A' : calc.curva + calc.breaker),
+        caraSub: polosLlave(c.fases) + 'P',
         rotulo: nombre, etiqueta: nombre,
         detalle: calc.apto
-          ? calc.breaker + ' A · curva ' + calc.curva + ' · ' + calc.seccionAdoptada + ' mm²'
+          ? calc.breaker + ' A · ' + (calc.breaker > AMP_CAJA_MOLDEADA ? 'caja moldeada' : 'curva ' + calc.curva) + ' · ' + calc.seccionAdoptada + ' mm²'
           : 'sin protección definida',
         pendiente: !calc.apto,
       });
@@ -628,68 +677,91 @@
   function svgTxt(s) {
     return String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
+  // Reparte un texto en varias líneas: <text> de SVG no hace salto de línea solo.
+  function envolver(s, maxChars) {
+    const lineas = [];
+    let actual = '';
+    String(s || '').split(' ').forEach((palabra) => {
+      const prueba = actual ? actual + ' ' + palabra : palabra;
+      if (prueba.length > maxChars && actual) { lineas.push(actual); actual = palabra; }
+      else actual = prueba;
+    });
+    if (actual) lineas.push(actual);
+    return lineas;
+  }
+
   // Recorta el texto al ancho disponible de la franja de etiquetas.
   function recortar(s, maxChars) {
     s = String(s || '');
     return s.length <= maxChars ? s : s.slice(0, Math.max(1, maxChars - 1)).trimEnd() + '…';
   }
 
-  // Una llave: cuerpo, borneras con tornillos, separación de polos, palanca en
-  // posición de cerrado y el valor impreso en la cara.
-  function svgLlave(it, x, y) {
+  // Una llave: cuerpo, borneras con tornillos, separación de polos, marca
+  // impresa, valor nominal y palanca en posición de cerrado.
+  function svgLlave(it, x, y, marca) {
     const w = it.modulos * TAB_MOD_W;
     const h = TAB_DEV_H;
     const cx = x + w / 2;
     const bandH = 15;
     const o = [];
-    o.push('<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="3" fill="url(#tabCuerpo)" stroke="#c3c6cb" stroke-width="1"/>');
+    o.push('<g filter="url(#tabSombraLlave)">');
+    o.push('<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="3" fill="url(#tabCuerpo)" stroke="#b9bdc2" stroke-width="1"/>');
+    // brillo del borde superior: la luz entra de arriba
+    o.push('<path d="M' + (x + 3) + ' ' + (y + 1.2) + ' H' + (x + w - 3) + '" stroke="#ffffff" stroke-width="1.2" stroke-linecap="round" opacity="0.9"/>');
     // borneras superior e inferior
-    o.push('<rect x="' + (x + 1) + '" y="' + (y + 1) + '" width="' + (w - 2) + '" height="' + bandH + '" fill="#dcdee2"/>');
-    o.push('<rect x="' + (x + 1) + '" y="' + (y + h - bandH - 1) + '" width="' + (w - 2) + '" height="' + bandH + '" fill="#dcdee2"/>');
-    o.push('<line x1="' + x + '" y1="' + (y + bandH + 1) + '" x2="' + (x + w) + '" y2="' + (y + bandH + 1) + '" stroke="#c3c6cb" stroke-width="1"/>');
-    o.push('<line x1="' + x + '" y1="' + (y + h - bandH - 1) + '" x2="' + (x + w) + '" y2="' + (y + h - bandH - 1) + '" stroke="#c3c6cb" stroke-width="1"/>');
+    o.push('<rect x="' + (x + 1) + '" y="' + (y + 1) + '" width="' + (w - 2) + '" height="' + bandH + '" fill="url(#tabBornera)"/>');
+    o.push('<rect x="' + (x + 1) + '" y="' + (y + h - bandH - 1) + '" width="' + (w - 2) + '" height="' + bandH + '" fill="url(#tabBornera)"/>');
+    o.push('<line x1="' + x + '" y1="' + (y + bandH + 1) + '" x2="' + (x + w) + '" y2="' + (y + bandH + 1) + '" stroke="#b9bdc2" stroke-width="0.9"/>');
+    o.push('<line x1="' + x + '" y1="' + (y + h - bandH - 1) + '" x2="' + (x + w) + '" y2="' + (y + h - bandH - 1) + '" stroke="#b9bdc2" stroke-width="0.9"/>');
     // un tornillo por polo, arriba y abajo
     for (let k = 0; k < it.modulos; k++) {
       const sx = x + k * TAB_MOD_W + TAB_MOD_W / 2;
       [y + bandH / 2 + 1, y + h - bandH / 2 - 1].forEach((sy) => {
-        o.push('<circle cx="' + sx + '" cy="' + sy + '" r="4.2" fill="#cbced3" stroke="#adb1b7" stroke-width="0.9"/>');
-        o.push('<line x1="' + (sx - 2.6) + '" y1="' + sy + '" x2="' + (sx + 2.6) + '" y2="' + sy + '" stroke="#8d9198" stroke-width="1.1"/>');
+        o.push('<circle cx="' + sx + '" cy="' + sy + '" r="4.4" fill="url(#tabTornillo)" stroke="#9aa0a6" stroke-width="0.9"/>');
+        o.push('<line x1="' + (sx - 2.7) + '" y1="' + sy + '" x2="' + (sx + 2.7) + '" y2="' + sy + '" stroke="#7d8288" stroke-width="1.2"/>');
       });
       // separación entre polos
       if (k > 0) {
         const lx = x + k * TAB_MOD_W;
-        o.push('<line x1="' + lx + '" y1="' + (y + bandH + 1) + '" x2="' + lx + '" y2="' + (y + h - bandH - 1) + '" stroke="#dcdee2" stroke-width="1"/>');
+        o.push('<line x1="' + lx + '" y1="' + (y + bandH + 1) + '" x2="' + lx + '" y2="' + (y + h - bandH - 1) + '" stroke="#d6d9dd" stroke-width="1"/>');
       }
     }
-    // Valor impreso en la cara. El cuerpo de letra acompaña el ancho de la
-    // llave: con un tamaño fijo, una tetrapolar queda con la cara vacía.
-    const caraSize = 11.5 + (it.modulos - 2) * 1.7;
-    o.push('<text x="' + cx + '" y="' + (y + bandH + 15) + '" text-anchor="middle" font-size="' + caraSize + '" font-weight="700" fill="#2f3033" letter-spacing="0.2">' + svgTxt(it.cara) + '</text>');
+    // Marca impresa, donde va en una llave real: arriba de todo en la cara.
+    if (marca) {
+      o.push('<text x="' + cx + '" y="' + (y + 27) + '" text-anchor="middle" font-size="7" font-weight="700" fill="#84888e" letter-spacing="0.5">' + svgTxt(recortar(marca, Math.floor((w - 8) / 3.9))) + '</text>');
+    }
+    // Valor nominal. El cuerpo de letra acompaña el ancho de la llave: con un
+    // tamaño fijo, una tetrapolar queda con la cara vacía.
+    const caraSize = 12 + (it.modulos - 2) * 1.8;
+    o.push('<text x="' + cx + '" y="' + (y + 42) + '" text-anchor="middle" font-size="' + caraSize + '" font-weight="700" fill="#26282b" letter-spacing="0.2">' + svgTxt(it.cara) + '</text>');
     if (it.caraSub) {
-      o.push('<text x="' + cx + '" y="' + (y + bandH + 26) + '" text-anchor="middle" font-size="8" font-weight="600" fill="#6f7277">' + svgTxt(it.caraSub) + '</text>');
+      o.push('<text x="' + cx + '" y="' + (y + 52) + '" text-anchor="middle" font-size="7.5" font-weight="600" fill="#7d8288">' + svgTxt(it.caraSub) + '</text>');
     }
     // botón de prueba del diferencial
     if (it.tipo === 'diferencial') {
-      const bx = x + w - 15, by = y + bandH + 5;
-      o.push('<rect x="' + bx + '" y="' + by + '" width="11" height="11" rx="1.5" fill="#171719"/>');
-      o.push('<text x="' + (bx + 5.5) + '" y="' + (by + 8.2) + '" text-anchor="middle" font-size="7.5" font-weight="700" fill="#ffffff">T</text>');
+      // pegado al valor, no al borde: en una llave ancha quedaba suelto lejos
+      const bx = Math.min(x + w - 16, cx + 32), by = y + 42;
+      o.push('<rect x="' + bx + '" y="' + by + '" width="12" height="12" rx="1.8" fill="#1c1d20"/>');
+      o.push('<rect x="' + bx + '" y="' + by + '" width="12" height="4" rx="1.8" fill="#33353a"/>');
+      o.push('<text x="' + (bx + 6) + '" y="' + (by + 9.2) + '" text-anchor="middle" font-size="7.5" font-weight="700" fill="#ffffff">T</text>');
     }
     // Hueco y palanca, en posición de cerrado (banda roja a la vista). En las
     // llaves de varios polos la palanca es una barra que los une y ocupa buena
     // parte del frente, igual que en una llave real: si se dibujara del mismo
     // ancho que en una bipolar, una tetrapolar quedaría casi vacía.
-    const palancaW = 15 + (it.modulos - 1) * 9;
+    const palancaW = 16 + (it.modulos - 1) * 9;
     const huecoW = palancaW + 14;
-    const ry = y + h / 2 - 3;
-    const huecoH = 33;
-    o.push('<rect x="' + (cx - huecoW / 2) + '" y="' + ry + '" width="' + huecoW + '" height="' + huecoH + '" rx="3" fill="#dfe1e5" stroke="#c9ccd1" stroke-width="0.9"/>');
+    const ry = y + 56;
+    const huecoH = 31;
+    o.push('<rect x="' + (cx - huecoW / 2) + '" y="' + ry + '" width="' + huecoW + '" height="' + huecoH + '" rx="3" fill="url(#tabHuecoPalanca)" stroke="#bfc3c8" stroke-width="0.9"/>');
     o.push('<rect x="' + (cx - palancaW / 2) + '" y="' + (ry + 3.5) + '" width="' + palancaW + '" height="' + (huecoH - 7) + '" rx="2.5" fill="url(#tabPalanca)"/>');
-    o.push('<rect x="' + (cx - palancaW / 2) + '" y="' + (ry + 3.5) + '" width="' + palancaW + '" height="6" rx="2.5" fill="#b3261e"/>');
+    o.push('<rect x="' + (cx - palancaW / 2) + '" y="' + (ry + 3.5) + '" width="' + palancaW + '" height="6" rx="2.5" fill="url(#tabRojo)"/>');
     // estrías de agarre de la palanca
-    const ribW = Math.min(palancaW - 8, 26);
-    [15, 19, 23].forEach((dy) => {
-      o.push('<line x1="' + (cx - ribW / 2) + '" y1="' + (ry + dy) + '" x2="' + (cx + ribW / 2) + '" y2="' + (ry + dy) + '" stroke="#71757b" stroke-width="1"/>');
+    const ribW = Math.min(palancaW - 8, 28);
+    [14, 18, 22].forEach((dy) => {
+      o.push('<line x1="' + (cx - ribW / 2) + '" y1="' + (ry + dy) + '" x2="' + (cx + ribW / 2) + '" y2="' + (ry + dy) + '" stroke="#6b6f75" stroke-width="1"/>');
     });
+    o.push('</g>');
     return o.join('');
   }
 
@@ -697,13 +769,13 @@
   function svgTapaCiega(x, y, modulos) {
     const w = modulos * TAB_MOD_W;
     const o = [];
-    o.push('<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + TAB_DEV_H + '" rx="3" fill="#e3e5e8" stroke="#cdd0d5" stroke-width="1"/>');
+    o.push('<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + TAB_DEV_H + '" rx="3" fill="url(#tabCiega)" stroke="#c4c8cd" stroke-width="1"/>');
     for (let k = 0; k < modulos; k++) {
       const lx = x + k * TAB_MOD_W;
-      if (k > 0) o.push('<line x1="' + lx + '" y1="' + (y + 4) + '" x2="' + lx + '" y2="' + (y + TAB_DEV_H - 4) + '" stroke="#d5d8dc" stroke-width="1"/>');
+      if (k > 0) o.push('<line x1="' + lx + '" y1="' + (y + 4) + '" x2="' + lx + '" y2="' + (y + TAB_DEV_H - 4) + '" stroke="#d2d5da" stroke-width="1"/>');
       const mx = lx + TAB_MOD_W / 2;
       [-4, 0, 4].forEach((dy) => {
-        o.push('<line x1="' + (mx - 8) + '" y1="' + (y + TAB_DEV_H / 2 + dy) + '" x2="' + (mx + 8) + '" y2="' + (y + TAB_DEV_H / 2 + dy) + '" stroke="#c8cbd0" stroke-width="1.5"/>');
+        o.push('<line x1="' + (mx - 8) + '" y1="' + (y + TAB_DEV_H / 2 + dy) + '" x2="' + (mx + 8) + '" y2="' + (y + TAB_DEV_H / 2 + dy) + '" stroke="#c4c8cd" stroke-width="1.5"/>');
       });
     }
     return o.join('');
@@ -711,43 +783,74 @@
 
   /**
    * Devuelve el SVG del frente del tablero.
-   * opts: { titulo, subtitulo, leyenda }
+   * opts: { titulo, subtitulo, leyenda, marca }
    */
   function tableroSvg(layout, opts) {
     opts = opts || {};
+    const marca = opts.marca || '';
     const filas = layout.filas;
     const anchoFila = Math.max.apply(null, filas.map((f) => f.cap));
     const W = TAB_PAD * 2 + anchoFila * TAB_MOD_W;
     const filaAlto = TAB_DEV_H + TAB_LABEL_H;
-    const primeraFilaY = 12 + TAB_HEAD_H + 20;
-    const gabH = primeraFilaY + filas.length * filaAlto + (filas.length - 1) * TAB_ROW_GAP + 22;
+    const headY = 32;
+    const primeraFilaY = headY + TAB_HEAD_H + 22;
+    const gabH = primeraFilaY + filas.length * filaAlto + (filas.length - 1) * TAB_ROW_GAP + 30;
     const leyenda = opts.leyenda !== false;
-    const leyH = leyenda ? 16 + 20 + layout.items.length * TAB_LEY_ROW_H + 22 : 0;
-    const H = gabH + leyH;
+    // Las notas al pie se reparten en líneas antes de medir: si no, el alto
+    // calculado se queda corto y el texto sale cortado abajo.
+    const notas = [];
+    if (marca) {
+      notas.push('Marca ilustrada: ' + marca + '. Las marcas son a modo ilustrativo — se instalarán las que correspondan según el presupuesto aprobado.');
+    }
+    notas.push('Esquema ilustrativo del frente — ' + layout.modulos + ' de ' + layout.gabinete + ' módulos ocupados. No es un plano constructivo.');
+    const notaLineas = notas.reduce((acc, n) => acc.concat(envolver(n, Math.floor(W / 4.1))), []);
+    const leyH = leyenda ? 16 + 20 + layout.items.length * TAB_LEY_ROW_H + 12 + notaLineas.length * 11 : 0;
+    // margen para que la sombra exterior del gabinete no quede cortada
+    const MG = 10;
+    const H = gabH + leyH + MG * 2;
 
     const o = [];
-    o.push('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '" font-family="Helvetica, Arial, sans-serif">');
+    o.push('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + (W + MG * 2) + ' ' + H + '" width="' + (W + MG * 2) + '" height="' + H + '" font-family="Helvetica, Arial, sans-serif">');
     o.push('<defs>' +
-      '<linearGradient id="tabCuerpo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fbfbfc"/><stop offset="0.55" stop-color="#f1f2f3"/><stop offset="1" stop-color="#e4e6e9"/></linearGradient>' +
-      '<linearGradient id="tabPalanca" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a4d52"/><stop offset="1" stop-color="#25272a"/></linearGradient>' +
-      '<linearGradient id="tabTapa" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f2f3f4"/><stop offset="1" stop-color="#e6e8ea"/></linearGradient>' +
-      '<linearGradient id="tabHueco" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#b9bcc1"/><stop offset="0.12" stop-color="#d2d5d9"/><stop offset="1" stop-color="#dfe1e4"/></linearGradient>' +
+      '<linearGradient id="tabCuerpo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fdfdfe"/><stop offset="0.45" stop-color="#f0f1f3"/><stop offset="1" stop-color="#dfe2e5"/></linearGradient>' +
+      '<linearGradient id="tabBornera" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e6e8eb"/><stop offset="1" stop-color="#d2d5da"/></linearGradient>' +
+      '<linearGradient id="tabCiega" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#eceef0"/><stop offset="1" stop-color="#dbdee2"/></linearGradient>' +
+      '<linearGradient id="tabPalanca" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#54585e"/><stop offset="0.5" stop-color="#3a3d42"/><stop offset="1" stop-color="#212327"/></linearGradient>' +
+      '<linearGradient id="tabRojo" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#d1362c"/><stop offset="1" stop-color="#9e2019"/></linearGradient>' +
+      '<radialGradient id="tabTornillo" cx="0.35" cy="0.3" r="0.8"><stop offset="0" stop-color="#eef0f2"/><stop offset="1" stop-color="#c2c6cb"/></radialGradient>' +
+      '<linearGradient id="tabHuecoPalanca" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#c8ccd1"/><stop offset="0.25" stop-color="#dcdfe3"/><stop offset="1" stop-color="#e8eaed"/></linearGradient>' +
+      '<linearGradient id="tabMarco" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3a3c41"/><stop offset="0.06" stop-color="#1b1c1f"/><stop offset="0.94" stop-color="#141518"/><stop offset="1" stop-color="#000000"/></linearGradient>' +
+      '<linearGradient id="tabTapa" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f6f7f8"/><stop offset="1" stop-color="#e2e4e7"/></linearGradient>' +
+      '<linearGradient id="tabHueco" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#9ea3a9"/><stop offset="0.08" stop-color="#c4c8cd"/><stop offset="0.5" stop-color="#d8dbdf"/><stop offset="1" stop-color="#e9ebed"/></linearGradient>' +
+      '<filter id="tabSombraLlave" x="-30%" y="-20%" width="160%" height="150%"><feDropShadow dx="0" dy="1.4" stdDeviation="1.4" flood-color="#0b0b0c" flood-opacity="0.28"/></filter>' +
+      '<filter id="tabSombraGab" x="-20%" y="-15%" width="140%" height="140%"><feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#0b0b0c" flood-opacity="0.30"/></filter>' +
       '</defs>');
-    o.push('<rect width="' + W + '" height="' + H + '" fill="#ffffff"/>');
+    o.push('<rect width="' + (W + MG * 2) + '" height="' + H + '" fill="#ffffff"/>');
+    o.push('<g transform="translate(' + MG + ',' + MG + ')">');
 
-    // gabinete: marco oscuro + tapa
-    o.push('<rect x="0" y="0" width="' + W + '" height="' + gabH + '" rx="12" fill="#17181b"/>');
-    o.push('<rect x="7" y="7" width="' + (W - 14) + '" height="' + (gabH - 14) + '" rx="7" fill="url(#tabTapa)" stroke="#cdd0d5" stroke-width="1"/>');
+    // gabinete: marco oscuro, canto de la puerta y tapa
+    o.push('<g filter="url(#tabSombraGab)">');
+    o.push('<rect x="0" y="0" width="' + W + '" height="' + gabH + '" rx="13" fill="url(#tabMarco)"/>');
+    o.push('</g>');
+    o.push('<rect x="5" y="5" width="' + (W - 10) + '" height="' + (gabH - 10) + '" rx="9" fill="none" stroke="#43464b" stroke-width="1"/>');
+    o.push('<rect x="9" y="9" width="' + (W - 18) + '" height="' + (gabH - 18) + '" rx="7" fill="url(#tabTapa)" stroke="#c4c8cd" stroke-width="1"/>');
+    // bisagras a la izquierda y pestillo a la derecha
+    [gabH * 0.28, gabH * 0.72].forEach((hy) => {
+      o.push('<rect x="1.5" y="' + (hy - 11) + '" width="4" height="22" rx="2" fill="#4a4d52"/>');
+    });
+    o.push('<rect x="' + (W - 5.5) + '" y="' + (gabH / 2 - 9) + '" width="4" height="18" rx="2" fill="#4a4d52"/>');
     // tornillos de la tapa
-    [[16, 16], [W - 16, 16], [16, gabH - 16], [W - 16, gabH - 16]].forEach((p) => {
-      o.push('<circle cx="' + p[0] + '" cy="' + p[1] + '" r="3.4" fill="#d3d6da" stroke="#b0b4b9" stroke-width="0.9"/>');
+    [[17, 17], [W - 17, 17], [17, gabH - 17], [W - 17, gabH - 17]].forEach((p) => {
+      o.push('<circle cx="' + p[0] + '" cy="' + p[1] + '" r="3.6" fill="url(#tabTornillo)" stroke="#a8adb3" stroke-width="0.9"/>');
+      o.push('<line x1="' + (p[0] - 2.2) + '" y1="' + p[1] + '" x2="' + (p[0] + 2.2) + '" y2="' + p[1] + '" stroke="#8d9298" stroke-width="1"/>');
     });
 
     // chapa de identificación
-    const hx = TAB_PAD, hy = 14, hw = W - TAB_PAD * 2;
+    const hx = TAB_PAD, hy = headY, hw = W - TAB_PAD * 2;
     o.push('<rect x="' + hx + '" y="' + hy + '" width="' + hw + '" height="' + TAB_HEAD_H + '" rx="5" fill="#0b0b0c"/>');
+    o.push('<rect x="' + hx + '" y="' + hy + '" width="' + hw + '" height="' + (TAB_HEAD_H / 2) + '" rx="5" fill="#ffffff" opacity="0.05"/>');
     o.push('<text x="' + (hx + 14) + '" y="' + (hy + 18) + '" font-size="12.5" fill="#ffffff" letter-spacing="1.6">ADONAI<tspan font-weight="800"> ELECTRICAL</tspan></text>');
-    o.push('<text x="' + (hx + 14) + '" y="' + (hy + 31) + '" font-size="8.5" fill="#9b9da3" letter-spacing="0.6">' + svgTxt(opts.subtitulo || 'Energía con propósito') + '</text>');
+    o.push('<text x="' + (hx + 14) + '" y="' + (hy + 31) + '" font-size="8.5" fill="#9b9da3" letter-spacing="0.6">' + svgTxt(recortar(opts.subtitulo || 'Energía con propósito', 34)) + '</text>');
     if (opts.titulo) {
       o.push('<text x="' + (hx + hw - 14) + '" y="' + (hy + 25) + '" text-anchor="end" font-size="10" font-weight="700" fill="#ffffff">' + svgTxt(recortar(opts.titulo, Math.floor((hw - 210) / 5.6))) + '</text>');
     }
@@ -758,16 +861,16 @@
       const filaW = fila.cap * TAB_MOD_W;
       const filaX = TAB_PAD + (anchoFila - fila.cap) * TAB_MOD_W / 2;
       // ventana de la tapa
-      o.push('<rect x="' + (filaX - 7) + '" y="' + (filaY - 7) + '" width="' + (filaW + 14) + '" height="' + (TAB_DEV_H + 14) + '" rx="5" fill="url(#tabHueco)" stroke="#c2c5ca" stroke-width="1"/>');
+      o.push('<rect x="' + (filaX - 8) + '" y="' + (filaY - 8) + '" width="' + (filaW + 16) + '" height="' + (TAB_DEV_H + 16) + '" rx="5" fill="url(#tabHueco)" stroke="#b4b8be" stroke-width="1"/>');
       let x = filaX;
       fila.items.forEach((it) => {
-        o.push(svgLlave(it, x, filaY));
+        o.push(svgLlave(it, x, filaY, marca));
         // franja de rótulo debajo de cada llave
         const w = it.modulos * TAB_MOD_W;
-        const ly = filaY + TAB_DEV_H + 11;
-        o.push('<rect x="' + (x + 1) + '" y="' + (ly - 2) + '" width="' + (w - 2) + '" height="' + (TAB_LABEL_H - 6) + '" rx="2" fill="#ffffff" stroke="#d8dade" stroke-width="0.8"/>');
+        const ly = filaY + TAB_DEV_H + 16;
+        o.push('<rect x="' + (x + 1) + '" y="' + ly + '" width="' + (w - 2) + '" height="18" rx="2" fill="#ffffff" stroke="#cfd2d7" stroke-width="0.8"/>');
         const pre = it.n ? it.n + '·' : '';
-        o.push('<text x="' + (x + w / 2) + '" y="' + (ly + 8.5) + '" text-anchor="middle" font-size="7.5" font-weight="600" fill="#2f3033">' +
+        o.push('<text x="' + (x + w / 2) + '" y="' + (ly + 12) + '" text-anchor="middle" font-size="7.5" font-weight="600" fill="#2f3033">' +
           svgTxt(recortar(pre + it.rotulo, Math.floor((w - 6) / 4.2))) + '</text>');
         x += w;
       });
@@ -777,26 +880,29 @@
 
     // leyenda
     if (leyenda) {
-      let ly = gabH + 26;
+      let ly = gabH + 30;
       o.push('<text x="1" y="' + ly + '" font-size="9" font-weight="700" fill="#6f7277" letter-spacing="1.2">DETALLE DEL TABLERO</text>');
       ly += 18;
       layout.items.forEach((it) => {
-        const marca = it.n ? String(it.n) : '•';
+        const señal = it.n ? String(it.n) : '•';
         o.push('<rect x="1" y="' + (ly - 9) + '" width="15" height="13" rx="3" fill="' + (it.n ? '#0b0b0c' : '#6f7277') + '"/>');
-        o.push('<text x="8.5" y="' + (ly + 0.5) + '" text-anchor="middle" font-size="8" font-weight="700" fill="#ffffff">' + svgTxt(marca) + '</text>');
+        o.push('<text x="8.5" y="' + (ly + 0.5) + '" text-anchor="middle" font-size="8" font-weight="700" fill="#ffffff">' + svgTxt(señal) + '</text>');
         o.push('<text x="22" y="' + ly + '" font-size="9.5" font-weight="600" fill="#171719">' + svgTxt(recortar(it.etiqueta, 34)) + '</text>');
         o.push('<text x="' + (W - 4) + '" y="' + ly + '" text-anchor="end" font-size="9.5" fill="' + (it.pendiente ? '#b3261e' : '#6f7277') + '">' + svgTxt(it.detalle) + '</text>');
         o.push('<line x1="1" y1="' + (ly + 6) + '" x2="' + (W - 4) + '" y2="' + (ly + 6) + '" stroke="#e8e9eb" stroke-width="0.8"/>');
         ly += TAB_LEY_ROW_H;
       });
-      o.push('<text x="1" y="' + (ly + 8) + '" font-size="8" font-style="italic" fill="#9b9da3">' +
-        svgTxt('Esquema ilustrativo del frente — ' + layout.modulos + ' de ' + layout.gabinete + ' módulos ocupados. No es un plano constructivo.') + '</text>');
+      ly += 8;
+      notaLineas.forEach((linea) => {
+        o.push('<text x="1" y="' + ly + '" font-size="8" font-style="italic" fill="#9b9da3">' + svgTxt(linea) + '</text>');
+        ly += 11;
+      });
     }
 
+    o.push('</g>');
     o.push('</svg>');
     return o.join('');
   }
-
   // Convierte el SVG a PNG usando el canvas del navegador. Sirve tanto para
   // descargar la imagen como para insertarla en el PDF del presupuesto.
   function tableroPng(svg, escala) {
@@ -836,6 +942,12 @@
   try { DB = JSON.parse(localStorage.getItem(STORAGE_KEY)) || defaultDB(); } catch (e) { DB = defaultDB(); }
   if (!DB.settings) DB.settings = { margen: 30, iva: 22 };
   if (!DB.settings.precios) DB.settings.precios = clonePrecios(DEFAULT_PRECIOS);
+  // Un catálogo guardado en una versión anterior de la app no tiene las claves
+  // que se agregaron después. Se completan con el valor de fábrica, sin tocar
+  // los precios que el usuario ya editó.
+  Object.keys(DEFAULT_PRECIOS).forEach((k) => {
+    if (DB.settings.precios[k] === undefined) DB.settings.precios[k] = clonePrecios(DEFAULT_PRECIOS[k]);
+  });
   if (!DB.settings.manoObra) DB.settings.manoObra = { ...DEFAULT_MANO_OBRA };
   if (!DB.seq) DB.seq = { trabajo: 0, presupuesto: 0 };
 
@@ -1375,7 +1487,9 @@
     if (!layout) return;
     $('#resumen-tablero-modulos').textContent = layout.modulos + ' de ' + layout.gabinete + ' módulos';
     // La miniatura va sin leyenda: acá alcanza con ver la forma del frente.
-    $('#resumen-tablero-preview').innerHTML = tableroSvg(layout, { leyenda: false, titulo: draft.obra.nombre });
+    $('#resumen-tablero-preview').innerHTML = tableroSvg(layout, {
+      leyenda: false, titulo: draft.obra.nombre, marca: marcaNombre(draft.tableroMarca),
+    });
   }
 
   function openTablero() {
@@ -1392,6 +1506,7 @@
       svg: tableroSvg(layout, {
         titulo: draft.obra.nombre,
         subtitulo: draft.cliente.nombre || 'Energía con propósito',
+        marca: marcaNombre(draft.tableroMarca),
       }),
     };
   }
@@ -1399,6 +1514,11 @@
   function renderTablero() {
     $('#tablero-obra').textContent = draft.obra.nombre || 'Obra sin nombre';
     $('#tablero-cliente').textContent = draft.cliente.nombre || 'Cliente sin definir';
+    const selMarca = $('#tablero-marca');
+    if (!selMarca.options.length) {
+      selMarca.innerHTML = TAB_MARCAS.map((m) => '<option value="' + m.id + '">' + escapeHtml(m.etiqueta) + '</option>').join('');
+    }
+    selMarca.value = draft.tableroMarca || 'generica';
     const actual = tableroSvgActual();
     const stage = $('#tablero-stage');
     const statsCard = $('#tablero-resumen-card');
@@ -1642,8 +1762,10 @@
       campos: [
         { key: 'termicaBipolarBase', tipo: 'plano', etiqueta: 'Térmica bipolar (hasta 40A)' },
         { key: 'termicaTetrapolarBase', tipo: 'plano', etiqueta: 'Térmica tetrapolar (hasta 40A)' },
+        { key: 'termicaCajaMoldeadaBipolar', tipo: 'plano', etiqueta: 'Caja moldeada bipolar (125 a 200A)' },
+        { key: 'termicaCajaMoldeadaTetrapolar', tipo: 'plano', etiqueta: 'Caja moldeada tetrapolar (125 a 200A)' },
       ],
-      nota: 'De 50 a 63A se cobra 1,5× este valor; de 80 a 100A, 2,5× — no relevado, es un escalón proporcional.',
+      nota: 'De 50 a 63A se cobra 1,5× la térmica base; de 80 a 100A, 2,5× — no relevado, es un escalón proporcional. De 125A para arriba ya no es una térmica DIN sino un interruptor de caja moldeada: viene en $0 hasta que cargues el precio real, así no se cuela una cifra inventada en el presupuesto.',
     },
     {
       titulo: 'Puntos de luz y de toma ($/un.)',
@@ -1891,6 +2013,14 @@
       renderTableroPreview();
     });
     $('#btn-ver-tablero').addEventListener('click', openTablero);
+    $('#tablero-marca').addEventListener('change', () => {
+      draft.tableroMarca = $('#tablero-marca').value;
+      // El botón "atrás" de esta pantalla no pasa por el guardado del
+      // relevamiento, así que sin esto la marca elegida se perdía al salir.
+      persistDraft();
+      renderTablero();
+      renderTableroPreview();
+    });
     $('#btn-tablero-png').addEventListener('click', descargarTableroPng);
     $('#btn-tablero-whatsapp').addEventListener('click', compartirTableroPorWhatsapp);
     $('#btn-enviar-revision').addEventListener('click', () => { persistDraft('revision'); toast('Enviado a revisión'); showView('home'); });
@@ -2118,6 +2248,7 @@
         const svgTablero = tableroSvg(layoutTablero, {
           titulo: trabajo.obra.nombre,
           subtitulo: p.clienteNombre || 'Energía con propósito',
+          marca: marcaNombre(trabajo.tableroMarca),
         });
         const png = await tableroPng(svgTablero, 2.5);
         doc.addPage();
