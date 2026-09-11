@@ -95,6 +95,14 @@
     { cat: 'cargaFija', grupo: 'Otros', nombre: 'Cargador de auto eléctrico', w: 7400, cosPhi: 1 },
     { cat: 'cargaFija', grupo: 'Otros', nombre: 'Motor / otro', w: 750, cosPhi: 0.8 },
   ];
+  // Uso del circuito. Define la sección mínima reglamentaria, la curva de la
+  // térmica y la caída de tensión admisible, así que tiene que poder elegirse:
+  // una térmica de iluminación va en curva B y una de fuerza en C.
+  const USOS = [
+    { id: 'iluminacion', label: 'Iluminación' },
+    { id: 'tomacorrientes', label: 'Tomacorrientes' },
+    { id: 'fuerza', label: 'Fuerza / carga fija' },
+  ];
   const SISTEMAS = {
     mono: { id: 'mono', label: 'Monofásico 230V', v: 230, fases: 1 },
     tri_it: { id: 'tri_it', label: 'Trifásico 230V (sistema IT)', v: 230, fases: 3 },
@@ -1473,6 +1481,12 @@
         '<div class="field"><label>Método</label><select class="select" data-f="metodo">' + Object.keys(METODO_LABEL).map((k) => '<option value="' + k + '"' + (c.metodo === k ? ' selected' : '') + '>' + METODO_LABEL[k] + '</option>').join('') + '</select></div>' +
         '<div class="field"><label>Temp. amb. (°C)</label><input class="input" type="number" data-f="tempAmb" value="' + c.tempAmb + '"></div>' +
         '<div class="field"><label>Agrupados</label><input class="input" type="number" min="1" data-f="agrupados" value="' + c.agrupados + '"></div>' +
+        '<div class="field"><label>Uso</label><select class="select" data-f="uso">' +
+        USOS.map((u) => '<option value="' + u.id + '"' + ((c.uso || 'fuerza') === u.id ? ' selected' : '') + '>' + u.label + '</option>').join('') +
+        '</select></div>' +
+        '<div class="field"><label>Aislación</label><select class="select" data-f="aislacion">' +
+        '<option value="pvc"' + ((c.aislacion || 'pvc') === 'pvc' ? ' selected' : '') + '>PVC</option>' +
+        '<option value="xlpe"' + (c.aislacion === 'xlpe' ? ' selected' : '') + '>XLPE</option></select></div>' +
         '<div class="field"><label>Caída máx. (%)</label><input class="input" type="number" step="0.5" data-f="caidaMax" value="' + c.caidaMax + '"></div>' +
         '<div class="field"><label>cos φ</label><input class="input" type="number" step="0.05" min="0" max="1" data-f="cosPhi" value="' + c.cosPhi + '"></div>' +
         '</div>' +
@@ -1485,7 +1499,11 @@
       card.querySelectorAll('[data-f]').forEach((input) => {
         input.addEventListener('change', () => {
           const f = input.dataset.f;
-          c[f] = (f === 'nombre' || f === 'material' || f === 'metodo') ? input.value : Number(input.value);
+          const esTexto = f === 'nombre' || f === 'material' || f === 'metodo' || f === 'uso' || f === 'aislacion';
+          c[f] = esTexto ? input.value : Number(input.value);
+          // Cada uso trae su propia caída máxima admisible: iluminación admite
+          // menos que fuerza. Al cambiar el uso se acompaña el valor.
+          if (f === 'uso') c.caidaMax = CAIDA_MAX_DEFAULT[input.value] || 5;
           renderCircuitosList();
         });
       });
@@ -1968,7 +1986,9 @@
     $('#f-sistema').addEventListener('change', renderPotenciaResultado);
     $('#btn-add-circuito').addEventListener('click', () => {
       const sistema = SISTEMAS[draft.sistemaId];
-      draft.circuitos.push({ id: uid('m2'), nombre: '', ib: 10, v: sistema.v, fases: sistema.fases, l: 15, material: 'cobre', metodo: 'embutido', tempAmb: 30, agrupados: 1, caidaMax: 5, cosPhi: 1, uso: 'fuerza' });
+      draft.circuitos.push({ id: uid('m2'), nombre: '', ib: 10, v: sistema.v, fases: sistema.fases, l: 15,
+        material: 'cobre', metodo: 'embutido', aislacion: 'pvc', tempAmb: 30, agrupados: 1,
+        caidaMax: CAIDA_MAX_DEFAULT.fuerza, cosPhi: 1, uso: 'fuerza' });
       renderCircuitosList();
     });
     $('#btn-add-material').addEventListener('click', () => {
