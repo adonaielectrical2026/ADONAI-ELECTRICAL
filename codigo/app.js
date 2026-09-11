@@ -518,8 +518,10 @@
     codoCajaBandeja: 0,
     // Las térmicas DIN residenciales cotizaron parejo entre 6 y 40A en Fivisa; para 50A+ se
     // aplica un escalón proporcional (no relevado) porque suelen pasar a otro bastidor/marco.
-    // La unipolar no está relevada: sale de la bipolar por proporción. Confirmalo.
-    termicaUnipolarBase: 166,
+    // Relevado en Fivisa, línea Hyundai HGD63S, la misma con la que coincide la
+    // bipolar: 1P 16A 4,5kA (HY1116S) $80 de lista. La proporción que se usaba
+    // antes daba más del doble.
+    termicaUnipolarBase: 80,
     termicaBipolarBase: 277,
     termicaTetrapolarBase: 294,
     cajaOctogonal: 72,
@@ -531,9 +533,11 @@
     // de 12). El de 48 no está relevado — sale de prolongar la recta que forman
     // los otros; confirmalo antes de presupuestar uno.
     tableroPuntos: [{ n: 12, p: 543 }, { n: 24, p: 967 }, { n: 36, p: 1614 }, { n: 48, p: 1890 }],
-    // Borneras de riel. No relevadas: cargá el precio real antes de presupuestar.
-    borneraTierra: 0,
-    borneraNeutro: 0,
+    // Relevado en Fivisa: barra para riel DIN de 7 vías 63A (CE3105) $55 de
+    // lista. La de neutro es la misma pieza en otro color, así que va al mismo
+    // precio hasta que se confirme.
+    borneraTierra: 55,
+    borneraNeutro: 55,
     cajaMedidor: 0,
     jabalina: 978,
     canoPvc1pulg3m: 197,
