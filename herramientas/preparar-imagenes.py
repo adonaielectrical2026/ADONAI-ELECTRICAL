@@ -98,23 +98,40 @@ def recortar(im, solido):
     return im.crop(caja) if caja else im
 
 
+# Cuántos píxeles seguidos de plástico blanco hacen falta para dar por
+# terminada la ventana. Con uno solo no alcanza: el riel que se ve por el hueco
+# tiene un reflejo brillante en el borde, y la búsqueda se cortaba ahí dejando
+# la ventana más baja de lo que es. El resultado eran llaves que no llegaban al
+# borde de la tapa, con el riel asomando debajo.
+BORDE_SEGUIDO = 7
+
+
 def borde_ventana(px, W, H, cx, cy):
     """Crece desde un punto interior hasta topar con el blanco de la tapa."""
-    def blanco(p):
-        r, g, b, a = p
+    def blanco(x, y):
+        r, g, b, a = px[x, y]
         return a > 200 and min(r, g, b) > 186
+
+    def corte(x, y, dx, dy):
+        """¿Empieza acá un tramo de blanco lo bastante largo como para ser el borde?"""
+        for k in range(BORDE_SEGUIDO):
+            nx, ny = x + dx * k, y + dy * k
+            if not (0 <= nx < W and 0 <= ny < H) or not blanco(nx, ny):
+                return False
+        return True
+
     x0 = cx
-    while x0 > 1 and not blanco(px[x0 - 1, cy]):
+    while x0 > BORDE_SEGUIDO and not corte(x0 - 1, cy, -1, 0):
         x0 -= 1
     x1 = cx
-    while x1 < W - 2 and not blanco(px[x1 + 1, cy]):
+    while x1 < W - 1 - BORDE_SEGUIDO and not corte(x1 + 1, cy, 1, 0):
         x1 += 1
     xm = (x0 + x1) // 2
     y0 = cy
-    while y0 > 1 and not blanco(px[xm, y0 - 1]):
+    while y0 > BORDE_SEGUIDO and not corte(xm, y0 - 1, 0, -1):
         y0 -= 1
     y1 = cy
-    while y1 < H - 2 and not blanco(px[xm, y1 + 1]):
+    while y1 < H - 1 - BORDE_SEGUIDO and not corte(xm, y1 + 1, 0, 1):
         y1 += 1
     return [x0, y0, x1, y1]
 
