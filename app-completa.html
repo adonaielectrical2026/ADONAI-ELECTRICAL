@@ -3954,48 +3954,55 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
     doc.text('MATERIALES', margin, y);
     y += 4;
+    // El listado de materiales va como alcance del trabajo, sin precios: al
+    // cliente se le informa qué incluye, no cuánto cuesta cada pieza.
     const filasMateriales = materialesItems
-      ? materialesItems.map((m) => [m.nombre, fmt(m.cantidad, 0) + ' ' + m.unidad, money(m.cantidad * m.precioUnit)])
-      : [['Materiales', '', money(p.materiales)]];
+      ? materialesItems.map((m) => [m.nombre, fmt(m.cantidad, 0) + ' ' + m.unidad])
+      : [['Materiales de la instalación', '']];
     doc.autoTable({
       startY: y,
       margin: { left: margin, right: margin },
-      head: [['Material', 'Cant.', 'Precio']],
+      head: [['Material', 'Cant.']],
       body: filasMateriales,
       theme: 'plain',
       styles: { fontSize: 9, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
       headStyles: { textColor: [111, 114, 119], fontStyle: 'bold', fontSize: 8, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
-      columnStyles: { 1: { halign: 'right', cellWidth: 26 }, 2: { halign: 'right', cellWidth: 28 } },
+      columnStyles: { 1: { halign: 'right', cellWidth: 30 } },
     });
-    y = doc.lastAutoTable.finalY + 10;
+    y = doc.lastAutoTable.finalY + 12;
+
+    // Del dinero, sólo el total. El desglose de costos y el margen son datos
+    // internos y no tienen por qué viajar en el presupuesto del cliente.
+    const altoCaja = 22;
+    doc.setFillColor(244, 244, 245);
+    doc.roundedRect(margin, y, pageWidth - 2 * margin, altoCaja, 2, 2, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
+    doc.text('TOTAL DEL PRESUPUESTO', margin + 6, y + 9);
+    doc.setFontSize(16); doc.setTextColor(23, 23, 25);
+    doc.text(money(t.total), pageWidth - margin - 6, y + 14, { align: 'right' });
+    y += altoCaja + 10;
 
     doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
-    doc.text('PRESUPUESTO', margin, y);
+    doc.text('CONDICIONES', margin, y);
     y += 4;
-    const filasPresupuesto = [
-      ['Mano de obra', money(p.manoObra)],
-      ['Traslados', money(p.traslados)],
-      ['Otros gastos', money(p.otros)],
-      ['Costo total', money(t.costoTotal)],
-      ['Margen (' + p.margen + '%)', money(t.subtotal - t.costoTotal)],
-      ['IVA (' + p.iva + '%)', money(t.ivaMonto)],
-      ['TOTAL CLIENTE', money(t.total)],
-    ];
     doc.autoTable({
       startY: y,
       margin: { left: margin, right: margin },
-      body: filasPresupuesto,
+      body: [
+        ['Forma de pago', p.formaPago],
+        ['Validez de la oferta', p.validez + ' días'],
+        ['Plazo de ejecución', p.plazo + ' días'],
+      ],
       theme: 'plain',
       styles: { fontSize: 9, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
       columnStyles: { 1: { halign: 'right' } },
-      didParseCell: (data) => {
-        if (data.row.index === filasPresupuesto.length - 1) { data.cell.styles.fontStyle = 'bold'; data.cell.styles.fontSize = 11; }
-      },
     });
-    y = doc.lastAutoTable.finalY + 10;
+    y = doc.lastAutoTable.finalY + 8;
 
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(111, 114, 119);
-    doc.text('Validez: ' + p.validez + ' días · Forma de pago: ' + p.formaPago, margin, y);
+    const incluye = doc.splitTextToSize('El presupuesto contiene costo de materiales y mano de obra incluidos.', pageWidth - 2 * margin);
+    doc.text(incluye, margin, y);
+    y += incluye.length * 4;
 
     // Últimas hojas: el frente del tablero, una con la tapa interna puesta
     // —como queda terminado— y otra del interior abierto con los conductores.
