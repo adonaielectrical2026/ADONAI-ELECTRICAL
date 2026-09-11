@@ -1674,6 +1674,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
      MOTOR DE CÁLCULO (portado y verificado desde el .jsx original)
      ============================================================ */
   const SQRT3 = Math.sqrt(3);
+  // Lo que ocupa una bornera de riel puesta de pie, en módulos. Se usa tanto
+  // para elegir la medida del gabinete como para dibujarlo.
+  const MODULOS_BORNERA = 2;
 
   const CATEGORIAS = [
     { id: 'iluminacion', label: 'Iluminación', cosPhiDefault: 1, uso: 'iluminacion' },
@@ -1757,6 +1760,38 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     { id: 'tomacorrientes', label: 'Tomacorrientes' },
     { id: 'fuerza', label: 'Fuerza / carga fija' },
   ];
+  // Polos de la llave de un circuito.
+  //
+  // En monofásico hay dos formas de hacerlo y las dos se usan:
+  //   - Bipolar: la llave corta fase y neutro. El neutro del circuito va a la
+  //     llave, así que no hace falta bornera de neutro.
+  //   - Unipolar: la llave corta sólo la fase y el neutro va a una bornera.
+  //     Es lo habitual en los circuitos de iluminación.
+  //
+  // Alcanza con que UNA llave sea unipolar para que el tablero necesite bornera
+  // de neutro. La de tierra va siempre, sea cual sea el caso.
+  function polosPorDefecto(circuito) {
+    if (circuito.fases !== 1) return 4;
+    return circuito.uso === 'iluminacion' ? 1 : 2;
+  }
+  function polosDe(circuito) {
+    const p = Number(circuito.polos);
+    if (p === 1 || p === 2 || p === 3 || p === 4) return p;
+    return polosPorDefecto(circuito);
+  }
+  function opcionesPolos(circuito) {
+    return circuito.fases === 1
+      ? [{ v: 1, label: 'Unipolar — corta la fase' }, { v: 2, label: 'Bipolar — corta fase y neutro' }]
+      : [{ v: 3, label: 'Tripolar — corta las fases' }, { v: 4, label: 'Tetrapolar — fases y neutro' }];
+  }
+  // El tablero lleva bornera de neutro sólo si alguna llave deja el neutro
+  // afuera; la de tierra va siempre.
+  function necesitaBorneraNeutro(circuitos, sistema) {
+    const general = (sistema && sistema.fases === 1) ? 2 : 4;
+    if (general === 2 || general === 4) { /* la general siempre corta el neutro */ }
+    return (circuitos || []).some((c) => polosDe(c) === 1 || polosDe(c) === 3);
+  }
+
   const SISTEMAS = {
     mono: { id: 'mono', label: 'Monofásico 230V', v: 230, fases: 1 },
     tri_it: { id: 'tri_it', label: 'Trifásico 230V (sistema IT)', v: 230, fases: 3 },
@@ -2137,6 +2172,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     codoCajaBandeja: 0,
     // Las térmicas DIN residenciales cotizaron parejo entre 6 y 40A en Fivisa; para 50A+ se
     // aplica un escalón proporcional (no relevado) porque suelen pasar a otro bastidor/marco.
+    // La unipolar no está relevada: sale de la bipolar por proporción. Confirmalo.
+    termicaUnipolarBase: 166,
     termicaBipolarBase: 277,
     termicaTetrapolarBase: 294,
     cajaOctogonal: 72,
@@ -2148,14 +2185,19 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     // de 12). El de 48 no está relevado — sale de prolongar la recta que forman
     // los otros; confirmalo antes de presupuestar uno.
     tableroPuntos: [{ n: 12, p: 543 }, { n: 24, p: 967 }, { n: 36, p: 1614 }, { n: 48, p: 1890 }],
+    // Borneras de riel. No relevadas: cargá el precio real antes de presupuestar.
+    borneraTierra: 0,
+    borneraNeutro: 0,
     cajaMedidor: 0,
     jabalina: 978,
     canoPvc1pulg3m: 197,
     codoPvc1pulg: 31,
   };
   const DEFAULT_MANO_OBRA = { tarifaHora: 500, horasJornada: 8 };
+  const BASE_POR_TIPO = { unipolar: 'termicaUnipolarBase', bipolar: 'termicaBipolarBase',
+                          tripolar: 'termicaTetrapolarBase', tetrapolar: 'termicaTetrapolarBase' };
   function precioTermica(tipo, amp, precios) {
-    const base = tipo === 'bipolar' ? precios.termicaBipolarBase : precios.termicaTetrapolarBase;
+    const base = Number(precios[BASE_POR_TIPO[tipo] || 'termicaBipolarBase']) || 0;
     if (amp <= 40) return base;
     if (amp <= 63) return Math.round(base * 1.5);
     return Math.round(base * 2.5);
@@ -2221,7 +2263,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         }
         // 'aire' (aire libre): sin canalización
       }
-      const tipoTermica = c.fases === 1 ? 'bipolar' : 'tetrapolar';
+      const tipoTermica = { 1: 'unipolar', 2: 'bipolar', 3: 'tripolar', 4: 'tetrapolar' }[polosDe(c)];
       add('Térmica ' + tipoTermica + ' ' + calc.breaker + 'A curva ' + calc.curva, 'un.', 1, precioTermica(tipoTermica, calc.breaker, precios));
     });
     // Puntos de luz y de toma, según la cantidad cargada en cada carga del relevamiento.
@@ -2242,12 +2284,17 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       // Módulos que ocupa el tablero, no cantidad de llaves: una térmica bipolar
       // ocupa 2 módulos y una tetrapolar 4. Contando llaves, el gabinete salía
       // por la mitad de lo que cuesta.
-      const modulosCircuitos = circuitos.reduce((t, c) => t + (c.fases === 1 ? 2 : 4), 0);
+      const modulosCircuitos = circuitos.reduce((t, c) => t + polosDe(c), 0);
       const sistemaTablero = (draft && SISTEMAS[draft.sistemaId]) || SISTEMAS.tri_tt;
       const modulosGeneral = (sistemaTablero.fases === 1 ? 2 : 4) * 2; // térmica + diferencial generales
-      const nModulos = modulosCircuitos + modulosGeneral;
+      // Las borneras ocupan lugar en el riel como cualquier otra pieza: si no se
+      // cuentan, se termina eligiendo un gabinete donde no entran.
+      const modulosBorneras = MODULOS_BORNERA * (necesitaBorneraNeutro(circuitos, sistemaTablero) ? 2 : 1);
+      const nModulos = modulosCircuitos + modulosGeneral + modulosBorneras;
       const medida = medidaTablero(nModulos, precios);
       add('Tablero eléctrico de ' + medida + ' módulos (' + nModulos + ' ocupados)', 'un.', 1, precioTablero(nModulos, precios));
+      add('Bornera de tierra', 'un.', 1, precios.borneraTierra);
+      if (necesitaBorneraNeutro(circuitos, sistemaTablero)) add('Bornera de neutro', 'un.', 1, precios.borneraNeutro);
       add('Caja para medidor', 'un.', 1, precios.cajaMedidor);
       add('Jabalina / electrodo de puesta a tierra', 'un.', 1, precios.jabalina);
       add('Caño PVC 1" x 3m (puesta a tierra)', 'un.', 2, precios.canoPvc1pulg3m);
@@ -2337,21 +2384,22 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       items.push({
         img: mono ? 'thermal-2p' : 'thermal-4p', modulos: mono ? 2 : 4,
         cara: pg.termicaCurva + pg.termicaIn, caraChica: null,
-        etiqueta: 'Térmica general',
+        rotulo: 'GENERAL', etiqueta: 'Térmica general',
         detalle: pg.termicaIn + ' A · ' + pg.termicaPolos + 'P · curva ' + pg.termicaCurva,
       });
       items.push({
         img: mono ? 'rcd-2p' : 'rcd-4p', modulos: mono ? 2 : 4,
         cara: pg.diferencialIn + 'A', caraChica: pg.diferencialSensibilidad + 'mA',
-        etiqueta: 'Diferencial general',
+        rotulo: 'DIFERENCIAL', etiqueta: 'Diferencial general',
         detalle: pg.diferencialIn + ' A · ' + pg.diferencialSensibilidad + ' mA · tipo ' + pg.diferencialTipo,
       });
     }
     (draft.circuitos || []).forEach((c, i) => {
       const calc = calcularCircuito(c);
-      const uno = c.fases === 1;
+      const polos = polosDe(c);
+      const IMG_POLOS = { 1: 'thermal-1p', 2: 'thermal-2p', 3: 'thermal-4p', 4: 'thermal-4p' };
       items.push({
-        img: uno ? 'thermal-2p' : 'thermal-4p', modulos: uno ? 2 : 4,
+        img: IMG_POLOS[polos], modulos: polos,
         cara: calc.apto ? calc.curva + calc.breaker : '?', caraChica: null,
         n: i + 1, etiqueta: c.nombre || ('Circuito ' + (i + 1)),
         detalle: calc.apto
@@ -2366,20 +2414,31 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   function tabLayout(draft) {
     const items = tabDispositivos(draft);
     if (!items.length) return null;
-    const modulos = items.reduce((t, it) => t + it.modulos, 0);
+    const sistema = SISTEMAS[draft.sistemaId] || SISTEMAS.tri_tt;
+    // Las borneras van en el riel y ocupan lugar: entran al reparto como una
+    // pieza más, si no el gabinete queda chico y no hay dónde ponerlas.
+    const barras = [];
+    if (necesitaBorneraNeutro(draft.circuitos, sistema)) {
+      barras.push({ img: 'terminal-neutral', modulos: MODULOS_BORNERA, barra: 'neutro',
+                    etiqueta: 'Bornera de neutro', detalle: 'neutro de los circuitos unipolares' });
+    }
+    barras.push({ img: 'terminal-earth', modulos: MODULOS_BORNERA, barra: 'tierra',
+                  etiqueta: 'Bornera de tierra', detalle: 'puesta a tierra' });
+    const conBarras = items.concat(barras);
+    const modulos = conBarras.reduce((t, it) => t + it.modulos, 0);
     const medida = medidaTablero(modulos, DB.settings.precios);
     const gabinete = 'wall-' + medida;
     if (!TAB_RIELES[gabinete]) return null;
     // reparto en filas de 12 sin partir una llave entre dos filas
     const filas = [];
     let fila = [], usado = 0;
-    items.forEach((it) => {
+    conBarras.forEach((it) => {
       if (usado + it.modulos > MODULOS_POR_FILA) { filas.push(fila); fila = []; usado = 0; }
       fila.push(it); usado += it.modulos;
     });
     if (fila.length) filas.push(fila);
     while (filas.length < TAB_RIELES[gabinete].y.length) filas.push([]);
-    return { items, filas, gabinete, medida, modulos };
+    return { items, barras, filas, gabinete, medida, modulos };
   }
 
   /* ---------- dibujo ---------- */
@@ -2412,12 +2471,55 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     }
   }
 
+  // Una bornera se monta parada sobre el riel: la imagen viene acostada, así
+  // que se la gira un cuarto de vuelta.
+  function tabDibujarBarra(ctx, img, x, ancho, cy) {
+    if (!img) return;
+    const largo = ancho * img.width / img.height;
+    ctx.save();
+    ctx.translate(x + ancho / 2, cy);
+    ctx.rotate(-Math.PI / 2);
+    ctx.drawImage(img, -largo / 2, -ancho / 2, largo, ancho);
+    ctx.restore();
+  }
+
+  // Nombre corto para el rótulo: los circuitos suelen llamarse "Living — 2
+  // luces, 2 tomas" y en el ancho de una llave sólo entra la primera parte.
+  function tabNombreCorto(it) {
+    if (it.rotulo) return it.rotulo;
+    if (it.barra) return it.barra === 'neutro' ? 'NEUTRO' : 'TIERRA';
+    const etiqueta = String(it.etiqueta || '');
+    const corte = etiqueta.split(/\s+[—–-]\s+/)[0].trim();
+    return (corte || etiqueta).toUpperCase();
+  }
+
+  // Franja de rótulos sobre las llaves, como la etiqueta que se pega en el
+  // tablero terminado. Incluye las generales.
+  function tabRotulos(ctx, rotulos, mod) {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.font = tabFuente(mod * 0.24, true);
+    rotulos.forEach((r) => {
+      const texto = tabNombreCorto(r.it);
+      if (!texto) return;
+      const maxAncho = r.w - mod * 0.12;
+      let mostrar = texto;
+      while (mostrar.length > 1 && ctx.measureText(mostrar).width > maxAncho) {
+        mostrar = mostrar.slice(0, -1);
+      }
+      if (mostrar !== texto) mostrar = mostrar.slice(0, -1) + '…';
+      const y = r.cy - r.alto / 2 - mod * 0.16;
+      ctx.fillStyle = '#5a5e66';
+      ctx.fillText(mostrar, r.x + r.w / 2, y);
+    });
+  }
+
   function tabPiezasNecesarias(layout, vista) {
     const set = {};
-    layout.items.forEach((it) => { set[it.img] = true; });
+    layout.items.concat(layout.barras).forEach((it) => { set[it.img] = true; });
     set['blind-module'] = true;
     if (vista === 'cerrado') set[layout.gabinete + '-cover'] = true;
-    else { set[layout.gabinete] = true; set['terminal-neutral'] = true; set['terminal-earth'] = true; }
+    else set[layout.gabinete] = true;
     set['adonai-logo-y-nombre'] = true;
     return Object.keys(set);
   }
@@ -2462,7 +2564,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     if (!esCerrado) ctx.drawImage(base, 0, CAB);
 
     const puestos = [];
-    const huecosLibres = [];
+    const barrasPuestas = [];
+    const rotulos = [];
     ranuras.forEach((r, fi) => {
       const fila = layout.filas[fi] || [];
       if (esCerrado) {
@@ -2475,28 +2578,34 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       const fracArriba = esCerrado ? TAB_ANCLA - (r.alto / 2) / altoLlave : 0;
       fila.forEach((it) => {
         const w = it.modulos * mod;
-        ctx.drawImage(tabImagenes[it.img], x, top, w, altoLlave);
-        tabEtiqueta(ctx, it, x, top, altoLlave, mod, fracArriba);
-        puestos.push({ it, x, w, cy: r.cy + CAB, fila: fi });
+        if (it.barra) {
+          // la bornera va parada sobre el riel, como se monta de verdad
+          tabDibujarBarra(ctx, tabImagenes[it.img], x, w, r.cy + CAB);
+          barrasPuestas.push({ it, x, w, cy: r.cy + CAB });
+        } else {
+          ctx.drawImage(tabImagenes[it.img], x, top, w, altoLlave);
+          tabEtiqueta(ctx, it, x, top, altoLlave, mod, fracArriba);
+          puestos.push({ it, x, w, cy: r.cy + CAB, fila: fi });
+        }
+        rotulos.push({ it, x, w, cy: r.cy + CAB, alto: r.alto });
         x += w;
       });
       // Los módulos que sobran se tapan, salvo los dos primeros de la última
       // fila con lugar, que se reservan para las borneras de neutro y tierra.
-      let libresFila = MODULOS_POR_FILA - fila.reduce((t, it) => t + it.modulos, 0);
-      if (!esCerrado) {
-        while (libresFila >= 2 && huecosLibres.length < 2) {
-          huecosLibres.push({ x: x + mod * 0.25, cy: r.cy + CAB });
-          x += mod * 2; libresFila -= 2;
-        }
-      }
+      const libresFila = MODULOS_POR_FILA - fila.reduce((t, it) => t + it.modulos, 0);
       for (let k = 0; k < libresFila; k++) {
         ctx.drawImage(tabImagenes['blind-module'], x, top, mod, altoLlave);
         x += mod;
       }
     });
 
-    if (!esCerrado) tabConductores(ctx, ranuras, puestos, mod, altoLlave, CAB, layout, huecosLibres);
-    if (esCerrado) ctx.drawImage(base, 0, CAB);
+    if (!esCerrado) tabConductores(ctx, ranuras, puestos, mod, altoLlave, CAB, layout, barrasPuestas);
+    if (esCerrado) {
+      ctx.drawImage(base, 0, CAB);
+      // Los rótulos van encima de la tapa: es donde se pega la etiqueta en un
+      // tablero armado, y así se lee de qué es cada llave sin abrirlo.
+      tabRotulos(ctx, rotulos, mod);
+    }
 
     tabCabecera(ctx, cv.width, CAB, layout, vista, datos);
     return cv;
@@ -2564,30 +2673,21 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   const TAB_NEUTRO = '#4fc3e8';
   const TAB_TIERRA = '#57b65a';
 
-  function tabConductores(ctx, ranuras, puestos, mod, altoLlave, CAB, layout, libres) {
+  function tabConductores(ctx, ranuras, puestos, mod, altoLlave, CAB, layout, barras) {
     if (!puestos.length) return;
     const grosor = Math.max(3, mod * 0.09);
     const general = puestos[0];
     const dif = puestos[1];
 
-    // Borneras de neutro y tierra: van paradas en los módulos que quedaron
-    // libres al final de una fila. Si se las pusiera al borde del riel se
-    // montarían sobre la última llave.
-    const anchoB = mod * 1.5;
-    const dibujarBornera = (nombre, hueco) => {
-      const img = tabImagenes[nombre];
-      if (!img || !hueco) return null;
-      const h = anchoB * img.width / img.height;
-      const cx = hueco.x + anchoB / 2;
-      ctx.save();
-      ctx.translate(cx, hueco.cy);
-      ctx.rotate(-Math.PI / 2);
-      ctx.drawImage(img, -h / 2, -anchoB / 2, h, anchoB);
-      ctx.restore();
-      return { x: cx, y: hueco.cy };
+    // Las borneras ya se dibujaron con el resto de las piezas; acá sólo se
+    // necesita saber dónde quedaron para llevarles los cables.
+    const anchoB = MODULOS_BORNERA * mod;
+    const ubicar = (tipo) => {
+      const b = barras.find((x) => x.it.barra === tipo);
+      return b ? { x: b.x + b.w / 2, y: b.cy } : null;
     };
-    const pNeutro = dibujarBornera('terminal-neutral', libres[0]);
-    const pTierra = dibujarBornera('terminal-earth', libres[1]);
+    const pNeutro = ubicar('neutro');
+    const pTierra = ubicar('tierra');
 
     const arriba = (p) => p.cy - altoLlave * 0.42;
     const abajo = (p) => p.cy + altoLlave * 0.42;
@@ -2691,13 +2791,23 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   if (!DB.settings) DB.settings = { margen: 30, iva: 22 };
   if (!DB.settings.precios) DB.settings.precios = clonePrecios(DEFAULT_PRECIOS);
   const medidasConvertidas = migrarMedidasTablero(DB.settings.precios);
+  // Un catálogo guardado antes de que se agregara un precio nuevo no tiene esa
+  // clave, y el material saldría en $0 sin que se note. Se completan las que
+  // falten con el valor de fábrica, sin tocar las que el usuario ya editó.
+  let clavesAgregadas = false;
+  Object.keys(DEFAULT_PRECIOS).forEach((k) => {
+    if (DB.settings.precios[k] === undefined) {
+      DB.settings.precios[k] = clonePrecios(DEFAULT_PRECIOS[k]);
+      clavesAgregadas = true;
+    }
+  });
   if (!DB.settings.manoObra) DB.settings.manoObra = { ...DEFAULT_MANO_OBRA };
   if (!DB.seq) DB.seq = { trabajo: 0, presupuesto: 0 };
 
   function saveDB() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); } catch (e) {} }
   // La conversión de medidas se guarda enseguida; si no, se repetiría en cada
   // arranque y el catálogo en pantalla no coincidiría con el del disco.
-  if (medidasConvertidas) saveDB();
+  if (medidasConvertidas || clavesAgregadas) saveDB();
 
   function seedSampleData() {
     const sistema = SISTEMAS.tri_tt;
@@ -3135,6 +3245,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         '<div class="field"><label>Método</label><select class="select" data-f="metodo">' + Object.keys(METODO_LABEL).map((k) => '<option value="' + k + '"' + (c.metodo === k ? ' selected' : '') + '>' + METODO_LABEL[k] + '</option>').join('') + '</select></div>' +
         '<div class="field"><label>Temp. amb. (°C)</label><input class="input" type="number" data-f="tempAmb" value="' + c.tempAmb + '"></div>' +
         '<div class="field"><label>Agrupados</label><input class="input" type="number" min="1" data-f="agrupados" value="' + c.agrupados + '"></div>' +
+        '<div class="field"><label>Polos</label><select class="select" data-f="polos">' +
+        opcionesPolos(c).map((o) => '<option value="' + o.v + '"' + (polosDe(c) === o.v ? ' selected' : '') + '>' + o.label + '</option>').join('') +
+        '</select></div>' +
         '<div class="field"><label>Uso</label><select class="select" data-f="uso">' +
         USOS.map((u) => '<option value="' + u.id + '"' + ((c.uso || 'fuerza') === u.id ? ' selected' : '') + '>' + u.label + '</option>').join('') +
         '</select></div>' +
@@ -3157,7 +3270,13 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
           c[f] = esTexto ? input.value : Number(input.value);
           // Cada uso trae su propia caída máxima admisible: iluminación admite
           // menos que fuerza. Al cambiar el uso se acompaña el valor.
-          if (f === 'uso') c.caidaMax = CAIDA_MAX_DEFAULT[input.value] || 5;
+          if (f === 'uso') {
+            c.caidaMax = CAIDA_MAX_DEFAULT[input.value] || 5;
+            // iluminación suele ir unipolar y el resto bipolar: se acompaña el
+            // valor mientras el técnico no lo haya fijado a mano
+            if (!c.polosManual) c.polos = polosPorDefecto(c);
+          }
+          if (f === 'polos') c.polosManual = true;
           renderCircuitosList();
         });
       });
@@ -3407,10 +3526,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     {
       titulo: 'Térmicas ($/un.)',
       campos: [
+        { key: 'termicaUnipolarBase', tipo: 'plano', etiqueta: 'Térmica unipolar (hasta 40A)' },
         { key: 'termicaBipolarBase', tipo: 'plano', etiqueta: 'Térmica bipolar (hasta 40A)' },
         { key: 'termicaTetrapolarBase', tipo: 'plano', etiqueta: 'Térmica tetrapolar (hasta 40A)' },
       ],
-      nota: 'De 50 a 63A se cobra 1,5× este valor; de 80 a 125A, 2,5× — no relevado, es un escalón proporcional.',
+      nota: 'De 50 a 63A se cobra 1,5× la bipolar; de 80 a 125A, 2,5× — no relevado, es un escalón proporcional. La unipolar tampoco está relevada: sale de la bipolar por proporción.',
     },
     {
       titulo: 'Puntos de luz y de toma ($/un.)',
@@ -3431,6 +3551,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       titulo: 'Kit de suministro nuevo ($/un.)',
       campos: [
         { key: 'cajaMedidor', tipo: 'plano', etiqueta: 'Caja para medidor' },
+        { key: 'borneraTierra', tipo: 'plano', etiqueta: 'Bornera de tierra' },
+        { key: 'borneraNeutro', tipo: 'plano', etiqueta: 'Bornera de neutro' },
         { key: 'jabalina', tipo: 'plano', etiqueta: 'Jabalina / electrodo de puesta a tierra' },
         { key: 'canoPvc1pulg3m', tipo: 'plano', etiqueta: 'Caño PVC 1" x 3m (puesta a tierra)' },
         { key: 'codoPvc1pulg', tipo: 'plano', etiqueta: 'Codo PVC 1" (puesta a tierra)' },
