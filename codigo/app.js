@@ -539,6 +539,393 @@
   }
 
   /* ============================================================
+     TABLERO — DIBUJO CON FOTOS
+
+     Arma el frente del tablero pegando las fotos de codigo/img/ sobre un
+     canvas, a partir de las llaves que salieron del cálculo. Se dibujan dos
+     vistas:
+
+       - "cerrado": el tablero terminado. Las llaves van DETRÁS de la tapa
+         interna, que tiene las ventanas caladas, así que asoma sólo la cara
+         y las borneras quedan tapadas. Es la vista para mostrarle al cliente.
+       - "abierto": el interior, con las llaves sobre el riel, las borneras de
+         neutro y tierra, y los conductores.
+
+     Las medidas de cada pieza y las ventanas de cada tapa vienen en
+     img/medidas.json, que genera herramientas/preparar-imagenes.py.
+     ============================================================ */
+
+  const TAB_IMG = 'img/';
+
+  // Posición del riel dentro de cada gabinete abierto, medida sobre la imagen.
+  // A diferencia de las ventanas de las tapas, que se detectan solas, acá la
+  // detección automática no es confiable: el interior tiene sombras y molduras
+  // que se confunden con el riel. Son cuatro imágenes fijas, así que se miden
+  // una vez y se anotan.
+  const TAB_RIELES = {
+    'wall-12': { x0: 535, x1: 1185, y: [500] },
+    'wall-24': { x0: 620, x1: 1230, y: [385, 655] },
+    'wall-36': { x0: 605, x1: 1230, y: [295, 535, 775] },
+    'wall-48': { x0: 640, x1: 1235, y: [330, 610, 885, 1160] },
+  };
+
+  // Proporciones de una llave modular, medidas sobre las propias imágenes.
+  const TAB_ALTO_POR_MODULO = 4.86;  // alto = ancho de un módulo x esto
+  const TAB_ANCLA = 0.50;            // qué punto de la llave se centra en la ventana
+  const TAB_PALANCA = 0.454;         // dónde empieza la palanca
+
+  const MODULOS_POR_FILA = 12;
+
+  let tabMedidas = null;
+  const tabImagenes = {};
+
+  // En app-completa.html las imágenes vienen incrustadas en el propio archivo:
+  // abierto con doble clic no hay servidor del cual pedirlas.
+  function tabIncrustadas() { return window.__TAB_IMG || null; }
+
+  function tabCargarMedidas() {
+    if (tabMedidas) return Promise.resolve(tabMedidas);
+    if (window.__TAB_MEDIDAS) { tabMedidas = window.__TAB_MEDIDAS; return Promise.resolve(tabMedidas); }
+    return fetch(TAB_IMG + 'medidas.json')
+      .then((r) => r.json())
+      .then((m) => { tabMedidas = m; return m; });
+  }
+
+  function tabCargarImagen(nombre) {
+    if (tabImagenes[nombre]) return Promise.resolve(tabImagenes[nombre]);
+    const inc = tabIncrustadas();
+    const src = (inc && inc[nombre]) ? inc[nombre] : TAB_IMG + nombre + '.webp';
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => { tabImagenes[nombre] = img; resolve(img); };
+      img.onerror = () => reject(new Error('No se pudo cargar ' + nombre));
+      img.src = src;
+    });
+  }
+
+  /* ---------- qué llaves lleva el tablero ---------- */
+
+  function tabDispositivos(draft) {
+    if (!draft) return [];
+    const sistema = SISTEMAS[draft.sistemaId] || SISTEMAS.tri_tt;
+    const mono = sistema.fases === 1;
+    const items = [];
+    const pg = calcularProteccionGeneral(draft);
+    if (pg.aplica) {
+      items.push({
+        img: mono ? 'thermal-2p' : 'thermal-4p', modulos: mono ? 2 : 4,
+        cara: pg.termicaCurva + pg.termicaIn, caraChica: null,
+        etiqueta: 'Térmica general',
+        detalle: pg.termicaIn + ' A · ' + pg.termicaPolos + 'P · curva ' + pg.termicaCurva,
+      });
+      items.push({
+        img: mono ? 'rcd-2p' : 'rcd-4p', modulos: mono ? 2 : 4,
+        cara: pg.diferencialIn + 'A', caraChica: pg.diferencialSensibilidad + 'mA',
+        etiqueta: 'Diferencial general',
+        detalle: pg.diferencialIn + ' A · ' + pg.diferencialSensibilidad + ' mA · tipo ' + pg.diferencialTipo,
+      });
+    }
+    (draft.circuitos || []).forEach((c, i) => {
+      const calc = calcularCircuito(c);
+      const uno = c.fases === 1;
+      items.push({
+        img: uno ? 'thermal-2p' : 'thermal-4p', modulos: uno ? 2 : 4,
+        cara: calc.apto ? calc.curva + calc.breaker : '?', caraChica: null,
+        n: i + 1, etiqueta: c.nombre || ('Circuito ' + (i + 1)),
+        detalle: calc.apto
+          ? calc.breaker + ' A · curva ' + calc.curva + ' · ' + calc.seccionAdoptada + ' mm²'
+          : 'sin protección definida',
+        pendiente: !calc.apto,
+      });
+    });
+    return items;
+  }
+
+  function tabLayout(draft) {
+    const items = tabDispositivos(draft);
+    if (!items.length) return null;
+    const modulos = items.reduce((t, it) => t + it.modulos, 0);
+    const medida = medidaTablero(modulos, DB.settings.precios);
+    const gabinete = 'wall-' + medida;
+    if (!TAB_RIELES[gabinete]) return null;
+    // reparto en filas de 12 sin partir una llave entre dos filas
+    const filas = [];
+    let fila = [], usado = 0;
+    items.forEach((it) => {
+      if (usado + it.modulos > MODULOS_POR_FILA) { filas.push(fila); fila = []; usado = 0; }
+      fila.push(it); usado += it.modulos;
+    });
+    if (fila.length) filas.push(fila);
+    while (filas.length < TAB_RIELES[gabinete].y.length) filas.push([]);
+    return { items, filas, gabinete, medida, modulos };
+  }
+
+  /* ---------- dibujo ---------- */
+
+  function tabFuente(px, negrita) {
+    return (negrita ? '700 ' : '') + Math.max(7, Math.round(px)) + 'px Helvetica, Arial, sans-serif';
+  }
+
+  // Escribe el valor en la cara de la llave: pegado al borde izquierdo y
+  // centrado en la banda que queda libre arriba de la palanca.
+  function tabEtiqueta(ctx, it, x, topLlave, alto, mod, fracArriba) {
+    if (!it.cara) return;
+    const centro = topLlave + ((fracArriba + TAB_PALANCA) / 2) * alto;
+    const xt = x + mod * 0.17;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#303237';
+    if (it.caraChica) {
+      const h1 = mod * 0.28, h2 = mod * 0.185, sep = mod * 0.07;
+      const total = h1 + sep + h2;
+      ctx.font = tabFuente(h1, true);
+      ctx.textBaseline = 'top';
+      ctx.fillText(it.cara, xt, centro - total / 2);
+      ctx.font = tabFuente(h2, true);
+      ctx.fillStyle = '#63666b';
+      ctx.fillText(it.caraChica, xt, centro - total / 2 + h1 + sep);
+    } else {
+      ctx.font = tabFuente(mod * 0.28, true);
+      ctx.textBaseline = 'middle';
+      ctx.fillText(it.cara, xt, centro);
+    }
+  }
+
+  function tabPiezasNecesarias(layout, vista) {
+    const set = {};
+    layout.items.forEach((it) => { set[it.img] = true; });
+    set['blind-module'] = true;
+    if (vista === 'cerrado') set[layout.gabinete + '-cover'] = true;
+    else { set[layout.gabinete] = true; set['terminal-neutral'] = true; set['terminal-earth'] = true; }
+    set['adonai-logo-y-nombre'] = true;
+    return Object.keys(set);
+  }
+
+  /**
+   * Dibuja el tablero y devuelve el canvas.
+   * vista: 'cerrado' (con tapa interna) o 'abierto' (interior y conductores)
+   */
+  async function tabDibujar(draft, vista, datos) {
+    const layout = tabLayout(draft);
+    if (!layout) return null;
+    await tabCargarMedidas();
+    await Promise.all(tabPiezasNecesarias(layout, vista).map(tabCargarImagen));
+
+    const esCerrado = vista === 'cerrado';
+    const baseNombre = esCerrado ? layout.gabinete + '-cover' : layout.gabinete;
+    const base = tabImagenes[baseNombre];
+    const ficha = tabMedidas[baseNombre] || {};
+
+    const CAB = 86;  // alto del cartel de cabecera
+    const cv = document.createElement('canvas');
+    cv.width = base.width;
+    cv.height = base.height + CAB;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#eef1f5';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+
+    // filas donde van las llaves
+    let ranuras;
+    if (esCerrado) {
+      ranuras = (ficha.ventanas || []).map((v) => ({ x0: v[0], x1: v[2], cy: (v[1] + v[3]) / 2, alto: v[3] - v[1] }));
+    } else {
+      const g = TAB_RIELES[layout.gabinete];
+      ranuras = g.y.map((cy) => ({ x0: g.x0, x1: g.x1, cy, alto: 0 }));
+    }
+    if (!ranuras.length) return null;
+    const mod = (ranuras[0].x1 - ranuras[0].x0) / MODULOS_POR_FILA;
+    const altoLlave = mod * TAB_ALTO_POR_MODULO;
+
+    // En la vista cerrada primero van las llaves y encima la tapa; en la
+    // abierta, el gabinete primero y las llaves sobre el riel.
+    if (!esCerrado) ctx.drawImage(base, 0, CAB);
+
+    const puestos = [];
+    const huecosLibres = [];
+    ranuras.forEach((r, fi) => {
+      const fila = layout.filas[fi] || [];
+      if (esCerrado) {
+        // fondo del hueco, para que no se vea el blanco del lienzo
+        ctx.fillStyle = '#36383c';
+        ctx.fillRect(r.x0, r.cy - r.alto / 2 + CAB, r.x1 - r.x0, r.alto);
+      }
+      let x = r.x0;
+      const top = r.cy - TAB_ANCLA * altoLlave + CAB;
+      const fracArriba = esCerrado ? TAB_ANCLA - (r.alto / 2) / altoLlave : 0;
+      fila.forEach((it) => {
+        const w = it.modulos * mod;
+        ctx.drawImage(tabImagenes[it.img], x, top, w, altoLlave);
+        tabEtiqueta(ctx, it, x, top, altoLlave, mod, fracArriba);
+        puestos.push({ it, x, w, cy: r.cy + CAB, fila: fi });
+        x += w;
+      });
+      // Los módulos que sobran se tapan, salvo los dos primeros de la última
+      // fila con lugar, que se reservan para las borneras de neutro y tierra.
+      let libresFila = MODULOS_POR_FILA - fila.reduce((t, it) => t + it.modulos, 0);
+      if (!esCerrado) {
+        while (libresFila >= 2 && huecosLibres.length < 2) {
+          huecosLibres.push({ x: x + mod * 0.25, cy: r.cy + CAB });
+          x += mod * 2; libresFila -= 2;
+        }
+      }
+      for (let k = 0; k < libresFila; k++) {
+        ctx.drawImage(tabImagenes['blind-module'], x, top, mod, altoLlave);
+        x += mod;
+      }
+    });
+
+    if (!esCerrado) tabConductores(ctx, ranuras, puestos, mod, altoLlave, CAB, layout, huecosLibres);
+    if (esCerrado) ctx.drawImage(base, 0, CAB);
+
+    tabCabecera(ctx, cv.width, CAB, layout, vista, datos);
+    return cv;
+  }
+
+  function tabCabecera(ctx, ancho, alto, layout, vista, datos) {
+    datos = datos || {};
+    const w = Math.min(ancho * 0.62, 760);
+    ctx.fillStyle = '#1f2430';
+    ctx.beginPath();
+    const r = 10;
+    ctx.moveTo(24 + r, 10); ctx.lineTo(24 + w - r, 10);
+    ctx.quadraticCurveTo(24 + w, 10, 24 + w, 10 + r); ctx.lineTo(24 + w, alto - 4 - r);
+    ctx.quadraticCurveTo(24 + w, alto - 4, 24 + w - r, alto - 4); ctx.lineTo(24 + r, alto - 4);
+    ctx.quadraticCurveTo(24, alto - 4, 24, alto - 4 - r); ctx.lineTo(24, 10 + r);
+    ctx.quadraticCurveTo(24, 10, 24 + r, 10); ctx.closePath(); ctx.fill();
+
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#ffffff'; ctx.font = tabFuente(26, true);
+    ctx.fillText(datos.titulo || 'Tablero', 46, 44);
+    ctx.fillStyle = '#a9b0be'; ctx.font = tabFuente(17, false);
+    const sub = ['Pared · ' + layout.medida + ' módulos',
+                 vista === 'cerrado' ? 'tapa interna' : 'interior abierto',
+                 layout.modulos + '/' + layout.medida + ' módulos'];
+    ctx.fillText(sub.join(' · '), 46, 70);
+
+    const logo = tabImagenes['adonai-logo-y-nombre'];
+    if (logo) {
+      const lh = alto - 30, lw = logo.width * lh / logo.height;
+      ctx.globalAlpha = 0.9;
+      ctx.drawImage(logo, ancho - lw - 28, 14, lw, lh);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  /* ---------- conductores ---------- */
+
+  // Traza un camino ortogonal con las esquinas redondeadas, como se dibuja un
+  // unifilar a mano.
+  function tabCamino(ctx, puntos, color, grosor) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = grosor;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(puntos[0][0], puntos[0][1]);
+    for (let i = 1; i < puntos.length - 1; i++) {
+      const [px, py] = puntos[i];
+      const [nx, ny] = puntos[i + 1];
+      const rr = Math.min(14, Math.abs(nx - px) / 2 || 14, Math.abs(ny - py) / 2 || 14);
+      ctx.arcTo(px, py, px + Math.sign(nx - px) * rr, py + Math.sign(ny - py) * rr, rr);
+    }
+    ctx.lineTo(puntos[puntos.length - 1][0], puntos[puntos.length - 1][1]);
+    ctx.stroke();
+  }
+
+  function tabPunto(ctx, x, y, color) {
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
+  }
+
+  const TAB_FASE = '#e8a33d';
+  const TAB_NEUTRO = '#4fc3e8';
+  const TAB_TIERRA = '#57b65a';
+
+  function tabConductores(ctx, ranuras, puestos, mod, altoLlave, CAB, layout, libres) {
+    if (!puestos.length) return;
+    const grosor = Math.max(3, mod * 0.09);
+    const general = puestos[0];
+    const dif = puestos[1];
+
+    // Borneras de neutro y tierra: van paradas en los módulos que quedaron
+    // libres al final de una fila. Si se las pusiera al borde del riel se
+    // montarían sobre la última llave.
+    const anchoB = mod * 1.5;
+    const dibujarBornera = (nombre, hueco) => {
+      const img = tabImagenes[nombre];
+      if (!img || !hueco) return null;
+      const h = anchoB * img.width / img.height;
+      const cx = hueco.x + anchoB / 2;
+      ctx.save();
+      ctx.translate(cx, hueco.cy);
+      ctx.rotate(-Math.PI / 2);
+      ctx.drawImage(img, -h / 2, -anchoB / 2, h, anchoB);
+      ctx.restore();
+      return { x: cx, y: hueco.cy };
+    };
+    const pNeutro = dibujarBornera('terminal-neutral', libres[0]);
+    const pTierra = dibujarBornera('terminal-earth', libres[1]);
+
+    const arriba = (p) => p.cy - altoLlave * 0.42;
+    const abajo = (p) => p.cy + altoLlave * 0.42;
+
+    // 1) del general al diferencial
+    if (dif) {
+      tabCamino(ctx, [[general.x + general.w * 0.28, arriba(general)],
+                      [general.x + general.w * 0.28, arriba(general) - mod * 0.55],
+                      [dif.x + dif.w * 0.28, arriba(dif) - mod * 0.55],
+                      [dif.x + dif.w * 0.28, arriba(dif)]], TAB_FASE, grosor);
+      tabPunto(ctx, general.x + general.w * 0.28, arriba(general), TAB_FASE);
+      tabPunto(ctx, dif.x + dif.w * 0.28, arriba(dif), TAB_FASE);
+    }
+
+    // 2) del diferencial al peine que alimenta cada circuito, fila por fila
+    const circuitos = puestos.slice(dif ? 2 : 1);
+    ranuras.forEach((r, fi) => {
+      const enFila = circuitos.filter((p) => p.fila === fi);
+      if (!enFila.length) return;
+      const yPeine = r.cy + CAB - altoLlave * 0.42 - mod * 0.35;
+      const x0 = enFila[0].x + enFila[0].w * 0.28;
+      const x1 = enFila[enFila.length - 1].x + enFila[enFila.length - 1].w * 0.28;
+      tabCamino(ctx, [[x0, yPeine], [x1, yPeine]], TAB_FASE, grosor);
+      enFila.forEach((p) => {
+        const xc = p.x + p.w * 0.28;
+        tabCamino(ctx, [[xc, yPeine], [xc, arriba(p)]], TAB_FASE, grosor);
+        tabPunto(ctx, xc, arriba(p), TAB_FASE);
+        // salida del circuito hacia abajo
+        tabCamino(ctx, [[xc, abajo(p)], [xc, abajo(p) + mod * 0.5]], TAB_FASE, grosor);
+        const xn = p.x + p.w * 0.72;
+        tabCamino(ctx, [[xn, abajo(p)], [xn, abajo(p) + mod * 0.5]], TAB_NEUTRO, grosor);
+        tabPunto(ctx, xc, abajo(p), TAB_FASE);
+        tabPunto(ctx, xn, abajo(p), TAB_NEUTRO);
+      });
+      // el diferencial alimenta el peine de la primera fila
+      if (fi === 0 && dif) {
+        tabCamino(ctx, [[dif.x + dif.w * 0.28, abajo(dif)],
+                        [dif.x + dif.w * 0.28, abajo(dif) + mod * 0.45],
+                        [x0 - mod * 0.35, abajo(dif) + mod * 0.45],
+                        [x0 - mod * 0.35, yPeine], [x0, yPeine]], TAB_FASE, grosor);
+        tabPunto(ctx, dif.x + dif.w * 0.28, abajo(dif), TAB_FASE);
+      }
+    });
+
+    // 3) neutro: del diferencial a la bornera
+    if (dif && pNeutro) {
+      const xn = dif.x + dif.w * 0.72;
+      tabCamino(ctx, [[xn, abajo(dif)], [xn, abajo(dif) + mod * 0.85],
+                      [pNeutro.x, abajo(dif) + mod * 0.85], [pNeutro.x, pNeutro.y - anchoB * 0.9]],
+                TAB_NEUTRO, grosor);
+      tabPunto(ctx, xn, abajo(dif), TAB_NEUTRO);
+    }
+    // 4) tierra: de la bornera hacia el borde, como llegada de la jabalina
+    if (pTierra) {
+      tabCamino(ctx, [[pTierra.x, pTierra.y + anchoB * 0.9],
+                      [pTierra.x, pTierra.y + anchoB * 1.4]], TAB_TIERRA, grosor);
+    }
+  }
+
+  /* ============================================================
      PERSISTENCIA
      ============================================================ */
   // Un catálogo guardado antes de pasar a las medidas comerciales (12/24/36/48)
@@ -1733,6 +2120,35 @@
 
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(111, 114, 119);
     doc.text('Validez: ' + p.validez + ' días · Forma de pago: ' + p.formaPago, margin, y);
+
+    // Últimas hojas: el frente del tablero, una con la tapa interna puesta
+    // —como queda terminado— y otra del interior abierto con los conductores.
+    // Si el navegador no puede dibujarlas, el presupuesto sale igual.
+    if (trabajo) {
+      for (const vista of ['cerrado', 'abierto']) {
+        try {
+          const cv = await tabDibujar(trabajo, vista, { titulo: 'Presupuesto ' + p.codigo });
+          if (!cv) continue;
+          doc.addPage();
+          let ty = 18;
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(23, 23, 25);
+          doc.text(vista === 'cerrado' ? 'Tablero terminado' : 'Interior del tablero', margin, ty);
+          ty += 6;
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(111, 114, 119);
+          const nota = vista === 'cerrado'
+            ? 'Así queda el tablero con la tapa interna colocada, armado con las protecciones calculadas para esta obra.'
+            : 'Interior con las llaves sobre el riel y el recorrido de los conductores. Los cables están dibujados a modo ilustrativo.';
+          const lineas = doc.splitTextToSize(nota + ' No es un plano constructivo.', pageWidth - 2 * margin);
+          doc.text(lineas, margin, ty);
+          ty += lineas.length * 4 + 6;
+          const maxW = pageWidth - 2 * margin;
+          const maxH = doc.internal.pageSize.getHeight() - ty - 18;
+          let iw = maxW, ih = cv.height / cv.width * iw;
+          if (ih > maxH) { ih = maxH; iw = cv.width / cv.height * ih; }
+          doc.addImage(cv.toDataURL('image/png'), 'PNG', margin + (maxW - iw) / 2, ty, iw, ih, undefined, 'FAST');
+        } catch (e) { /* sin hoja de tablero */ }
+      }
+    }
 
     return { doc, filename: p.codigo + '.pdf' };
   }

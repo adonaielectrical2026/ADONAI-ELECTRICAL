@@ -12,6 +12,7 @@ Se corre desde la carpeta del proyecto, cada vez que se toca algo en codigo/:
 
 import base64
 import io
+import json
 import os
 import sys
 
@@ -85,7 +86,20 @@ def main():
     if 'LOGO_SRC = \'data:image/png' not in app_js:
         raise SystemExit('ERROR: no se pudo incrustar el logo (cambió la línea de LOGO_SRC en app.js)')
 
+    # Las imágenes del tablero van incrustadas: en el archivo único no hay
+    # servidor al cual pedírselas, y sin ellas el dibujo no se puede armar.
+    carpeta_img = os.path.join(CODIGO, 'img')
+    imagenes = {}
+    for nombre in sorted(os.listdir(carpeta_img)):
+        if nombre.endswith('.webp'):
+            imagenes[nombre[:-5]] = data_uri(os.path.join('img', nombre), 'image/webp')
+    with io.open(os.path.join(carpeta_img, 'medidas.json'), encoding='utf-8') as f:
+        medidas = f.read()
+    incrustadas = ('<script>window.__TAB_IMG=' + json.dumps(imagenes) +
+                   ';window.__TAB_MEDIDAS=' + medidas + ';</script>')
+
     scripts = (
+        incrustadas +
         '<script>\n' + texto('jspdf.umd.min.js') + '\n</script>\n'
         '<script>\n' + texto('jspdf.plugin.autotable.min.js') + '\n</script>\n'
         '<script>\n' + app_js + '\n</script>'
