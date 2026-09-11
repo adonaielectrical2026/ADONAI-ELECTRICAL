@@ -279,8 +279,19 @@ def main():
         extra = ('  %d ventana(s), módulo %.1f px' % (len(ventanas), ficha['modulo'])) if ventanas else ''
         print('  %-26s %5d x %-5d %6.0f KB%s' % (nombre, im.width, im.height, peso / 1024, extra))
 
-    with open(os.path.join(DESTINO, 'medidas.json'), 'w', encoding='utf-8') as f:
-        json.dump(medidas, f, ensure_ascii=False, indent=2, sort_keys=True)
+    # Se conserva lo que ya estaba: así se puede reprocesar una sola pieza
+    # —por ejemplo un logo que llegó después— sin rehacer las 28.
+    ruta_medidas = os.path.join(DESTINO, 'medidas.json')
+    previas = {}
+    if os.path.exists(ruta_medidas):
+        try:
+            with open(ruta_medidas, encoding='utf-8') as f:
+                previas = json.load(f)
+        except (ValueError, OSError):
+            previas = {}
+    previas.update(medidas)
+    with open(ruta_medidas, 'w', encoding='utf-8') as f:
+        json.dump(previas, f, ensure_ascii=False, indent=2, sort_keys=True)
 
     print('\n%d piezas en codigo/img/ — %.1f MB en total' % (len(medidas), total / 1048576))
     if desconocidas:
