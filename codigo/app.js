@@ -422,7 +422,10 @@
     llaveLuzSimple: 140,
     cajaRectangular: 42,
     tomacorriente: 237,
-    tableroPuntos: [{ n: 6, p: 348 }, { n: 12, p: 543 }, { n: 18, p: 838 }, { n: 24, p: 967 }, { n: 36, p: 1614 }, { n: 54, p: 2028 }],
+    // Medidas comerciales: gabinetes de pared de 12, 24, 36 y 48 módulos (filas
+    // de 12). El de 48 no está relevado — sale de prolongar la recta que forman
+    // los otros; confirmalo antes de presupuestar uno.
+    tableroPuntos: [{ n: 12, p: 543 }, { n: 24, p: 967 }, { n: 36, p: 1614 }, { n: 48, p: 1890 }],
     cajaMedidor: 0,
     jabalina: 978,
     canoPvc1pulg3m: 197,
@@ -435,18 +438,21 @@
     if (amp <= 63) return Math.round(base * 1.5);
     return Math.round(base * 2.5);
   }
+  // Medida de gabinete que hay que comprar para una cantidad de módulos: la
+  // siguiente de la lista. No existe un gabinete de 20 módulos — se compra el de
+  // 24 y sobran cuatro.
+  function medidaTablero(nModulos, precios) {
+    const pts = precios.tableroPuntos;
+    for (const pt of pts) if (nModulos <= pt.n) return pt.n;
+    return pts[pts.length - 1].n;
+  }
   function precioTablero(nModulos, precios) {
     const pts = precios.tableroPuntos;
-    if (nModulos <= pts[0].n) return pts[0].p;
-    for (let i = 1; i < pts.length; i++) {
-      if (nModulos <= pts[i].n) {
-        const a = pts[i - 1], b = pts[i];
-        const frac = (nModulos - a.n) / (b.n - a.n);
-        return Math.round(a.p + frac * (b.p - a.p));
-      }
-    }
-    const last = pts[pts.length - 1], prev = pts[pts.length - 2];
-    const porModulo = (last.p - prev.p) / (last.n - prev.n);
+    for (const pt of pts) if (nModulos <= pt.n) return pt.p;
+    // Más grande que el mayor de catálogo: se prolonga el precio por módulo del
+    // último tramo.
+    const last = pts[pts.length - 1], prev = pts[pts.length - 2] || pts[0];
+    const porModulo = last.n === prev.n ? 0 : (last.p - prev.p) / (last.n - prev.n);
     return Math.round(last.p + porModulo * (nModulos - last.n));
   }
 
@@ -511,8 +517,15 @@
       }
     });
     if (draft && draft.obra && draft.obra.naturaleza === 'Instalación nueva') {
-      const nLlaves = circuitos.length + 2; // + térmica general + diferencial general
-      add('Tablero eléctrico (' + nLlaves + ' módulos)', 'un.', 1, precioTablero(nLlaves, precios));
+      // Módulos que ocupa el tablero, no cantidad de llaves: una térmica bipolar
+      // ocupa 2 módulos y una tetrapolar 4. Contando llaves, el gabinete salía
+      // por la mitad de lo que cuesta.
+      const modulosCircuitos = circuitos.reduce((t, c) => t + (c.fases === 1 ? 2 : 4), 0);
+      const sistemaTablero = (draft && SISTEMAS[draft.sistemaId]) || SISTEMAS.tri_tt;
+      const modulosGeneral = (sistemaTablero.fases === 1 ? 2 : 4) * 2; // térmica + diferencial generales
+      const nModulos = modulosCircuitos + modulosGeneral;
+      const medida = medidaTablero(nModulos, precios);
+      add('Tablero eléctrico de ' + medida + ' módulos (' + nModulos + ' ocupados)', 'un.', 1, precioTablero(nModulos, precios));
       add('Caja para medidor', 'un.', 1, precios.cajaMedidor);
       add('Jabalina / electrodo de puesta a tierra', 'un.', 1, precios.jabalina);
       add('Caño PVC 1" x 3m (puesta a tierra)', 'un.', 2, precios.canoPvc1pulg3m);
@@ -528,6 +541,34 @@
   /* ============================================================
      PERSISTENCIA
      ============================================================ */
+  // Un catálogo guardado antes de pasar a las medidas comerciales (12/24/36/48)
+  // tiene la lista vieja de 6/12/18/24/36/54. Se convierte conservando los
+  // precios que el usuario haya editado para las medidas que siguen existiendo,
+  // y el de 48 se saca de sus propios 36 y 54 en vez de pisarlo con el de
+  // fábrica.
+  function migrarMedidasTablero(precios) {
+    const pts = precios && precios.tableroPuntos;
+    if (!Array.isArray(pts) || !pts.length) return false;
+    const medidasNuevas = DEFAULT_PRECIOS.tableroPuntos.map((pt) => pt.n);
+    const yaMigrado = pts.length === medidasNuevas.length &&
+      pts.every((pt, i) => pt.n === medidasNuevas[i]);
+    if (yaMigrado) return false;
+    const porMedida = {};
+    pts.forEach((pt) => { porMedida[pt.n] = pt.p; });
+    precios.tableroPuntos = DEFAULT_PRECIOS.tableroPuntos.map((def) => {
+      if (porMedida[def.n] !== undefined) return { n: def.n, p: porMedida[def.n] };
+      // 48 no existía: se interpola entre las dos medidas viejas que lo rodean
+      const antes = pts.filter((pt) => pt.n < def.n).pop();
+      const despues = pts.find((pt) => pt.n > def.n);
+      if (antes && despues) {
+        const frac = (def.n - antes.n) / (despues.n - antes.n);
+        return { n: def.n, p: Math.round(antes.p + frac * (despues.p - antes.p)) };
+      }
+      return { n: def.n, p: def.p };
+    });
+    return true;
+  }
+
   const STORAGE_KEY = 'adonai_ht_v1';
   function defaultDB() {
     return {
@@ -540,10 +581,14 @@
   try { DB = JSON.parse(localStorage.getItem(STORAGE_KEY)) || defaultDB(); } catch (e) { DB = defaultDB(); }
   if (!DB.settings) DB.settings = { margen: 30, iva: 22 };
   if (!DB.settings.precios) DB.settings.precios = clonePrecios(DEFAULT_PRECIOS);
+  const medidasConvertidas = migrarMedidasTablero(DB.settings.precios);
   if (!DB.settings.manoObra) DB.settings.manoObra = { ...DEFAULT_MANO_OBRA };
   if (!DB.seq) DB.seq = { trabajo: 0, presupuesto: 0 };
 
   function saveDB() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); } catch (e) {} }
+  // La conversión de medidas se guarda enseguida; si no, se repetiría en cada
+  // arranque y el catálogo en pantalla no coincidiría con el del disco.
+  if (medidasConvertidas) saveDB();
 
   function seedSampleData() {
     const sistema = SISTEMAS.tri_tt;
@@ -1241,6 +1286,7 @@
     {
       titulo: 'Tablero eléctrico ($/un. según módulos)',
       campos: [{ key: 'tableroPuntos', tipo: 'tablero' }],
+      nota: 'Gabinetes de pared de 12, 24, 36 y 48 módulos, en filas de 12. Se cotiza siempre la medida siguiente a lo que ocupan las llaves: para 20 módulos se compra el de 24. El de 48 módulos no está relevado, sale de prolongar la recta de los otros tres — confirmá el precio antes de presupuestar uno.',
     },
     {
       titulo: 'Kit de suministro nuevo ($/un.)',
