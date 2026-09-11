@@ -26,14 +26,74 @@
     { id: 'tomacorrientes', label: 'Tomacorrientes de uso general', cosPhiDefault: 1, uso: 'tomacorrientes' },
     { id: 'cargaFija', label: 'Carga fija especial', cosPhiDefault: 0.8, uso: 'fuerza' },
   ];
-  const CARGAS_FIJAS_PRESETS = [
-    { nombre: 'Aire acondicionado', w: 2200, cosPhi: 0.85 },
-    { nombre: 'Termotanque / calefón', w: 2000, cosPhi: 1 },
-    { nombre: 'Cocina eléctrica', w: 3500, cosPhi: 1 },
-    { nombre: 'Horno eléctrico', w: 2000, cosPhi: 1 },
-    { nombre: 'Lavarropas', w: 1500, cosPhi: 0.9 },
-    { nombre: 'Secarropas', w: 2000, cosPhi: 1 },
-    { nombre: 'Motor / otro', w: 750, cosPhi: 0.8 },
+  // Cargas típicas de una casa, para no tener que buscar la potencia cada vez.
+  //
+  // El valor que se usa es el de PLACA (el máximo que declara el fabricante), no
+  // el consumo promedio. Un aire de 9000 BTU consume unos 750 W enfriando, pero
+  // su placa dice 1300 W: el circuito hay que dimensionarlo por la placa, si no
+  // queda corto en el arranque y a plena carga.
+  //
+  // Marcados con "James" van los que se pudieron verificar contra las fichas de
+  // esa marca, que es la de referencia en plaza. El resto son valores de diseño
+  // habituales — sirven para dimensionar, pero si el cliente ya compró el
+  // aparato conviene cargar la potencia real de su placa.
+  const CARGAS_PRESETS = [
+    // --- Iluminación ---
+    { cat: 'iluminacion', grupo: 'Iluminación', nombre: 'Lámpara LED 9W', w: 9, cosPhi: 1 },
+    { cat: 'iluminacion', grupo: 'Iluminación', nombre: 'Lámpara LED 12W', w: 12, cosPhi: 1 },
+    { cat: 'iluminacion', grupo: 'Iluminación', nombre: 'Plafón / panel LED 18W', w: 18, cosPhi: 1 },
+    { cat: 'iluminacion', grupo: 'Iluminación', nombre: 'Tubo LED 18W', w: 18, cosPhi: 1 },
+    { cat: 'iluminacion', grupo: 'Iluminación', nombre: 'Reflector LED 20W', w: 20, cosPhi: 1 },
+    { cat: 'iluminacion', grupo: 'Iluminación', nombre: 'Reflector LED 50W', w: 50, cosPhi: 1 },
+    { cat: 'iluminacion', grupo: 'Iluminación', nombre: 'Reflector LED 100W', w: 100, cosPhi: 1 },
+    { cat: 'iluminacion', grupo: 'Iluminación', nombre: 'Lámpara incandescente 60W', w: 60, cosPhi: 1 },
+
+    // --- Tomacorrientes ---
+    { cat: 'tomacorrientes', grupo: 'Tomacorrientes', nombre: 'Tomacorriente de uso general', w: 200, cosPhi: 1 },
+    { cat: 'tomacorrientes', grupo: 'Tomacorrientes', nombre: 'Tomacorriente para equipo fijo', w: 500, cosPhi: 1 },
+
+    // --- Climatización ---
+    { cat: 'cargaFija', grupo: 'Climatización', nombre: 'Aire acondicionado 9000 BTU', w: 1300, cosPhi: 0.9, fuente: 'James' },
+    { cat: 'cargaFija', grupo: 'Climatización', nombre: 'Aire acondicionado 12000 BTU', w: 1650, cosPhi: 0.9, fuente: 'James' },
+    { cat: 'cargaFija', grupo: 'Climatización', nombre: 'Aire acondicionado 18000 BTU', w: 2500, cosPhi: 0.9 },
+    { cat: 'cargaFija', grupo: 'Climatización', nombre: 'Aire acondicionado 24000 BTU', w: 3300, cosPhi: 0.9 },
+    { cat: 'cargaFija', grupo: 'Climatización', nombre: 'Estufa eléctrica / caloventor', w: 2000, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Climatización', nombre: 'Ventilador de techo', w: 70, cosPhi: 0.8 },
+
+    // --- Agua caliente ---
+    { cat: 'cargaFija', grupo: 'Agua caliente', nombre: 'Calefón / termotanque 20-30 L', w: 1500, cosPhi: 1, fuente: 'James' },
+    { cat: 'cargaFija', grupo: 'Agua caliente', nombre: 'Termotanque 60-80 L', w: 2000, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Agua caliente', nombre: 'Ducha eléctrica instantánea', w: 5500, cosPhi: 1 },
+
+    // --- Cocina ---
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Heladera', w: 350, cosPhi: 0.85 },
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Heladera grande / freezer', w: 600, cosPhi: 0.85 },
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Cocina eléctrica (anafe y horno)', w: 5000, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Anafe eléctrico / vitrocerámica', w: 3500, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Horno eléctrico', w: 2500, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Microondas', w: 1400, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Lavavajillas', w: 1800, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Extractor de cocina', w: 200, cosPhi: 0.8 },
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Pava eléctrica', w: 2000, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Cafetera', w: 1000, cosPhi: 1 },
+
+    // --- Lavado ---
+    { cat: 'cargaFija', grupo: 'Lavado', nombre: 'Lavarropas', w: 2000, cosPhi: 0.9 },
+    { cat: 'cargaFija', grupo: 'Lavado', nombre: 'Lavarropas sin calentar agua', w: 600, cosPhi: 0.9 },
+    { cat: 'cargaFija', grupo: 'Lavado', nombre: 'Lavasecarropas', w: 2200, cosPhi: 0.9 },
+    { cat: 'cargaFija', grupo: 'Lavado', nombre: 'Secarropas por calor', w: 2500, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Lavado', nombre: 'Secarropas centrífugo', w: 400, cosPhi: 0.85 },
+    { cat: 'cargaFija', grupo: 'Lavado', nombre: 'Plancha', w: 1600, cosPhi: 1 },
+
+    // --- Otros ---
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Televisor LED', w: 120, cosPhi: 0.95 },
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Computadora de escritorio', w: 300, cosPhi: 0.95 },
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Bomba de agua 1/2 HP', w: 550, cosPhi: 0.8 },
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Bomba de agua 1 HP', w: 1100, cosPhi: 0.8 },
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Bomba de piscina', w: 750, cosPhi: 0.8 },
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Portón eléctrico', w: 400, cosPhi: 0.8 },
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Cargador de auto eléctrico', w: 7400, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Motor / otro', w: 750, cosPhi: 0.8 },
   ];
   const SISTEMAS = {
     mono: { id: 'mono', label: 'Monofásico 230V', v: 230, fases: 1 },
@@ -1298,6 +1358,22 @@
     });
   }
 
+  // Opciones del selector de cargas típicas, agrupadas por rubro y filtradas
+  // por la categoría elegida.
+  function opcionesPreset(categoria) {
+    const propias = CARGAS_PRESETS.filter((p) => p.cat === categoria);
+    const grupos = [];
+    propias.forEach((p) => {
+      let g = grupos.find((x) => x.nombre === p.grupo);
+      if (!g) { g = { nombre: p.grupo, items: [] }; grupos.push(g); }
+      g.items.push(p);
+    });
+    return '<option value="">Escribir a mano…</option>' + grupos.map((g) =>
+      '<optgroup label="' + escapeHtml(g.nombre) + '">' + g.items.map((p) =>
+        '<option value="' + escapeHtml(p.nombre) + '">' + escapeHtml(p.nombre) + ' — ' + p.w + ' W</option>'
+      ).join('') + '</optgroup>').join('');
+  }
+
   function renderCargasList() {
     const wrap = $('#cargas-list');
     wrap.innerHTML = '';
@@ -1307,7 +1383,6 @@
     }
     draft.cargas.forEach((c) => {
       const card = el('div', { class: 'item-card' });
-      const isFija = c.categoria === 'cargaFija';
       card.innerHTML =
         '<button class="remove-btn" type="button">' + icon('ic-trash') + '</button>' +
         '<div class="item-grid" style="padding-right:30px">' +
@@ -1315,8 +1390,8 @@
         '<div class="field"><label>Categoría</label><select class="select" data-f="categoria">' +
         CATEGORIAS.map((cat) => '<option value="' + cat.id + '"' + (cat.id === c.categoria ? ' selected' : '') + '>' + cat.label + '</option>').join('') +
         '</select></div>' +
-        (isFija ? '<div class="field"><label>Carga típica</label><select class="select" data-f="preset"><option value="">Elegir preset…</option>' +
-          CARGAS_FIJAS_PRESETS.map((p, i) => '<option value="' + i + '">' + p.nombre + ' (' + p.w + 'W)</option>').join('') + '</select></div>' : '') +
+        '<div class="field" style="grid-column:1/-1"><label>Elegir de la lista</label><select class="select" data-f="preset">' +
+        opcionesPreset(c.categoria) + '</select></div>' +
         '<div class="field"><label>Potencia (W)</label><input class="input" type="number" data-f="potenciaW" value="' + c.potenciaW + '"></div>' +
         '<div class="field"><label>Cantidad</label><input class="input" type="number" min="1" data-f="cantidad" value="' + c.cantidad + '"></div>' +
         '<div class="field"><label>cos φ</label><input class="input" type="number" step="0.05" min="0" max="1" data-f="cosPhi" value="' + c.cosPhi + '"></div>' +
@@ -1326,8 +1401,13 @@
         input.addEventListener('change', () => {
           const f = input.dataset.f;
           if (f === 'preset') {
-            const p = CARGAS_FIJAS_PRESETS[input.value];
-            if (p) { c.nombre = c.nombre || p.nombre; c.potenciaW = p.w; c.cosPhi = p.cosPhi; renderCargasList(); renderPotenciaResultado(); }
+            const p = CARGAS_PRESETS.find((x) => x.nombre === input.value);
+            if (p) {
+              // el nombre se pisa sólo si el técnico no escribió uno propio
+              if (!c.nombre || CARGAS_PRESETS.some((x) => x.nombre === c.nombre)) c.nombre = p.nombre;
+              c.potenciaW = p.w; c.cosPhi = p.cosPhi;
+              renderCargasList(); renderPotenciaResultado();
+            }
             return;
           }
           if (f === 'categoria') {
