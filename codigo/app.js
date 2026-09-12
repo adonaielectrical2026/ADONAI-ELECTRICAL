@@ -544,9 +544,11 @@
     // precio hasta que se confirme.
     borneraTierra: 55,
     borneraNeutro: 55,
-    // MGI, caja medidor trifásica con ICP (TAF): U$S 51,67. Es la única que
-    // publican; para monofásica hay que buscar en otro lado.
-    cajaMedidor: 2079,
+    // La caja del medidor depende del suministro, así que van las dos.
+    // Monofásica: JOServitec, cajón UTE con llave, $980 con IVA.
+    // Trifásica: MGI, caja medidor con ICP (TAF), U$S 51,67 = $2.079.
+    cajaMedidorMono: 980,
+    cajaMedidorTrifasica: 2079,
     jabalina: 978,
     canoPvc1pulg3m: 197,
     codoPvc1pulg: 31,
@@ -557,8 +559,9 @@
     { clave: 'termicaUnipolarBase', viejo: 166, nuevo: 80 },
     { clave: 'borneraTierra', viejo: 0, nuevo: 55 },
     { clave: 'borneraNeutro', viejo: 0, nuevo: 55 },
-    { clave: 'cajaMedidor', viejo: 0, nuevo: 2079 },
     { clave: 'codoGalvanizado', viejo: 0, nuevo: 16 },
+    { clave: 'cajaMedidorMono', viejo: 0, nuevo: 980 },
+    { clave: 'cajaMedidorTrifasica', viejo: 0, nuevo: 2079 },
   ];
   const DEFAULT_MANO_OBRA = { tarifaHora: 500, horasJornada: 8 };
   const BASE_POR_TIPO = { unipolar: 'termicaUnipolarBase', bipolar: 'termicaBipolarBase',
@@ -662,7 +665,9 @@
       add('Tablero eléctrico de ' + medida + ' módulos (' + nModulos + ' ocupados)', 'un.', 1, precioTablero(nModulos, precios));
       add('Bornera de tierra', 'un.', 1, precios.borneraTierra);
       if (necesitaBorneraNeutro(circuitos, sistemaTablero)) add('Bornera de neutro', 'un.', 1, precios.borneraNeutro);
-      add('Caja para medidor', 'un.', 1, precios.cajaMedidor);
+      const mono = sistemaTablero.fases === 1;
+      add('Caja para medidor ' + (mono ? 'monofásico' : 'trifásico'), 'un.', 1,
+          mono ? precios.cajaMedidorMono : precios.cajaMedidorTrifasica);
       add('Jabalina / electrodo de puesta a tierra', 'un.', 1, precios.jabalina);
       add('Caño PVC 1" x 3m (puesta a tierra)', 'un.', 2, precios.canoPvc1pulg3m);
       add('Codo PVC 1" (puesta a tierra)', 'un.', 6, precios.codoPvc1pulg);
@@ -1927,6 +1932,8 @@
       titulo: 'Kit de suministro nuevo ($/un.)',
       campos: [
         { key: 'cajaMedidor', tipo: 'plano', etiqueta: 'Caja para medidor' },
+        { key: 'cajaMedidorMono', tipo: 'plano', etiqueta: 'Caja para medidor monofásico' },
+        { key: 'cajaMedidorTrifasica', tipo: 'plano', etiqueta: 'Caja para medidor trifásico' },
         { key: 'borneraTierra', tipo: 'plano', etiqueta: 'Bornera de tierra' },
         { key: 'borneraNeutro', tipo: 'plano', etiqueta: 'Bornera de neutro' },
         { key: 'jabalina', tipo: 'plano', etiqueta: 'Jabalina / electrodo de puesta a tierra' },
