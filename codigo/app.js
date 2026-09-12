@@ -20,21 +20,124 @@
      MOTOR DE CÁLCULO (portado y verificado desde el .jsx original)
      ============================================================ */
   const SQRT3 = Math.sqrt(3);
+  // Lo que ocupa una bornera de riel puesta de pie, en módulos. Se usa tanto
+  // para elegir la medida del gabinete como para dibujarlo.
+  const MODULOS_BORNERA = 2;
 
   const CATEGORIAS = [
     { id: 'iluminacion', label: 'Iluminación', cosPhiDefault: 1, uso: 'iluminacion' },
     { id: 'tomacorrientes', label: 'Tomacorrientes de uso general', cosPhiDefault: 1, uso: 'tomacorrientes' },
     { id: 'cargaFija', label: 'Carga fija especial', cosPhiDefault: 0.8, uso: 'fuerza' },
   ];
-  const CARGAS_FIJAS_PRESETS = [
-    { nombre: 'Aire acondicionado', w: 2200, cosPhi: 0.85 },
-    { nombre: 'Termotanque / calefón', w: 2000, cosPhi: 1 },
-    { nombre: 'Cocina eléctrica', w: 3500, cosPhi: 1 },
-    { nombre: 'Horno eléctrico', w: 2000, cosPhi: 1 },
-    { nombre: 'Lavarropas', w: 1500, cosPhi: 0.9 },
-    { nombre: 'Secarropas', w: 2000, cosPhi: 1 },
-    { nombre: 'Motor / otro', w: 750, cosPhi: 0.8 },
+  // Cargas típicas de una casa, para no tener que buscar la potencia cada vez.
+  //
+  // El valor que se usa es el de PLACA (el máximo que declara el fabricante), no
+  // el consumo promedio. Un aire de 9000 BTU consume unos 750 W enfriando, pero
+  // su placa dice 1300 W: el circuito hay que dimensionarlo por la placa, si no
+  // queda corto en el arranque y a plena carga.
+  //
+  // Marcados con "James" van los que se pudieron verificar contra las fichas de
+  // esa marca, que es la de referencia en plaza. El resto son valores de diseño
+  // habituales — sirven para dimensionar, pero si el cliente ya compró el
+  // aparato conviene cargar la potencia real de su placa.
+  const CARGAS_PRESETS = [
+    // --- Iluminación ---
+    { cat: 'iluminacion', grupo: 'Iluminación', nombre: 'Lámpara LED 9W', w: 9, cosPhi: 1 },
+    { cat: 'iluminacion', grupo: 'Iluminación', nombre: 'Lámpara LED 12W', w: 12, cosPhi: 1 },
+    { cat: 'iluminacion', grupo: 'Iluminación', nombre: 'Plafón / panel LED 18W', w: 18, cosPhi: 1 },
+    { cat: 'iluminacion', grupo: 'Iluminación', nombre: 'Tubo LED 18W', w: 18, cosPhi: 1 },
+    { cat: 'iluminacion', grupo: 'Iluminación', nombre: 'Reflector LED 20W', w: 20, cosPhi: 1 },
+    { cat: 'iluminacion', grupo: 'Iluminación', nombre: 'Reflector LED 50W', w: 50, cosPhi: 1 },
+    { cat: 'iluminacion', grupo: 'Iluminación', nombre: 'Reflector LED 100W', w: 100, cosPhi: 1 },
+    { cat: 'iluminacion', grupo: 'Iluminación', nombre: 'Lámpara incandescente 60W', w: 60, cosPhi: 1 },
+
+    // --- Tomacorrientes ---
+    { cat: 'tomacorrientes', grupo: 'Tomacorrientes', nombre: 'Tomacorriente de uso general', w: 200, cosPhi: 1 },
+    { cat: 'tomacorrientes', grupo: 'Tomacorrientes', nombre: 'Tomacorriente para equipo fijo', w: 500, cosPhi: 1 },
+
+    // --- Climatización ---
+    { cat: 'cargaFija', grupo: 'Climatización', nombre: 'Aire acondicionado 9000 BTU', w: 1300, cosPhi: 0.9, fuente: 'James' },
+    { cat: 'cargaFija', grupo: 'Climatización', nombre: 'Aire acondicionado 12000 BTU', w: 1650, cosPhi: 0.9, fuente: 'James' },
+    { cat: 'cargaFija', grupo: 'Climatización', nombre: 'Aire acondicionado 18000 BTU', w: 2500, cosPhi: 0.9 },
+    { cat: 'cargaFija', grupo: 'Climatización', nombre: 'Aire acondicionado 24000 BTU', w: 3300, cosPhi: 0.9 },
+    { cat: 'cargaFija', grupo: 'Climatización', nombre: 'Estufa eléctrica / caloventor', w: 2000, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Climatización', nombre: 'Ventilador de techo', w: 70, cosPhi: 0.8 },
+
+    // --- Agua caliente ---
+    { cat: 'cargaFija', grupo: 'Agua caliente', nombre: 'Calefón / termotanque 20-30 L', w: 1500, cosPhi: 1, fuente: 'James' },
+    { cat: 'cargaFija', grupo: 'Agua caliente', nombre: 'Termotanque 60-80 L', w: 2000, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Agua caliente', nombre: 'Ducha eléctrica instantánea', w: 5500, cosPhi: 1 },
+
+    // --- Cocina ---
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Heladera', w: 350, cosPhi: 0.85 },
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Heladera grande / freezer', w: 600, cosPhi: 0.85 },
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Cocina eléctrica (anafe y horno)', w: 5000, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Anafe eléctrico / vitrocerámica', w: 3500, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Horno eléctrico', w: 2500, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Microondas', w: 1400, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Lavavajillas', w: 1800, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Extractor de cocina', w: 200, cosPhi: 0.8 },
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Pava eléctrica', w: 2000, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Cocina', nombre: 'Cafetera', w: 1000, cosPhi: 1 },
+
+    // --- Lavado ---
+    { cat: 'cargaFija', grupo: 'Lavado', nombre: 'Lavarropas', w: 2000, cosPhi: 0.9 },
+    { cat: 'cargaFija', grupo: 'Lavado', nombre: 'Lavarropas sin calentar agua', w: 600, cosPhi: 0.9 },
+    { cat: 'cargaFija', grupo: 'Lavado', nombre: 'Lavasecarropas', w: 2200, cosPhi: 0.9 },
+    { cat: 'cargaFija', grupo: 'Lavado', nombre: 'Secarropas por calor', w: 2500, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Lavado', nombre: 'Secarropas centrífugo', w: 400, cosPhi: 0.85 },
+    { cat: 'cargaFija', grupo: 'Lavado', nombre: 'Plancha', w: 1600, cosPhi: 1 },
+
+    // --- Otros ---
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Televisor LED', w: 120, cosPhi: 0.95 },
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Computadora de escritorio', w: 300, cosPhi: 0.95 },
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Bomba de agua 1/2 HP', w: 550, cosPhi: 0.8 },
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Bomba de agua 1 HP', w: 1100, cosPhi: 0.8 },
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Bomba de piscina', w: 750, cosPhi: 0.8 },
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Portón eléctrico', w: 400, cosPhi: 0.8 },
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Cargador de auto eléctrico', w: 7400, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Motor / otro', w: 750, cosPhi: 0.8 },
   ];
+  // Uso del circuito. Define la sección mínima reglamentaria, la curva de la
+  // térmica y la caída de tensión admisible, así que tiene que poder elegirse:
+  // una térmica de iluminación va en curva B y una de fuerza en C.
+  const USOS = [
+    { id: 'iluminacion', label: 'Iluminación' },
+    { id: 'tomacorrientes', label: 'Tomacorrientes' },
+    { id: 'fuerza', label: 'Fuerza / carga fija' },
+  ];
+  // Polos de la llave de un circuito.
+  //
+  // En monofásico hay dos formas de hacerlo y las dos se usan:
+  //   - Bipolar: la llave corta fase y neutro. El neutro del circuito va a la
+  //     llave, así que no hace falta bornera de neutro.
+  //   - Unipolar: la llave corta sólo la fase y el neutro va a una bornera.
+  //     Es lo habitual en los circuitos de iluminación.
+  //
+  // Alcanza con que UNA llave sea unipolar para que el tablero necesite bornera
+  // de neutro. La de tierra va siempre, sea cual sea el caso.
+  function polosPorDefecto(circuito) {
+    if (circuito.fases !== 1) return 4;
+    return circuito.uso === 'iluminacion' ? 1 : 2;
+  }
+  function polosDe(circuito) {
+    const p = Number(circuito.polos);
+    if (p === 1 || p === 2 || p === 3 || p === 4) return p;
+    return polosPorDefecto(circuito);
+  }
+  function opcionesPolos(circuito) {
+    return circuito.fases === 1
+      ? [{ v: 1, label: 'Unipolar — corta la fase' }, { v: 2, label: 'Bipolar — corta fase y neutro' }]
+      : [{ v: 3, label: 'Tripolar — corta las fases' }, { v: 4, label: 'Tetrapolar — fases y neutro' }];
+  }
+  // El tablero lleva bornera de neutro sólo si alguna llave deja el neutro
+  // afuera; la de tierra va siempre.
+  function necesitaBorneraNeutro(circuitos, sistema) {
+    const general = (sistema && sistema.fases === 1) ? 2 : 4;
+    if (general === 2 || general === 4) { /* la general siempre corta el neutro */ }
+    return (circuitos || []).some((c) => polosDe(c) === 1 || polosDe(c) === 3);
+  }
+
   const SISTEMAS = {
     mono: { id: 'mono', label: 'Monofásico 230V', v: 230, fases: 1 },
     tri_it: { id: 'tri_it', label: 'Trifásico 230V (sistema IT)', v: 230, fases: 3 },
@@ -242,7 +345,17 @@
   }
   // Ancho de bandeja portacable según cantidad de cables que lleva (criterio del usuario,
   // no una tabla normativa).
-  const ANCHO_BANDEJA = [{ n: 6, ancho: 150 }, { n: 10, ancho: 200 }, { n: Infinity, ancho: 250 }];
+  const ANCHO_BANDEJA = [{ n: 6, ancho: 150 }, { n: Infinity, ancho: 200 }];
+  // Medida de caño que hay que comprar para un diámetro calculado: la misma si
+  // se consigue, y si no la siguiente hacia arriba. Si el cálculo pide más de
+  // lo que hay, devuelve el diámetro pedido — así el material queda en $0 y se
+  // ve, en vez de cotizar en silencio un caño más angosto del que corresponde.
+  function medidaCano(d, disponibles) {
+    const medidas = Object.keys(disponibles || {}).map(Number).sort((a, b) => a - b);
+    for (const m of medidas) if (m >= d) return m;
+    return d;
+  }
+
   function anchoBandeja(nCables) {
     for (const row of ANCHO_BANDEJA) if (nCables <= row.n) return row.ancho;
     return ANCHO_BANDEJA[ANCHO_BANDEJA.length - 1].ancho;
@@ -393,6 +506,10 @@
   function clonePrecios(obj) {
     try { return structuredClone(obj); } catch (e) { return JSON.parse(JSON.stringify(obj)); }
   }
+  // Los precios están en pesos. Los que se relevaron en proveedores que cotizan
+  // en dólares (MGI) se convirtieron a $40,23 por dólar, la cotización del
+  // 12/9/2026. Si el dólar se mueve mucho, esos renglones quedan viejos: son los
+  // que dicen "MGI" en el comentario.
   const DEFAULT_PRECIOS = {
     cableUnipolar: {
       0.75: 11, 1: 14, 1.5: 20, 2: 27, 2.5: 34, 4: 54, 6: 80, 10: 136, 16: 217, 25: 333,
@@ -403,18 +520,31 @@
     },
     canoCorrugado: { 16: 13, 20: 14, 25: 19, 32: 27, 40: 39 },
     canoPvcRigido: { 16: 74, 20: 84, 25: 112, 32: 158, 40: 222 },
-    canoGalvanizado: { 16: 0, 20: 0, 25: 0, 32: 0, 40: 0 },
-    bandeja: { 150: 0, 200: 0, 250: 0 },
+    // MGI, caño zincado EMT, tira de 3,05 m, pasado a metro y a pesos ($40,23):
+    //   20 mm  = 3/4" (17,93 ext)   U$S 4,78/tira  -> $63/m
+    //   25 mm  = 1"   (23,42 ext)   U$S 7,19/tira  -> $95/m
+    //   32 mm  = 1 1/4" (29,54 ext) U$S 9,93/tira  -> $131/m
+    canoGalvanizado: { 20: 63, 25: 95, 32: 131 },
+    // Bandeja calada galvanizada, tramo de 3 m, pasado a metro:
+    //   150x65 (Punto Eléctrico) U$S 35,55 = $1.430 el tramo -> $477/m
+    //   200x65 (Electro Uruguay)          $1.767,32 el tramo -> $589/m
+    bandeja: { 150: 477, 200: 589 },
     grampaOmega: 12,
     mensulaBandeja: 135,
-    tacoFischer10mm: 3,
-    tornilloTuercaTaco10mm: 0,
-    tornilloTuerca8mm: 0,
     codoPvcRigido: 31,
-    codoGalvanizado: 0,
-    codoCajaBandeja: 0,
+    // MGI, curva zincada EMT: 3/4" (20mm) U$S 0,40. Es la medida que más sale en
+    // vivienda. Si se trabaja con caño más grueso, 1" son $29 y 1 1/4" $47.
+    codoGalvanizado: 16,
+    // Curva horizontal metálica 200x65 (MercadoLibre, vendedor KENTIUM): $964.
+    // Es el precio de la bandeja de 200 mm, la más ancha que cotiza la app; en
+    // bandejas más angostas la curva sale menos.
+    codoCajaBandeja: 964,
     // Las térmicas DIN residenciales cotizaron parejo entre 6 y 40A en Fivisa; para 50A+ se
     // aplica un escalón proporcional (no relevado) porque suelen pasar a otro bastidor/marco.
+    // Relevado en Fivisa, línea Hyundai HGD63S, la misma con la que coincide la
+    // bipolar: 1P 16A 4,5kA (HY1116S) $80 de lista. La proporción que se usaba
+    // antes daba más del doble.
+    termicaUnipolarBase: 80,
     termicaBipolarBase: 277,
     termicaTetrapolarBase: 294,
     cajaOctogonal: 72,
@@ -422,31 +552,66 @@
     llaveLuzSimple: 140,
     cajaRectangular: 42,
     tomacorriente: 237,
-    tableroPuntos: [{ n: 6, p: 348 }, { n: 12, p: 543 }, { n: 18, p: 838 }, { n: 24, p: 967 }, { n: 36, p: 1614 }, { n: 54, p: 2028 }],
-    cajaMedidor: 0,
+    // Medidas comerciales: gabinetes de pared de 12, 24, 36 y 48 módulos (filas
+    // de 12). El de 48 no está relevado — sale de prolongar la recta que forman
+    // los otros; confirmalo antes de presupuestar uno.
+    tableroPuntos: [{ n: 12, p: 543 }, { n: 24, p: 967 }, { n: 36, p: 1614 }, { n: 48, p: 1890 }],
+    // Relevado en Fivisa: barra para riel DIN de 7 vías 63A (CE3105) $55 de
+    // lista. La de neutro es la misma pieza en otro color, así que va al mismo
+    // precio hasta que se confirme.
+    borneraTierra: 55,
+    borneraNeutro: 55,
+    // La caja del medidor depende del suministro, así que van las dos.
+    // Monofásica: JOServitec, cajón UTE con llave, $980 con IVA.
+    // Trifásica: MGI, caja medidor con ICP (TAF), U$S 51,67 = $2.079.
+    cajaMedidorMono: 980,
+    cajaMedidorTrifasica: 2079,
     jabalina: 978,
     canoPvc1pulg3m: 197,
     codoPvc1pulg: 31,
   };
+  // Los que pasaron de "sin relevar" a relevado. Al agregar uno nuevo acá, se
+  // actualiza solo en los celulares que ya tienen la app.
+  const PRECIOS_RELEVADOS = [
+    { clave: 'termicaUnipolarBase', viejo: 166, nuevo: 80 },
+    { clave: 'borneraTierra', viejo: 0, nuevo: 55 },
+    { clave: 'borneraNeutro', viejo: 0, nuevo: 55 },
+    { clave: 'codoGalvanizado', viejo: 0, nuevo: 16 },
+    { clave: 'cajaMedidorMono', viejo: 0, nuevo: 980 },
+    { clave: 'cajaMedidorTrifasica', viejo: 0, nuevo: 2079 },
+    { clave: 'codoCajaBandeja', viejo: 0, nuevo: 964 },
+    // los que van por medida llevan además cuál
+    { clave: 'bandeja', medida: 150, viejo: 442, nuevo: 477 },
+  ];
+
+  // Proveedores de referencia para relevar precios, por si hay que rehacerlo:
+  //   Fivisa (fivisa.com.uy) y Electro Uruguay (electrouruguay.com) cotizan en
+  //   pesos; MGI (mgi.com.uy) en dólares. Las bandejas no están en catálogo web
+  //   de ninguno: Electro Uruguay las publica en MercadoLibre.
   const DEFAULT_MANO_OBRA = { tarifaHora: 500, horasJornada: 8 };
+  const BASE_POR_TIPO = { unipolar: 'termicaUnipolarBase', bipolar: 'termicaBipolarBase',
+                          tripolar: 'termicaTetrapolarBase', tetrapolar: 'termicaTetrapolarBase' };
   function precioTermica(tipo, amp, precios) {
-    const base = tipo === 'bipolar' ? precios.termicaBipolarBase : precios.termicaTetrapolarBase;
+    const base = Number(precios[BASE_POR_TIPO[tipo] || 'termicaBipolarBase']) || 0;
     if (amp <= 40) return base;
     if (amp <= 63) return Math.round(base * 1.5);
     return Math.round(base * 2.5);
   }
+  // Medida de gabinete que hay que comprar para una cantidad de módulos: la
+  // siguiente de la lista. No existe un gabinete de 20 módulos — se compra el de
+  // 24 y sobran cuatro.
+  function medidaTablero(nModulos, precios) {
+    const pts = precios.tableroPuntos;
+    for (const pt of pts) if (nModulos <= pt.n) return pt.n;
+    return pts[pts.length - 1].n;
+  }
   function precioTablero(nModulos, precios) {
     const pts = precios.tableroPuntos;
-    if (nModulos <= pts[0].n) return pts[0].p;
-    for (let i = 1; i < pts.length; i++) {
-      if (nModulos <= pts[i].n) {
-        const a = pts[i - 1], b = pts[i];
-        const frac = (nModulos - a.n) / (b.n - a.n);
-        return Math.round(a.p + frac * (b.p - a.p));
-      }
-    }
-    const last = pts[pts.length - 1], prev = pts[pts.length - 2];
-    const porModulo = (last.p - prev.p) / (last.n - prev.n);
+    for (const pt of pts) if (nModulos <= pt.n) return pt.p;
+    // Más grande que el mayor de catálogo: se prolonga el precio por módulo del
+    // último tramo.
+    const last = pts[pts.length - 1], prev = pts[pts.length - 2] || pts[0];
+    const porModulo = last.n === prev.n ? 0 : (last.p - prev.p) / (last.n - prev.n);
     return Math.round(last.p + porModulo * (nModulos - last.n));
   }
 
@@ -475,17 +640,21 @@
           // hacen falta a partir de la longitud, así que se deja lista para cargar a mano.
           add('Codo PVC rígido ' + d + ' mm (cambio de dirección)', 'un.', 0, precios.codoPvcRigido);
         } else if (c.metodo === 'amurado_galvanizado') {
-          add('Caño de acero galvanizado ' + d + ' mm', 'm', largo, precios.canoGalvanizado[d] || 0);
+          // En acero no se manejan todas las medidas que sí existen en PVC: si
+          // el cálculo pide una que no se consigue, se pasa a la siguiente. Un
+          // caño más ancho siempre entra; uno más angosto, no.
+          const dAcero = medidaCano(d, precios.canoGalvanizado);
+          add('Caño de acero galvanizado ' + dAcero + ' mm', 'm', largo, precios.canoGalvanizado[dAcero] || 0);
           add('Grampa omega', 'un.', largo, precios.grampaOmega);
-          add('Codo caño galvanizado ' + d + ' mm (cambio de dirección)', 'un.', 0, precios.codoGalvanizado);
+          add('Codo caño galvanizado ' + dAcero + ' mm (cambio de dirección)', 'un.', 0, precios.codoGalvanizado);
         } else if (c.metodo === 'bandeja') {
           const ancho = anchoBandeja(conductores);
           add('Bandeja portacable ' + ancho + ' mm', 'm', largo, precios.bandeja[ancho] || 0);
           const nMensulas = Math.ceil(largo / 1.5);
           add('Ménsula para bandeja', 'un.', nMensulas, precios.mensulaBandeja);
-          add('Taco fischer 10mm', 'un.', nMensulas * 2, precios.tacoFischer10mm);
-          add('Tornillo cabeza tuerca para taco 10mm', 'un.', nMensulas * 2, precios.tornilloTuercaTaco10mm);
-          add('Tornillo con tuerca 8mm', 'un.', nMensulas * 2, precios.tornilloTuerca8mm);
+          // La tornillería de fijación —tacos y tornillos— no se lista: es de
+          // ferretería, ningún proveedor eléctrico la publica y va de a varias
+          // por ménsula. Se carga a mano en "Otros gastos" del presupuesto.
           add('Codo / caja de pase para bandeja ' + ancho + ' mm (cambio de dirección)', 'un.', 0, precios.codoCajaBandeja);
         } else if (c.metodo !== 'aire') {
           // embutido, enterrado, o metodo viejo/desconocido: caño corrugado (comportamiento por defecto)
@@ -493,7 +662,7 @@
         }
         // 'aire' (aire libre): sin canalización
       }
-      const tipoTermica = c.fases === 1 ? 'bipolar' : 'tetrapolar';
+      const tipoTermica = { 1: 'unipolar', 2: 'bipolar', 3: 'tripolar', 4: 'tetrapolar' }[polosDe(c)];
       add('Térmica ' + tipoTermica + ' ' + calc.breaker + 'A curva ' + calc.curva, 'un.', 1, precioTermica(tipoTermica, calc.breaker, precios));
     });
     // Puntos de luz y de toma, según la cantidad cargada en cada carga del relevamiento.
@@ -511,9 +680,23 @@
       }
     });
     if (draft && draft.obra && draft.obra.naturaleza === 'Instalación nueva') {
-      const nLlaves = circuitos.length + 2; // + térmica general + diferencial general
-      add('Tablero eléctrico (' + nLlaves + ' módulos)', 'un.', 1, precioTablero(nLlaves, precios));
-      add('Caja para medidor', 'un.', 1, precios.cajaMedidor);
+      // Módulos que ocupa el tablero, no cantidad de llaves: una térmica bipolar
+      // ocupa 2 módulos y una tetrapolar 4. Contando llaves, el gabinete salía
+      // por la mitad de lo que cuesta.
+      const modulosCircuitos = circuitos.reduce((t, c) => t + polosDe(c), 0);
+      const sistemaTablero = (draft && SISTEMAS[draft.sistemaId]) || SISTEMAS.tri_tt;
+      const modulosGeneral = (sistemaTablero.fases === 1 ? 2 : 4) * 2; // térmica + diferencial generales
+      // Las borneras ocupan lugar en el riel como cualquier otra pieza: si no se
+      // cuentan, se termina eligiendo un gabinete donde no entran.
+      const modulosBorneras = MODULOS_BORNERA * (necesitaBorneraNeutro(circuitos, sistemaTablero) ? 2 : 1);
+      const nModulos = modulosCircuitos + modulosGeneral + modulosBorneras;
+      const medida = medidaTablero(nModulos, precios);
+      add('Tablero eléctrico de ' + medida + ' módulos (' + nModulos + ' ocupados)', 'un.', 1, precioTablero(nModulos, precios));
+      add('Bornera de tierra', 'un.', 1, precios.borneraTierra);
+      if (necesitaBorneraNeutro(circuitos, sistemaTablero)) add('Bornera de neutro', 'un.', 1, precios.borneraNeutro);
+      const mono = sistemaTablero.fases === 1;
+      add('Caja para medidor ' + (mono ? 'monofásico' : 'trifásico'), 'un.', 1,
+          mono ? precios.cajaMedidorMono : precios.cajaMedidorTrifasica);
       add('Jabalina / electrodo de puesta a tierra', 'un.', 1, precios.jabalina);
       add('Caño PVC 1" x 3m (puesta a tierra)', 'un.', 2, precios.canoPvc1pulg3m);
       add('Codo PVC 1" (puesta a tierra)', 'un.', 6, precios.codoPvc1pulg);
@@ -526,8 +709,476 @@
   }
 
   /* ============================================================
+     TABLERO — DIBUJO CON FOTOS
+
+     Arma el frente del tablero pegando las fotos de codigo/img/ sobre un
+     canvas, a partir de las llaves que salieron del cálculo. Se dibujan dos
+     vistas:
+
+       - "cerrado": el tablero terminado. Las llaves van DETRÁS de la tapa
+         interna, que tiene las ventanas caladas, así que asoma sólo la cara
+         y las borneras quedan tapadas. Es la vista para mostrarle al cliente.
+       - "abierto": el interior, con las llaves sobre el riel, las borneras de
+         neutro y tierra, y los conductores.
+
+     Las medidas de cada pieza y las ventanas de cada tapa vienen en
+     img/medidas.json, que genera herramientas/preparar-imagenes.py.
+     ============================================================ */
+
+  const TAB_IMG = 'img/';
+
+  // Posición del riel dentro de cada gabinete abierto, medida sobre la imagen.
+  // A diferencia de las ventanas de las tapas, que se detectan solas, acá la
+  // detección automática no es confiable: el interior tiene sombras y molduras
+  // que se confunden con el riel. Son cuatro imágenes fijas, así que se miden
+  // una vez y se anotan.
+  const TAB_RIELES = {
+    'wall-12': { x0: 535, x1: 1185, y: [500] },
+    'wall-24': { x0: 620, x1: 1230, y: [385, 655] },
+    'wall-36': { x0: 605, x1: 1230, y: [295, 535, 775] },
+    'wall-48': { x0: 640, x1: 1235, y: [330, 610, 885, 1160] },
+  };
+
+  // Proporciones de una llave modular, medidas sobre las propias imágenes.
+  const TAB_ALTO_POR_MODULO = 4.86;  // alto = ancho de un módulo x esto
+  const TAB_ANCLA = 0.50;            // qué punto de la llave se centra en la ventana
+  const TAB_PALANCA = 0.454;         // dónde empieza la palanca
+
+  const MODULOS_POR_FILA = 12;
+
+  let tabMedidas = null;
+  const tabImagenes = {};
+
+  // En app-completa.html las imágenes vienen incrustadas en el propio archivo:
+  // abierto con doble clic no hay servidor del cual pedirlas.
+  function tabIncrustadas() { return window.__TAB_IMG || null; }
+
+  function tabCargarMedidas() {
+    if (tabMedidas) return Promise.resolve(tabMedidas);
+    if (window.__TAB_MEDIDAS) { tabMedidas = window.__TAB_MEDIDAS; return Promise.resolve(tabMedidas); }
+    return fetch(TAB_IMG + 'medidas.json')
+      .then((r) => r.json())
+      .then((m) => { tabMedidas = m; return m; });
+  }
+
+  function tabCargarImagen(nombre) {
+    if (tabImagenes[nombre]) return Promise.resolve(tabImagenes[nombre]);
+    const inc = tabIncrustadas();
+    const src = (inc && inc[nombre]) ? inc[nombre] : TAB_IMG + nombre + '.webp';
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => { tabImagenes[nombre] = img; resolve(img); };
+      img.onerror = () => reject(new Error('No se pudo cargar ' + nombre));
+      img.src = src;
+    });
+  }
+
+  /* ---------- qué llaves lleva el tablero ---------- */
+
+  function tabDispositivos(draft) {
+    if (!draft) return [];
+    const sistema = SISTEMAS[draft.sistemaId] || SISTEMAS.tri_tt;
+    const mono = sistema.fases === 1;
+    const items = [];
+    const pg = calcularProteccionGeneral(draft);
+    if (pg.aplica) {
+      items.push({
+        img: mono ? 'thermal-2p' : 'thermal-4p', modulos: mono ? 2 : 4,
+        cara: pg.termicaCurva + pg.termicaIn, caraChica: null,
+        rotulo: 'GENERAL', etiqueta: 'Térmica general',
+        detalle: pg.termicaIn + ' A · ' + pg.termicaPolos + 'P · curva ' + pg.termicaCurva,
+      });
+      items.push({
+        img: mono ? 'rcd-2p' : 'rcd-4p', modulos: mono ? 2 : 4,
+        cara: pg.diferencialIn + 'A', caraChica: pg.diferencialSensibilidad + 'mA',
+        rotulo: 'DIFERENCIAL', etiqueta: 'Diferencial general',
+        detalle: pg.diferencialIn + ' A · ' + pg.diferencialSensibilidad + ' mA · tipo ' + pg.diferencialTipo,
+      });
+    }
+    (draft.circuitos || []).forEach((c, i) => {
+      const calc = calcularCircuito(c);
+      const polos = polosDe(c);
+      const IMG_POLOS = { 1: 'thermal-1p', 2: 'thermal-2p', 3: 'thermal-4p', 4: 'thermal-4p' };
+      items.push({
+        img: IMG_POLOS[polos], modulos: polos,
+        cara: calc.apto ? calc.curva + calc.breaker : '?', caraChica: null,
+        n: i + 1, etiqueta: c.nombre || ('Circuito ' + (i + 1)),
+        detalle: calc.apto
+          ? calc.breaker + ' A · curva ' + calc.curva + ' · ' + calc.seccionAdoptada + ' mm²'
+          : 'sin protección definida',
+        pendiente: !calc.apto,
+      });
+    });
+    return items;
+  }
+
+  function tabLayout(draft) {
+    const items = tabDispositivos(draft);
+    if (!items.length) return null;
+    const sistema = SISTEMAS[draft.sistemaId] || SISTEMAS.tri_tt;
+    // Las borneras van en el riel y ocupan lugar: entran al reparto como una
+    // pieza más, si no el gabinete queda chico y no hay dónde ponerlas.
+    const barras = [];
+    if (necesitaBorneraNeutro(draft.circuitos, sistema)) {
+      barras.push({ img: 'terminal-neutral', modulos: MODULOS_BORNERA, barra: 'neutro',
+                    etiqueta: 'Bornera de neutro', detalle: 'neutro de los circuitos unipolares' });
+    }
+    barras.push({ img: 'terminal-earth', modulos: MODULOS_BORNERA, barra: 'tierra',
+                  etiqueta: 'Bornera de tierra', detalle: 'puesta a tierra' });
+    const conBarras = items.concat(barras);
+    const modulos = conBarras.reduce((t, it) => t + it.modulos, 0);
+    const medida = medidaTablero(modulos, DB.settings.precios);
+    const gabinete = 'wall-' + medida;
+    if (!TAB_RIELES[gabinete]) return null;
+    // reparto en filas de 12 sin partir una llave entre dos filas
+    const filas = [];
+    let fila = [], usado = 0;
+    conBarras.forEach((it) => {
+      if (usado + it.modulos > MODULOS_POR_FILA) { filas.push(fila); fila = []; usado = 0; }
+      fila.push(it); usado += it.modulos;
+    });
+    if (fila.length) filas.push(fila);
+    while (filas.length < TAB_RIELES[gabinete].y.length) filas.push([]);
+    return { items, barras, filas, gabinete, medida, modulos };
+  }
+
+  /* ---------- dibujo ---------- */
+
+  function tabFuente(px, negrita) {
+    return (negrita ? '700 ' : '') + Math.max(7, Math.round(px)) + 'px Helvetica, Arial, sans-serif';
+  }
+
+  // Escribe el valor en la cara de la llave: pegado al borde izquierdo y
+  // centrado en la banda que queda libre arriba de la palanca.
+  function tabEtiqueta(ctx, it, x, topLlave, alto, mod, fracArriba) {
+    if (!it.cara) return;
+    const centro = topLlave + ((fracArriba + TAB_PALANCA) / 2) * alto;
+    const xt = x + mod * 0.17;
+    ctx.textAlign = 'left';
+    ctx.fillStyle = '#303237';
+    if (it.caraChica) {
+      const h1 = mod * 0.28, h2 = mod * 0.185, sep = mod * 0.07;
+      const total = h1 + sep + h2;
+      ctx.font = tabFuente(h1, true);
+      ctx.textBaseline = 'top';
+      ctx.fillText(it.cara, xt, centro - total / 2);
+      ctx.font = tabFuente(h2, true);
+      ctx.fillStyle = '#63666b';
+      ctx.fillText(it.caraChica, xt, centro - total / 2 + h1 + sep);
+    } else {
+      ctx.font = tabFuente(mod * 0.28, true);
+      ctx.textBaseline = 'middle';
+      ctx.fillText(it.cara, xt, centro);
+    }
+  }
+
+  // Una bornera se monta parada sobre el riel: la imagen viene acostada, así
+  // que se la gira un cuarto de vuelta.
+  function tabDibujarBarra(ctx, img, x, ancho, cy) {
+    if (!img) return;
+    const largo = ancho * img.width / img.height;
+    ctx.save();
+    ctx.translate(x + ancho / 2, cy);
+    ctx.rotate(-Math.PI / 2);
+    ctx.drawImage(img, -largo / 2, -ancho / 2, largo, ancho);
+    ctx.restore();
+  }
+
+  // Nombre corto para el rótulo: los circuitos suelen llamarse "Living — 2
+  // luces, 2 tomas" y en el ancho de una llave sólo entra la primera parte.
+  function tabNombreCorto(it) {
+    if (it.rotulo) return it.rotulo;
+    if (it.barra) return it.barra === 'neutro' ? 'NEUTRO' : 'TIERRA';
+    const etiqueta = String(it.etiqueta || '');
+    const corte = etiqueta.split(/\s+[—–-]\s+/)[0].trim();
+    return (corte || etiqueta).toUpperCase();
+  }
+
+  // Franja de rótulos sobre las llaves, como la etiqueta que se pega en el
+  // tablero terminado. Incluye las generales.
+  function tabRotulos(ctx, rotulos, mod) {
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    ctx.font = tabFuente(mod * 0.24, true);
+    rotulos.forEach((r) => {
+      const texto = tabNombreCorto(r.it);
+      if (!texto) return;
+      const maxAncho = r.w - mod * 0.12;
+      let mostrar = texto;
+      while (mostrar.length > 1 && ctx.measureText(mostrar).width > maxAncho) {
+        mostrar = mostrar.slice(0, -1);
+      }
+      if (mostrar !== texto) mostrar = mostrar.slice(0, -1) + '…';
+      const y = r.cy - r.alto / 2 - mod * 0.16;
+      ctx.fillStyle = '#5a5e66';
+      ctx.fillText(mostrar, r.x + r.w / 2, y);
+    });
+  }
+
+  function tabPiezasNecesarias(layout, vista) {
+    const set = {};
+    layout.items.concat(layout.barras).forEach((it) => { set[it.img] = true; });
+    set['blind-module'] = true;
+    if (vista === 'cerrado') set[layout.gabinete + '-cover'] = true;
+    else set[layout.gabinete] = true;
+    set['adonai-logo-y-nombre'] = true;
+    return Object.keys(set);
+  }
+
+  /**
+   * Dibuja el tablero y devuelve el canvas.
+   * vista: 'cerrado' (con tapa interna) o 'abierto' (interior y conductores)
+   */
+  async function tabDibujar(draft, vista, datos) {
+    const layout = tabLayout(draft);
+    if (!layout) return null;
+    await tabCargarMedidas();
+    await Promise.all(tabPiezasNecesarias(layout, vista).map(tabCargarImagen));
+
+    const esCerrado = vista === 'cerrado';
+    const baseNombre = esCerrado ? layout.gabinete + '-cover' : layout.gabinete;
+    const base = tabImagenes[baseNombre];
+    const ficha = tabMedidas[baseNombre] || {};
+
+    const CAB = 86;  // alto del cartel de cabecera
+    const cv = document.createElement('canvas');
+    cv.width = base.width;
+    cv.height = base.height + CAB;
+    const ctx = cv.getContext('2d');
+    ctx.fillStyle = '#eef1f5';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+
+    // filas donde van las llaves
+    let ranuras;
+    if (esCerrado) {
+      ranuras = (ficha.ventanas || []).map((v) => ({ x0: v[0], x1: v[2], cy: (v[1] + v[3]) / 2, alto: v[3] - v[1] }));
+    } else {
+      const g = TAB_RIELES[layout.gabinete];
+      ranuras = g.y.map((cy) => ({ x0: g.x0, x1: g.x1, cy, alto: 0 }));
+    }
+    if (!ranuras.length) return null;
+    const mod = (ranuras[0].x1 - ranuras[0].x0) / MODULOS_POR_FILA;
+    const altoLlave = mod * TAB_ALTO_POR_MODULO;
+
+    // En la vista cerrada primero van las llaves y encima la tapa; en la
+    // abierta, el gabinete primero y las llaves sobre el riel.
+    if (!esCerrado) ctx.drawImage(base, 0, CAB);
+
+    const puestos = [];
+    const barrasPuestas = [];
+    const rotulos = [];
+    ranuras.forEach((r, fi) => {
+      const fila = layout.filas[fi] || [];
+      if (esCerrado) {
+        // fondo del hueco, para que no se vea el blanco del lienzo
+        ctx.fillStyle = '#36383c';
+        ctx.fillRect(r.x0, r.cy - r.alto / 2 + CAB, r.x1 - r.x0, r.alto);
+      }
+      let x = r.x0;
+      const top = r.cy - TAB_ANCLA * altoLlave + CAB;
+      const fracArriba = esCerrado ? TAB_ANCLA - (r.alto / 2) / altoLlave : 0;
+      fila.forEach((it) => {
+        const w = it.modulos * mod;
+        if (it.barra) {
+          // la bornera va parada sobre el riel, como se monta de verdad
+          tabDibujarBarra(ctx, tabImagenes[it.img], x, w, r.cy + CAB);
+          barrasPuestas.push({ it, x, w, cy: r.cy + CAB });
+        } else {
+          ctx.drawImage(tabImagenes[it.img], x, top, w, altoLlave);
+          tabEtiqueta(ctx, it, x, top, altoLlave, mod, fracArriba);
+          puestos.push({ it, x, w, cy: r.cy + CAB, fila: fi });
+        }
+        rotulos.push({ it, x, w, cy: r.cy + CAB, alto: r.alto });
+        x += w;
+      });
+      // Los módulos que sobran se tapan, salvo los dos primeros de la última
+      // fila con lugar, que se reservan para las borneras de neutro y tierra.
+      const libresFila = MODULOS_POR_FILA - fila.reduce((t, it) => t + it.modulos, 0);
+      for (let k = 0; k < libresFila; k++) {
+        ctx.drawImage(tabImagenes['blind-module'], x, top, mod, altoLlave);
+        x += mod;
+      }
+    });
+
+    if (!esCerrado) tabConductores(ctx, ranuras, puestos, mod, altoLlave, CAB, layout, barrasPuestas);
+    if (esCerrado) {
+      ctx.drawImage(base, 0, CAB);
+      // Los rótulos van encima de la tapa: es donde se pega la etiqueta en un
+      // tablero armado, y así se lee de qué es cada llave sin abrirlo.
+      tabRotulos(ctx, rotulos, mod);
+    }
+
+    tabCabecera(ctx, cv.width, CAB, layout, vista, datos);
+    return cv;
+  }
+
+  function tabCabecera(ctx, ancho, alto, layout, vista, datos) {
+    datos = datos || {};
+    const w = Math.min(ancho * 0.62, 760);
+    ctx.fillStyle = '#1f2430';
+    ctx.beginPath();
+    const r = 10;
+    ctx.moveTo(24 + r, 10); ctx.lineTo(24 + w - r, 10);
+    ctx.quadraticCurveTo(24 + w, 10, 24 + w, 10 + r); ctx.lineTo(24 + w, alto - 4 - r);
+    ctx.quadraticCurveTo(24 + w, alto - 4, 24 + w - r, alto - 4); ctx.lineTo(24 + r, alto - 4);
+    ctx.quadraticCurveTo(24, alto - 4, 24, alto - 4 - r); ctx.lineTo(24, 10 + r);
+    ctx.quadraticCurveTo(24, 10, 24 + r, 10); ctx.closePath(); ctx.fill();
+
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.fillStyle = '#ffffff'; ctx.font = tabFuente(26, true);
+    ctx.fillText(datos.titulo || 'Tablero', 46, 44);
+    ctx.fillStyle = '#a9b0be'; ctx.font = tabFuente(17, false);
+    const sub = ['Pared · ' + layout.medida + ' módulos',
+                 vista === 'cerrado' ? 'tapa interna' : 'interior abierto',
+                 layout.modulos + '/' + layout.medida + ' módulos'];
+    ctx.fillText(sub.join(' · '), 46, 70);
+
+    const logo = tabImagenes['adonai-logo-y-nombre'];
+    if (logo) {
+      const lh = alto - 30, lw = logo.width * lh / logo.height;
+      ctx.globalAlpha = 0.9;
+      ctx.drawImage(logo, ancho - lw - 28, 14, lw, lh);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  /* ---------- conductores ---------- */
+
+  // Traza un camino ortogonal con las esquinas redondeadas, como se dibuja un
+  // unifilar a mano.
+  function tabCamino(ctx, puntos, color, grosor) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = grosor;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(puntos[0][0], puntos[0][1]);
+    for (let i = 1; i < puntos.length - 1; i++) {
+      const [px, py] = puntos[i];
+      const [nx, ny] = puntos[i + 1];
+      const rr = Math.min(14, Math.abs(nx - px) / 2 || 14, Math.abs(ny - py) / 2 || 14);
+      ctx.arcTo(px, py, px + Math.sign(nx - px) * rr, py + Math.sign(ny - py) * rr, rr);
+    }
+    ctx.lineTo(puntos[puntos.length - 1][0], puntos[puntos.length - 1][1]);
+    ctx.stroke();
+  }
+
+  function tabPunto(ctx, x, y, color) {
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
+  }
+
+  const TAB_FASE = '#e8a33d';
+  const TAB_NEUTRO = '#4fc3e8';
+  const TAB_TIERRA = '#57b65a';
+
+  function tabConductores(ctx, ranuras, puestos, mod, altoLlave, CAB, layout, barras) {
+    if (!puestos.length) return;
+    const grosor = Math.max(3, mod * 0.09);
+    const general = puestos[0];
+    const dif = puestos[1];
+
+    // Las borneras ya se dibujaron con el resto de las piezas; acá sólo se
+    // necesita saber dónde quedaron para llevarles los cables.
+    const anchoB = MODULOS_BORNERA * mod;
+    const ubicar = (tipo) => {
+      const b = barras.find((x) => x.it.barra === tipo);
+      return b ? { x: b.x + b.w / 2, y: b.cy } : null;
+    };
+    const pNeutro = ubicar('neutro');
+    const pTierra = ubicar('tierra');
+
+    const arriba = (p) => p.cy - altoLlave * 0.42;
+    const abajo = (p) => p.cy + altoLlave * 0.42;
+
+    // 1) del general al diferencial
+    if (dif) {
+      tabCamino(ctx, [[general.x + general.w * 0.28, arriba(general)],
+                      [general.x + general.w * 0.28, arriba(general) - mod * 0.55],
+                      [dif.x + dif.w * 0.28, arriba(dif) - mod * 0.55],
+                      [dif.x + dif.w * 0.28, arriba(dif)]], TAB_FASE, grosor);
+      tabPunto(ctx, general.x + general.w * 0.28, arriba(general), TAB_FASE);
+      tabPunto(ctx, dif.x + dif.w * 0.28, arriba(dif), TAB_FASE);
+    }
+
+    // 2) del diferencial al peine que alimenta cada circuito, fila por fila
+    const circuitos = puestos.slice(dif ? 2 : 1);
+    ranuras.forEach((r, fi) => {
+      const enFila = circuitos.filter((p) => p.fila === fi);
+      if (!enFila.length) return;
+      const yPeine = r.cy + CAB - altoLlave * 0.42 - mod * 0.35;
+      const x0 = enFila[0].x + enFila[0].w * 0.28;
+      const x1 = enFila[enFila.length - 1].x + enFila[enFila.length - 1].w * 0.28;
+      tabCamino(ctx, [[x0, yPeine], [x1, yPeine]], TAB_FASE, grosor);
+      enFila.forEach((p) => {
+        const xc = p.x + p.w * 0.28;
+        tabCamino(ctx, [[xc, yPeine], [xc, arriba(p)]], TAB_FASE, grosor);
+        tabPunto(ctx, xc, arriba(p), TAB_FASE);
+        // salida del circuito hacia abajo
+        tabCamino(ctx, [[xc, abajo(p)], [xc, abajo(p) + mod * 0.5]], TAB_FASE, grosor);
+        const xn = p.x + p.w * 0.72;
+        tabCamino(ctx, [[xn, abajo(p)], [xn, abajo(p) + mod * 0.5]], TAB_NEUTRO, grosor);
+        tabPunto(ctx, xc, abajo(p), TAB_FASE);
+        tabPunto(ctx, xn, abajo(p), TAB_NEUTRO);
+      });
+      // el diferencial alimenta el peine de la primera fila
+      if (fi === 0 && dif) {
+        tabCamino(ctx, [[dif.x + dif.w * 0.28, abajo(dif)],
+                        [dif.x + dif.w * 0.28, abajo(dif) + mod * 0.45],
+                        [x0 - mod * 0.35, abajo(dif) + mod * 0.45],
+                        [x0 - mod * 0.35, yPeine], [x0, yPeine]], TAB_FASE, grosor);
+        tabPunto(ctx, dif.x + dif.w * 0.28, abajo(dif), TAB_FASE);
+      }
+    });
+
+    // 3) neutro: del diferencial a la bornera
+    if (dif && pNeutro) {
+      const xn = dif.x + dif.w * 0.72;
+      tabCamino(ctx, [[xn, abajo(dif)], [xn, abajo(dif) + mod * 0.85],
+                      [pNeutro.x, abajo(dif) + mod * 0.85], [pNeutro.x, pNeutro.y - anchoB * 0.9]],
+                TAB_NEUTRO, grosor);
+      tabPunto(ctx, xn, abajo(dif), TAB_NEUTRO);
+    }
+    // 4) tierra: de la bornera hacia el borde, como llegada de la jabalina
+    if (pTierra) {
+      tabCamino(ctx, [[pTierra.x, pTierra.y + anchoB * 0.9],
+                      [pTierra.x, pTierra.y + anchoB * 1.4]], TAB_TIERRA, grosor);
+    }
+  }
+
+  /* ============================================================
      PERSISTENCIA
      ============================================================ */
+  // Un catálogo guardado antes de pasar a las medidas comerciales (12/24/36/48)
+  // tiene la lista vieja de 6/12/18/24/36/54. Se convierte conservando los
+  // precios que el usuario haya editado para las medidas que siguen existiendo,
+  // y el de 48 se saca de sus propios 36 y 54 en vez de pisarlo con el de
+  // fábrica.
+  function migrarMedidasTablero(precios) {
+    const pts = precios && precios.tableroPuntos;
+    if (!Array.isArray(pts) || !pts.length) return false;
+    const medidasNuevas = DEFAULT_PRECIOS.tableroPuntos.map((pt) => pt.n);
+    const yaMigrado = pts.length === medidasNuevas.length &&
+      pts.every((pt, i) => pt.n === medidasNuevas[i]);
+    if (yaMigrado) return false;
+    const porMedida = {};
+    pts.forEach((pt) => { porMedida[pt.n] = pt.p; });
+    precios.tableroPuntos = DEFAULT_PRECIOS.tableroPuntos.map((def) => {
+      if (porMedida[def.n] !== undefined) return { n: def.n, p: porMedida[def.n] };
+      // 48 no existía: se interpola entre las dos medidas viejas que lo rodean
+      const antes = pts.filter((pt) => pt.n < def.n).pop();
+      const despues = pts.find((pt) => pt.n > def.n);
+      if (antes && despues) {
+        const frac = (def.n - antes.n) / (despues.n - antes.n);
+        return { n: def.n, p: Math.round(antes.p + frac * (despues.p - antes.p)) };
+      }
+      return { n: def.n, p: def.p };
+    });
+    return true;
+  }
+
   const STORAGE_KEY = 'adonai_ht_v1';
   function defaultDB() {
     return {
@@ -540,10 +1191,68 @@
   try { DB = JSON.parse(localStorage.getItem(STORAGE_KEY)) || defaultDB(); } catch (e) { DB = defaultDB(); }
   if (!DB.settings) DB.settings = { margen: 30, iva: 22 };
   if (!DB.settings.precios) DB.settings.precios = clonePrecios(DEFAULT_PRECIOS);
+  const medidasConvertidas = migrarMedidasTablero(DB.settings.precios);
+  // Un catálogo guardado antes de que se agregara un precio nuevo no tiene esa
+  // clave, y el material saldría en $0 sin que se note. Se completan las que
+  // falten con el valor de fábrica, sin tocar las que el usuario ya editó.
+  let clavesAgregadas = false;
+  Object.keys(DEFAULT_PRECIOS).forEach((k) => {
+    if (DB.settings.precios[k] === undefined) {
+      DB.settings.precios[k] = clonePrecios(DEFAULT_PRECIOS[k]);
+      clavesAgregadas = true;
+    }
+  });
+  // Precios que en su momento salieron sin relevar —en $0 o estimados— y que
+  // después se relevaron. Se actualizan sólo si el catálogo guardado todavía
+  // tiene el valor viejo: si el técnico lo corrigió a mano, manda lo suyo.
+  PRECIOS_RELEVADOS.forEach((r) => {
+    const destino = r.medida === undefined ? DB.settings.precios : DB.settings.precios[r.clave];
+    const clave = r.medida === undefined ? r.clave : r.medida;
+    if (destino && destino[clave] === r.viejo) {
+      destino[clave] = r.nuevo;
+      clavesAgregadas = true;
+    }
+  });
+  // Los precios que van por medida —caño por diámetro, bandeja por ancho— son
+  // objetos, y la lista de arriba sólo alcanza a los sueltos. Acá se completan
+  // los que siguen en $0, que es como salieron cuando no estaban relevados. Un
+  // valor ya cargado no se toca.
+  Object.keys(DEFAULT_PRECIOS).forEach((k) => {
+    const def = DEFAULT_PRECIOS[k], guardado = DB.settings.precios[k];
+    if (!def || typeof def !== 'object' || Array.isArray(def)) return;
+    if (!guardado || typeof guardado !== 'object') return;
+    Object.keys(def).forEach((medida) => {
+      if (guardado[medida] === 0 && def[medida] !== 0) {
+        guardado[medida] = def[medida];
+        clavesAgregadas = true;
+      }
+    });
+  });
+
+  // Materiales que se sacaron de la lista dejan su precio dando vueltas en el
+  // catálogo guardado. No molestan, pero si algún día se vuelve a usar ese
+  // nombre reaparecería un valor viejo: se limpian.
+  Object.keys(DB.settings.precios).forEach((k) => {
+    if (!(k in DEFAULT_PRECIOS)) {
+      delete DB.settings.precios[k];
+      clavesAgregadas = true;
+      return;
+    }
+    // lo mismo con las medidas que se dejaron de usar, como la bandeja de 250
+    const def = DEFAULT_PRECIOS[k], guardado = DB.settings.precios[k];
+    if (!def || typeof def !== 'object' || Array.isArray(def)) return;
+    if (!guardado || typeof guardado !== 'object') return;
+    Object.keys(guardado).forEach((medida) => {
+      if (!(medida in def)) { delete guardado[medida]; clavesAgregadas = true; }
+    });
+  });
   if (!DB.settings.manoObra) DB.settings.manoObra = { ...DEFAULT_MANO_OBRA };
   if (!DB.seq) DB.seq = { trabajo: 0, presupuesto: 0 };
 
   function saveDB() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); } catch (e) {} }
+  // La conversión de medidas se guarda enseguida; si no, se repetiría en cada
+  // arranque y el catálogo en pantalla no coincidiría con el del disco.
+  if (medidasConvertidas || clavesAgregadas) saveDB();
 
   function seedSampleData() {
     const sistema = SISTEMAS.tri_tt;
@@ -866,6 +1575,22 @@
     });
   }
 
+  // Opciones del selector de cargas típicas, agrupadas por rubro y filtradas
+  // por la categoría elegida.
+  function opcionesPreset(categoria) {
+    const propias = CARGAS_PRESETS.filter((p) => p.cat === categoria);
+    const grupos = [];
+    propias.forEach((p) => {
+      let g = grupos.find((x) => x.nombre === p.grupo);
+      if (!g) { g = { nombre: p.grupo, items: [] }; grupos.push(g); }
+      g.items.push(p);
+    });
+    return '<option value="">Escribir a mano…</option>' + grupos.map((g) =>
+      '<optgroup label="' + escapeHtml(g.nombre) + '">' + g.items.map((p) =>
+        '<option value="' + escapeHtml(p.nombre) + '">' + escapeHtml(p.nombre) + ' — ' + p.w + ' W</option>'
+      ).join('') + '</optgroup>').join('');
+  }
+
   function renderCargasList() {
     const wrap = $('#cargas-list');
     wrap.innerHTML = '';
@@ -875,7 +1600,6 @@
     }
     draft.cargas.forEach((c) => {
       const card = el('div', { class: 'item-card' });
-      const isFija = c.categoria === 'cargaFija';
       card.innerHTML =
         '<button class="remove-btn" type="button">' + icon('ic-trash') + '</button>' +
         '<div class="item-grid" style="padding-right:30px">' +
@@ -883,8 +1607,8 @@
         '<div class="field"><label>Categoría</label><select class="select" data-f="categoria">' +
         CATEGORIAS.map((cat) => '<option value="' + cat.id + '"' + (cat.id === c.categoria ? ' selected' : '') + '>' + cat.label + '</option>').join('') +
         '</select></div>' +
-        (isFija ? '<div class="field"><label>Carga típica</label><select class="select" data-f="preset"><option value="">Elegir preset…</option>' +
-          CARGAS_FIJAS_PRESETS.map((p, i) => '<option value="' + i + '">' + p.nombre + ' (' + p.w + 'W)</option>').join('') + '</select></div>' : '') +
+        '<div class="field" style="grid-column:1/-1"><label>Elegir de la lista</label><select class="select" data-f="preset">' +
+        opcionesPreset(c.categoria) + '</select></div>' +
         '<div class="field"><label>Potencia (W)</label><input class="input" type="number" data-f="potenciaW" value="' + c.potenciaW + '"></div>' +
         '<div class="field"><label>Cantidad</label><input class="input" type="number" min="1" data-f="cantidad" value="' + c.cantidad + '"></div>' +
         '<div class="field"><label>cos φ</label><input class="input" type="number" step="0.05" min="0" max="1" data-f="cosPhi" value="' + c.cosPhi + '"></div>' +
@@ -894,8 +1618,13 @@
         input.addEventListener('change', () => {
           const f = input.dataset.f;
           if (f === 'preset') {
-            const p = CARGAS_FIJAS_PRESETS[input.value];
-            if (p) { c.nombre = c.nombre || p.nombre; c.potenciaW = p.w; c.cosPhi = p.cosPhi; renderCargasList(); renderPotenciaResultado(); }
+            const p = CARGAS_PRESETS.find((x) => x.nombre === input.value);
+            if (p) {
+              // el nombre se pisa sólo si el técnico no escribió uno propio
+              if (!c.nombre || CARGAS_PRESETS.some((x) => x.nombre === c.nombre)) c.nombre = p.nombre;
+              c.potenciaW = p.w; c.cosPhi = p.cosPhi;
+              renderCargasList(); renderPotenciaResultado();
+            }
             return;
           }
           if (f === 'categoria') {
@@ -961,6 +1690,15 @@
         '<div class="field"><label>Método</label><select class="select" data-f="metodo">' + Object.keys(METODO_LABEL).map((k) => '<option value="' + k + '"' + (c.metodo === k ? ' selected' : '') + '>' + METODO_LABEL[k] + '</option>').join('') + '</select></div>' +
         '<div class="field"><label>Temp. amb. (°C)</label><input class="input" type="number" data-f="tempAmb" value="' + c.tempAmb + '"></div>' +
         '<div class="field"><label>Agrupados</label><input class="input" type="number" min="1" data-f="agrupados" value="' + c.agrupados + '"></div>' +
+        '<div class="field"><label>Polos</label><select class="select" data-f="polos">' +
+        opcionesPolos(c).map((o) => '<option value="' + o.v + '"' + (polosDe(c) === o.v ? ' selected' : '') + '>' + o.label + '</option>').join('') +
+        '</select></div>' +
+        '<div class="field"><label>Uso</label><select class="select" data-f="uso">' +
+        USOS.map((u) => '<option value="' + u.id + '"' + ((c.uso || 'fuerza') === u.id ? ' selected' : '') + '>' + u.label + '</option>').join('') +
+        '</select></div>' +
+        '<div class="field"><label>Aislación</label><select class="select" data-f="aislacion">' +
+        '<option value="pvc"' + ((c.aislacion || 'pvc') === 'pvc' ? ' selected' : '') + '>PVC</option>' +
+        '<option value="xlpe"' + (c.aislacion === 'xlpe' ? ' selected' : '') + '>XLPE</option></select></div>' +
         '<div class="field"><label>Caída máx. (%)</label><input class="input" type="number" step="0.5" data-f="caidaMax" value="' + c.caidaMax + '"></div>' +
         '<div class="field"><label>cos φ</label><input class="input" type="number" step="0.05" min="0" max="1" data-f="cosPhi" value="' + c.cosPhi + '"></div>' +
         '</div>' +
@@ -973,7 +1711,17 @@
       card.querySelectorAll('[data-f]').forEach((input) => {
         input.addEventListener('change', () => {
           const f = input.dataset.f;
-          c[f] = (f === 'nombre' || f === 'material' || f === 'metodo') ? input.value : Number(input.value);
+          const esTexto = f === 'nombre' || f === 'material' || f === 'metodo' || f === 'uso' || f === 'aislacion';
+          c[f] = esTexto ? input.value : Number(input.value);
+          // Cada uso trae su propia caída máxima admisible: iluminación admite
+          // menos que fuerza. Al cambiar el uso se acompaña el valor.
+          if (f === 'uso') {
+            c.caidaMax = CAIDA_MAX_DEFAULT[input.value] || 5;
+            // iluminación suele ir unipolar y el resto bipolar: se acompaña el
+            // valor mientras el técnico no lo haya fijado a mano
+            if (!c.polosManual) c.polos = polosPorDefecto(c);
+          }
+          if (f === 'polos') c.polosManual = true;
           renderCircuitosList();
         });
       });
@@ -1212,9 +1960,6 @@
       campos: [
         { key: 'grampaOmega', tipo: 'plano', etiqueta: 'Grampa omega' },
         { key: 'mensulaBandeja', tipo: 'plano', etiqueta: 'Ménsula para bandeja' },
-        { key: 'tacoFischer10mm', tipo: 'plano', etiqueta: 'Taco fischer 10mm' },
-        { key: 'tornilloTuercaTaco10mm', tipo: 'plano', etiqueta: 'Tornillo cabeza tuerca para taco 10mm' },
-        { key: 'tornilloTuerca8mm', tipo: 'plano', etiqueta: 'Tornillo con tuerca 8mm' },
         { key: 'codoPvcRigido', tipo: 'plano', etiqueta: 'Codo PVC rígido (cambio de dirección)' },
         { key: 'codoGalvanizado', tipo: 'plano', etiqueta: 'Codo caño galvanizado (cambio de dirección)' },
         { key: 'codoCajaBandeja', tipo: 'plano', etiqueta: 'Codo / caja de pase para bandeja' },
@@ -1223,10 +1968,11 @@
     {
       titulo: 'Térmicas ($/un.)',
       campos: [
+        { key: 'termicaUnipolarBase', tipo: 'plano', etiqueta: 'Térmica unipolar (hasta 40A)' },
         { key: 'termicaBipolarBase', tipo: 'plano', etiqueta: 'Térmica bipolar (hasta 40A)' },
         { key: 'termicaTetrapolarBase', tipo: 'plano', etiqueta: 'Térmica tetrapolar (hasta 40A)' },
       ],
-      nota: 'De 50 a 63A se cobra 1,5× este valor; de 80 a 125A, 2,5× — no relevado, es un escalón proporcional.',
+      nota: 'De 50 a 63A se cobra 1,5× la bipolar; de 80 a 125A, 2,5× — no relevado, es un escalón proporcional. La unipolar tampoco está relevada: sale de la bipolar por proporción.',
     },
     {
       titulo: 'Puntos de luz y de toma ($/un.)',
@@ -1241,11 +1987,16 @@
     {
       titulo: 'Tablero eléctrico ($/un. según módulos)',
       campos: [{ key: 'tableroPuntos', tipo: 'tablero' }],
+      nota: 'Gabinetes de pared de 12, 24, 36 y 48 módulos, en filas de 12. Se cotiza siempre la medida siguiente a lo que ocupan las llaves: para 20 módulos se compra el de 24. El de 48 módulos no está relevado, sale de prolongar la recta de los otros tres — confirmá el precio antes de presupuestar uno.',
     },
     {
       titulo: 'Kit de suministro nuevo ($/un.)',
       campos: [
         { key: 'cajaMedidor', tipo: 'plano', etiqueta: 'Caja para medidor' },
+        { key: 'cajaMedidorMono', tipo: 'plano', etiqueta: 'Caja para medidor monofásico' },
+        { key: 'cajaMedidorTrifasica', tipo: 'plano', etiqueta: 'Caja para medidor trifásico' },
+        { key: 'borneraTierra', tipo: 'plano', etiqueta: 'Bornera de tierra' },
+        { key: 'borneraNeutro', tipo: 'plano', etiqueta: 'Bornera de neutro' },
         { key: 'jabalina', tipo: 'plano', etiqueta: 'Jabalina / electrodo de puesta a tierra' },
         { key: 'canoPvc1pulg3m', tipo: 'plano', etiqueta: 'Caño PVC 1" x 3m (puesta a tierra)' },
         { key: 'codoPvc1pulg', tipo: 'plano', etiqueta: 'Codo PVC 1" (puesta a tierra)' },
@@ -1455,7 +2206,9 @@
     $('#f-sistema').addEventListener('change', renderPotenciaResultado);
     $('#btn-add-circuito').addEventListener('click', () => {
       const sistema = SISTEMAS[draft.sistemaId];
-      draft.circuitos.push({ id: uid('m2'), nombre: '', ib: 10, v: sistema.v, fases: sistema.fases, l: 15, material: 'cobre', metodo: 'embutido', tempAmb: 30, agrupados: 1, caidaMax: 5, cosPhi: 1, uso: 'fuerza' });
+      draft.circuitos.push({ id: uid('m2'), nombre: '', ib: 10, v: sistema.v, fases: sistema.fases, l: 15,
+        material: 'cobre', metodo: 'embutido', aislacion: 'pvc', tempAmb: 30, agrupados: 1,
+        caidaMax: CAIDA_MAX_DEFAULT.fuerza, cosPhi: 1, uso: 'fuerza' });
       renderCircuitosList();
     });
     $('#btn-add-material').addEventListener('click', () => {
@@ -1645,48 +2398,84 @@
     doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
     doc.text('MATERIALES', margin, y);
     y += 4;
+    // El listado de materiales va como alcance del trabajo, sin precios: al
+    // cliente se le informa qué incluye, no cuánto cuesta cada pieza.
     const filasMateriales = materialesItems
-      ? materialesItems.map((m) => [m.nombre, fmt(m.cantidad, 0) + ' ' + m.unidad, money(m.cantidad * m.precioUnit)])
-      : [['Materiales', '', money(p.materiales)]];
+      ? materialesItems.map((m) => [m.nombre, fmt(m.cantidad, 0) + ' ' + m.unidad])
+      : [['Materiales de la instalación', '']];
     doc.autoTable({
       startY: y,
       margin: { left: margin, right: margin },
-      head: [['Material', 'Cant.', 'Precio']],
+      head: [['Material', 'Cant.']],
       body: filasMateriales,
       theme: 'plain',
       styles: { fontSize: 9, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
       headStyles: { textColor: [111, 114, 119], fontStyle: 'bold', fontSize: 8, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
-      columnStyles: { 1: { halign: 'right', cellWidth: 26 }, 2: { halign: 'right', cellWidth: 28 } },
+      columnStyles: { 1: { halign: 'right', cellWidth: 30 } },
     });
-    y = doc.lastAutoTable.finalY + 10;
+    y = doc.lastAutoTable.finalY + 12;
+
+    // Del dinero, sólo el total. El desglose de costos y el margen son datos
+    // internos y no tienen por qué viajar en el presupuesto del cliente.
+    const altoCaja = 22;
+    doc.setFillColor(244, 244, 245);
+    doc.roundedRect(margin, y, pageWidth - 2 * margin, altoCaja, 2, 2, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
+    doc.text('TOTAL DEL PRESUPUESTO', margin + 6, y + 9);
+    doc.setFontSize(16); doc.setTextColor(23, 23, 25);
+    doc.text(money(t.total), pageWidth - margin - 6, y + 14, { align: 'right' });
+    y += altoCaja + 10;
 
     doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
-    doc.text('PRESUPUESTO', margin, y);
+    doc.text('CONDICIONES', margin, y);
     y += 4;
-    const filasPresupuesto = [
-      ['Mano de obra', money(p.manoObra)],
-      ['Traslados', money(p.traslados)],
-      ['Otros gastos', money(p.otros)],
-      ['Costo total', money(t.costoTotal)],
-      ['Margen (' + p.margen + '%)', money(t.subtotal - t.costoTotal)],
-      ['IVA (' + p.iva + '%)', money(t.ivaMonto)],
-      ['TOTAL CLIENTE', money(t.total)],
-    ];
     doc.autoTable({
       startY: y,
       margin: { left: margin, right: margin },
-      body: filasPresupuesto,
+      body: [
+        ['Forma de pago', p.formaPago],
+        ['Validez de la oferta', p.validez + ' días'],
+        ['Plazo de ejecución', p.plazo + ' días'],
+      ],
       theme: 'plain',
       styles: { fontSize: 9, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
       columnStyles: { 1: { halign: 'right' } },
-      didParseCell: (data) => {
-        if (data.row.index === filasPresupuesto.length - 1) { data.cell.styles.fontStyle = 'bold'; data.cell.styles.fontSize = 11; }
-      },
     });
-    y = doc.lastAutoTable.finalY + 10;
+    y = doc.lastAutoTable.finalY + 8;
 
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(111, 114, 119);
-    doc.text('Validez: ' + p.validez + ' días · Forma de pago: ' + p.formaPago, margin, y);
+    const incluye = doc.splitTextToSize('El presupuesto contiene costo de materiales y mano de obra incluidos.', pageWidth - 2 * margin);
+    doc.text(incluye, margin, y);
+    y += incluye.length * 4;
+
+    // Últimas hojas: el frente del tablero, una con la tapa interna puesta
+    // —como queda terminado— y otra del interior abierto con los conductores.
+    // Si el navegador no puede dibujarlas, el presupuesto sale igual.
+    if (trabajo) {
+      for (const vista of ['cerrado', 'abierto']) {
+        try {
+          const cv = await tabDibujar(trabajo, vista, { titulo: 'Presupuesto ' + p.codigo });
+          if (!cv) continue;
+          doc.addPage();
+          let ty = 18;
+          doc.setFont('helvetica', 'bold'); doc.setFontSize(13); doc.setTextColor(23, 23, 25);
+          doc.text(vista === 'cerrado' ? 'Tablero terminado' : 'Interior del tablero', margin, ty);
+          ty += 6;
+          doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(111, 114, 119);
+          const nota = vista === 'cerrado'
+            ? 'Así queda el tablero con la tapa interna colocada, armado con las protecciones calculadas para esta obra.'
+            : 'Interior con las llaves sobre el riel y el recorrido de los conductores. Los cables están dibujados a modo ilustrativo.';
+          const lineas = doc.splitTextToSize(nota + ' No es un plano constructivo.', pageWidth - 2 * margin);
+          doc.text(lineas, margin, ty);
+          ty += lineas.length * 4 + 6;
+          const maxW = pageWidth - 2 * margin;
+          const maxH = doc.internal.pageSize.getHeight() - ty - 18;
+          let iw = maxW, ih = cv.height / cv.width * iw;
+          if (ih > maxH) { ih = maxH; iw = cv.width / cv.height * ih; }
+          doc.addImage(cv.toDataURL('image/png'), 'PNG', margin + (maxW - iw) / 2, ty, iw, ih, undefined, 'FAST');
+        } catch (e) { /* sin hoja de tablero */ }
+      }
+    }
 
     return { doc, filename: p.codigo + '.pdf' };
   }
