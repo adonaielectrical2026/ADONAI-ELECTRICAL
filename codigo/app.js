@@ -345,7 +345,17 @@
   }
   // Ancho de bandeja portacable según cantidad de cables que lleva (criterio del usuario,
   // no una tabla normativa).
-  const ANCHO_BANDEJA = [{ n: 6, ancho: 150 }, { n: 10, ancho: 200 }, { n: Infinity, ancho: 250 }];
+  const ANCHO_BANDEJA = [{ n: 6, ancho: 150 }, { n: Infinity, ancho: 200 }];
+  // Medida de caño que hay que comprar para un diámetro calculado: la misma si
+  // se consigue, y si no la siguiente hacia arriba. Si el cálculo pide más de
+  // lo que hay, devuelve el diámetro pedido — así el material queda en $0 y se
+  // ve, en vez de cotizar en silencio un caño más angosto del que corresponde.
+  function medidaCano(d, disponibles) {
+    const medidas = Object.keys(disponibles || {}).map(Number).sort((a, b) => a - b);
+    for (const m of medidas) if (m >= d) return m;
+    return d;
+  }
+
   function anchoBandeja(nCables) {
     for (const row of ANCHO_BANDEJA) if (nCables <= row.n) return row.ancho;
     return ANCHO_BANDEJA[ANCHO_BANDEJA.length - 1].ancho;
@@ -514,14 +524,11 @@
     //   20 mm  = 3/4" (17,93 ext)   U$S 4,78/tira  -> $63/m
     //   25 mm  = 1"   (23,42 ext)   U$S 7,19/tira  -> $95/m
     //   32 mm  = 1 1/4" (29,54 ext) U$S 9,93/tira  -> $131/m
-    // Los de 16 y 40 mm no los publican: van estimados desde los de al lado y
-    // conviene confirmarlos antes de presupuestar una obra que los use.
-    canoGalvanizado: { 16: 50, 20: 63, 25: 95, 32: 131, 40: 165 },
-    // Electro Uruguay, bandeja Zg 22 calada 200x65, tramo de 3 m a $1.767,32:
-    // $589 el metro. Los anchos de 150 y 250 salen de escalar ese valor por el
-    // ancho, que es como se comporta la chapa; si se compra alguno, conviene
-    // confirmar el precio real.
-    bandeja: { 150: 442, 200: 589, 250: 736 },
+    canoGalvanizado: { 20: 63, 25: 95, 32: 131 },
+    // Bandeja calada galvanizada, tramo de 3 m, pasado a metro:
+    //   150x65 (Punto Eléctrico) U$S 35,55 = $1.430 el tramo -> $477/m
+    //   200x65 (Electro Uruguay)          $1.767,32 el tramo -> $589/m
+    bandeja: { 150: 477, 200: 589 },
     grampaOmega: 12,
     mensulaBandeja: 135,
     codoPvcRigido: 31,
@@ -573,6 +580,8 @@
     { clave: 'cajaMedidorMono', viejo: 0, nuevo: 980 },
     { clave: 'cajaMedidorTrifasica', viejo: 0, nuevo: 2079 },
     { clave: 'codoCajaBandeja', viejo: 0, nuevo: 964 },
+    // los que van por medida llevan además cuál
+    { clave: 'bandeja', medida: 150, viejo: 442, nuevo: 477 },
   ];
 
   // Proveedores de referencia para relevar precios, por si hay que rehacerlo:
@@ -631,9 +640,13 @@
           // hacen falta a partir de la longitud, así que se deja lista para cargar a mano.
           add('Codo PVC rígido ' + d + ' mm (cambio de dirección)', 'un.', 0, precios.codoPvcRigido);
         } else if (c.metodo === 'amurado_galvanizado') {
-          add('Caño de acero galvanizado ' + d + ' mm', 'm', largo, precios.canoGalvanizado[d] || 0);
+          // En acero no se manejan todas las medidas que sí existen en PVC: si
+          // el cálculo pide una que no se consigue, se pasa a la siguiente. Un
+          // caño más ancho siempre entra; uno más angosto, no.
+          const dAcero = medidaCano(d, precios.canoGalvanizado);
+          add('Caño de acero galvanizado ' + dAcero + ' mm', 'm', largo, precios.canoGalvanizado[dAcero] || 0);
           add('Grampa omega', 'un.', largo, precios.grampaOmega);
-          add('Codo caño galvanizado ' + d + ' mm (cambio de dirección)', 'un.', 0, precios.codoGalvanizado);
+          add('Codo caño galvanizado ' + dAcero + ' mm (cambio de dirección)', 'un.', 0, precios.codoGalvanizado);
         } else if (c.metodo === 'bandeja') {
           const ancho = anchoBandeja(conductores);
           add('Bandeja portacable ' + ancho + ' mm', 'm', largo, precios.bandeja[ancho] || 0);
@@ -1193,8 +1206,10 @@
   // después se relevaron. Se actualizan sólo si el catálogo guardado todavía
   // tiene el valor viejo: si el técnico lo corrigió a mano, manda lo suyo.
   PRECIOS_RELEVADOS.forEach((r) => {
-    if (DB.settings.precios[r.clave] === r.viejo) {
-      DB.settings.precios[r.clave] = r.nuevo;
+    const destino = r.medida === undefined ? DB.settings.precios : DB.settings.precios[r.clave];
+    const clave = r.medida === undefined ? r.clave : r.medida;
+    if (destino && destino[clave] === r.viejo) {
+      destino[clave] = r.nuevo;
       clavesAgregadas = true;
     }
   });
@@ -1221,7 +1236,15 @@
     if (!(k in DEFAULT_PRECIOS)) {
       delete DB.settings.precios[k];
       clavesAgregadas = true;
+      return;
     }
+    // lo mismo con las medidas que se dejaron de usar, como la bandeja de 250
+    const def = DEFAULT_PRECIOS[k], guardado = DB.settings.precios[k];
+    if (!def || typeof def !== 'object' || Array.isArray(def)) return;
+    if (!guardado || typeof guardado !== 'object') return;
+    Object.keys(guardado).forEach((medida) => {
+      if (!(medida in def)) { delete guardado[medida]; clavesAgregadas = true; }
+    });
   });
   if (!DB.settings.manoObra) DB.settings.manoObra = { ...DEFAULT_MANO_OBRA };
   if (!DB.seq) DB.seq = { trabajo: 0, presupuesto: 0 };
