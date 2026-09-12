@@ -2169,7 +2169,6 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     bandeja: { 150: 0, 200: 0, 250: 0 },
     grampaOmega: 12,
     mensulaBandeja: 135,
-    tacoFischer10mm: 3,
     codoPvcRigido: 31,
     // MGI, curva zincada EMT: 3/4" (20mm) U$S 0,40. Es la medida que más sale en
     // vivienda. Si se trabaja con caño más grueso, 1" son $29 y 1 1/4" $47.
@@ -2276,10 +2275,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
           add('Bandeja portacable ' + ancho + ' mm', 'm', largo, precios.bandeja[ancho] || 0);
           const nMensulas = Math.ceil(largo / 1.5);
           add('Ménsula para bandeja', 'un.', nMensulas, precios.mensulaBandeja);
-          add('Taco fischer 10mm', 'un.', nMensulas * 2, precios.tacoFischer10mm);
-          // Los tornillos de fijación de la bandeja no se listan: no hay un
-          // precio confiable en los proveedores y son de ferretería. Van
-          // cargados a mano en "Otros gastos" del presupuesto.
+          // La tornillería de fijación —tacos y tornillos— no se lista: es de
+          // ferretería, ningún proveedor eléctrico la publica y va de a varias
+          // por ménsula. Se carga a mano en "Otros gastos" del presupuesto.
           add('Codo / caja de pase para bandeja ' + ancho + ' mm (cambio de dirección)', 'un.', 0, precios.codoCajaBandeja);
         } else if (c.metodo !== 'aire') {
           // embutido, enterrado, o metodo viejo/desconocido: caño corrugado (comportamiento por defecto)
@@ -3550,7 +3548,6 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       campos: [
         { key: 'grampaOmega', tipo: 'plano', etiqueta: 'Grampa omega' },
         { key: 'mensulaBandeja', tipo: 'plano', etiqueta: 'Ménsula para bandeja' },
-        { key: 'tacoFischer10mm', tipo: 'plano', etiqueta: 'Taco fischer 10mm' },
         { key: 'codoPvcRigido', tipo: 'plano', etiqueta: 'Codo PVC rígido (cambio de dirección)' },
         { key: 'codoGalvanizado', tipo: 'plano', etiqueta: 'Codo caño galvanizado (cambio de dirección)' },
         { key: 'codoCajaBandeja', tipo: 'plano', etiqueta: 'Codo / caja de pase para bandeja' },
