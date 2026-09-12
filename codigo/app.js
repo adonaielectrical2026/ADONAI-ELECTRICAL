@@ -517,7 +517,11 @@
     // Los de 16 y 40 mm no los publican: van estimados desde los de al lado y
     // conviene confirmarlos antes de presupuestar una obra que los use.
     canoGalvanizado: { 16: 50, 20: 63, 25: 95, 32: 131, 40: 165 },
-    bandeja: { 150: 0, 200: 0, 250: 0 },
+    // Electro Uruguay, bandeja Zg 22 calada 200x65, tramo de 3 m a $1.767,32:
+    // $589 el metro. Los anchos de 150 y 250 salen de escalar ese valor por el
+    // ancho, que es como se comporta la chapa; si se compra alguno, conviene
+    // confirmar el precio real.
+    bandeja: { 150: 442, 200: 589, 250: 736 },
     grampaOmega: 12,
     mensulaBandeja: 135,
     codoPvcRigido: 31,
@@ -570,6 +574,11 @@
     { clave: 'cajaMedidorTrifasica', viejo: 0, nuevo: 2079 },
     { clave: 'codoCajaBandeja', viejo: 0, nuevo: 964 },
   ];
+
+  // Proveedores de referencia para relevar precios, por si hay que rehacerlo:
+  //   Fivisa (fivisa.com.uy) y Electro Uruguay (electrouruguay.com) cotizan en
+  //   pesos; MGI (mgi.com.uy) en dólares. Las bandejas no están en catálogo web
+  //   de ninguno: Electro Uruguay las publica en MercadoLibre.
   const DEFAULT_MANO_OBRA = { tarifaHora: 500, horasJornada: 8 };
   const BASE_POR_TIPO = { unipolar: 'termicaUnipolarBase', bipolar: 'termicaBipolarBase',
                           tripolar: 'termicaTetrapolarBase', tetrapolar: 'termicaTetrapolarBase' };
