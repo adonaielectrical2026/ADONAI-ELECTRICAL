@@ -510,7 +510,13 @@
     },
     canoCorrugado: { 16: 13, 20: 14, 25: 19, 32: 27, 40: 39 },
     canoPvcRigido: { 16: 74, 20: 84, 25: 112, 32: 158, 40: 222 },
-    canoGalvanizado: { 16: 0, 20: 0, 25: 0, 32: 0, 40: 0 },
+    // MGI, caño zincado EMT, tira de 3,05 m, pasado a metro y a pesos ($40,23):
+    //   20 mm  = 3/4" (17,93 ext)   U$S 4,78/tira  -> $63/m
+    //   25 mm  = 1"   (23,42 ext)   U$S 7,19/tira  -> $95/m
+    //   32 mm  = 1 1/4" (29,54 ext) U$S 9,93/tira  -> $131/m
+    // Los de 16 y 40 mm no los publican: van estimados desde los de al lado y
+    // conviene confirmarlos antes de presupuestar una obra que los use.
+    canoGalvanizado: { 16: 50, 20: 63, 25: 95, 32: 131, 40: 165 },
     bandeja: { 150: 0, 200: 0, 250: 0 },
     grampaOmega: 12,
     mensulaBandeja: 135,
@@ -518,7 +524,10 @@
     // MGI, curva zincada EMT: 3/4" (20mm) U$S 0,40. Es la medida que más sale en
     // vivienda. Si se trabaja con caño más grueso, 1" son $29 y 1 1/4" $47.
     codoGalvanizado: 16,
-    codoCajaBandeja: 0,
+    // Curva horizontal metálica 200x65 (MercadoLibre, vendedor KENTIUM): $964.
+    // Es el precio de la bandeja de 200 mm, la más ancha que cotiza la app; en
+    // bandejas más angostas la curva sale menos.
+    codoCajaBandeja: 964,
     // Las térmicas DIN residenciales cotizaron parejo entre 6 y 40A en Fivisa; para 50A+ se
     // aplica un escalón proporcional (no relevado) porque suelen pasar a otro bastidor/marco.
     // Relevado en Fivisa, línea Hyundai HGD63S, la misma con la que coincide la
@@ -559,6 +568,7 @@
     { clave: 'codoGalvanizado', viejo: 0, nuevo: 16 },
     { clave: 'cajaMedidorMono', viejo: 0, nuevo: 980 },
     { clave: 'cajaMedidorTrifasica', viejo: 0, nuevo: 2079 },
+    { clave: 'codoCajaBandeja', viejo: 0, nuevo: 964 },
   ];
   const DEFAULT_MANO_OBRA = { tarifaHora: 500, horasJornada: 8 };
   const BASE_POR_TIPO = { unipolar: 'termicaUnipolarBase', bipolar: 'termicaBipolarBase',
@@ -1176,6 +1186,31 @@
   PRECIOS_RELEVADOS.forEach((r) => {
     if (DB.settings.precios[r.clave] === r.viejo) {
       DB.settings.precios[r.clave] = r.nuevo;
+      clavesAgregadas = true;
+    }
+  });
+  // Los precios que van por medida —caño por diámetro, bandeja por ancho— son
+  // objetos, y la lista de arriba sólo alcanza a los sueltos. Acá se completan
+  // los que siguen en $0, que es como salieron cuando no estaban relevados. Un
+  // valor ya cargado no se toca.
+  Object.keys(DEFAULT_PRECIOS).forEach((k) => {
+    const def = DEFAULT_PRECIOS[k], guardado = DB.settings.precios[k];
+    if (!def || typeof def !== 'object' || Array.isArray(def)) return;
+    if (!guardado || typeof guardado !== 'object') return;
+    Object.keys(def).forEach((medida) => {
+      if (guardado[medida] === 0 && def[medida] !== 0) {
+        guardado[medida] = def[medida];
+        clavesAgregadas = true;
+      }
+    });
+  });
+
+  // Materiales que se sacaron de la lista dejan su precio dando vueltas en el
+  // catálogo guardado. No molestan, pero si algún día se vuelve a usar ese
+  // nombre reaparecería un valor viejo: se limpian.
+  Object.keys(DB.settings.precios).forEach((k) => {
+    if (!(k in DEFAULT_PRECIOS)) {
+      delete DB.settings.precios[k];
       clavesAgregadas = true;
     }
   });
