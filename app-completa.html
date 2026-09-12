@@ -876,6 +876,7 @@
         <div class="budget-row"><span class="lbl"><svg><use href="#ic-user"/></svg>Mano de obra:</span><span class="val"><input class="input" style="min-height:34px;width:120px;text-align:right" type="number" id="pi-manoobra" value="0"></span></div>
         <div class="budget-row"><span class="lbl"><svg><use href="#ic-truck"/></svg>Traslados:</span><span class="val"><input class="input" style="min-height:34px;width:120px;text-align:right" type="number" id="pi-traslados" value="0"></span></div>
         <div class="budget-row"><span class="lbl"><svg><use href="#ic-tag"/></svg>Otros gastos:</span><span class="val"><input class="input" style="min-height:34px;width:120px;text-align:right" type="number" id="pi-otros" value="0"></span></div>
+        <p style="font-size:0.72rem;color:var(--steel);margin:-2px 0 6px">Acá van los que no están en la lista de materiales: tornillería, precintos, consumibles.</p>
         <div class="hr"></div>
         <div class="budget-row"><span class="lbl"><svg><use href="#ic-calc"/></svg><b>Costo total:</b></span><span class="val" id="pi-costototal">$0</span></div>
         <div class="budget-row"><span class="lbl"><svg><use href="#ic-percent"/></svg>Margen aplicado:</span><span class="val"><input class="input" style="min-height:34px;width:80px;text-align:right" type="number" id="pi-margen" value="30">%</span></div>
@@ -2169,8 +2170,6 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     grampaOmega: 12,
     mensulaBandeja: 135,
     tacoFischer10mm: 3,
-    tornilloTuercaTaco10mm: 0,
-    tornilloTuerca8mm: 0,
     codoPvcRigido: 31,
     // MGI, curva zincada EMT: 3/4" (20mm) U$S 0,40. Es la medida que más sale en
     // vivienda. Si se trabaja con caño más grueso, 1" son $29 y 1 1/4" $47.
@@ -2278,8 +2277,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
           const nMensulas = Math.ceil(largo / 1.5);
           add('Ménsula para bandeja', 'un.', nMensulas, precios.mensulaBandeja);
           add('Taco fischer 10mm', 'un.', nMensulas * 2, precios.tacoFischer10mm);
-          add('Tornillo cabeza tuerca para taco 10mm', 'un.', nMensulas * 2, precios.tornilloTuercaTaco10mm);
-          add('Tornillo con tuerca 8mm', 'un.', nMensulas * 2, precios.tornilloTuerca8mm);
+          // Los tornillos de fijación de la bandeja no se listan: no hay un
+          // precio confiable en los proveedores y son de ferretería. Van
+          // cargados a mano en "Otros gastos" del presupuesto.
           add('Codo / caja de pase para bandeja ' + ancho + ' mm (cambio de dirección)', 'un.', 0, precios.codoCajaBandeja);
         } else if (c.metodo !== 'aire') {
           // embutido, enterrado, o metodo viejo/desconocido: caño corrugado (comportamiento por defecto)
@@ -3551,8 +3551,6 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         { key: 'grampaOmega', tipo: 'plano', etiqueta: 'Grampa omega' },
         { key: 'mensulaBandeja', tipo: 'plano', etiqueta: 'Ménsula para bandeja' },
         { key: 'tacoFischer10mm', tipo: 'plano', etiqueta: 'Taco fischer 10mm' },
-        { key: 'tornilloTuercaTaco10mm', tipo: 'plano', etiqueta: 'Tornillo cabeza tuerca para taco 10mm' },
-        { key: 'tornilloTuerca8mm', tipo: 'plano', etiqueta: 'Tornillo con tuerca 8mm' },
         { key: 'codoPvcRigido', tipo: 'plano', etiqueta: 'Codo PVC rígido (cambio de dirección)' },
         { key: 'codoGalvanizado', tipo: 'plano', etiqueta: 'Codo caño galvanizado (cambio de dirección)' },
         { key: 'codoCajaBandeja', tipo: 'plano', etiqueta: 'Codo / caja de pase para bandeja' },

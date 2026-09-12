@@ -515,8 +515,6 @@
     grampaOmega: 12,
     mensulaBandeja: 135,
     tacoFischer10mm: 3,
-    tornilloTuercaTaco10mm: 0,
-    tornilloTuerca8mm: 0,
     codoPvcRigido: 31,
     // MGI, curva zincada EMT: 3/4" (20mm) U$S 0,40. Es la medida que más sale en
     // vivienda. Si se trabaja con caño más grueso, 1" son $29 y 1 1/4" $47.
@@ -624,8 +622,9 @@
           const nMensulas = Math.ceil(largo / 1.5);
           add('Ménsula para bandeja', 'un.', nMensulas, precios.mensulaBandeja);
           add('Taco fischer 10mm', 'un.', nMensulas * 2, precios.tacoFischer10mm);
-          add('Tornillo cabeza tuerca para taco 10mm', 'un.', nMensulas * 2, precios.tornilloTuercaTaco10mm);
-          add('Tornillo con tuerca 8mm', 'un.', nMensulas * 2, precios.tornilloTuerca8mm);
+          // Los tornillos de fijación de la bandeja no se listan: no hay un
+          // precio confiable en los proveedores y son de ferretería. Van
+          // cargados a mano en "Otros gastos" del presupuesto.
           add('Codo / caja de pase para bandeja ' + ancho + ' mm (cambio de dirección)', 'un.', 0, precios.codoCajaBandeja);
         } else if (c.metodo !== 'aire') {
           // embutido, enterrado, o metodo viejo/desconocido: caño corrugado (comportamiento por defecto)
@@ -1897,8 +1896,6 @@
         { key: 'grampaOmega', tipo: 'plano', etiqueta: 'Grampa omega' },
         { key: 'mensulaBandeja', tipo: 'plano', etiqueta: 'Ménsula para bandeja' },
         { key: 'tacoFischer10mm', tipo: 'plano', etiqueta: 'Taco fischer 10mm' },
-        { key: 'tornilloTuercaTaco10mm', tipo: 'plano', etiqueta: 'Tornillo cabeza tuerca para taco 10mm' },
-        { key: 'tornilloTuerca8mm', tipo: 'plano', etiqueta: 'Tornillo con tuerca 8mm' },
         { key: 'codoPvcRigido', tipo: 'plano', etiqueta: 'Codo PVC rígido (cambio de dirección)' },
         { key: 'codoGalvanizado', tipo: 'plano', etiqueta: 'Codo caño galvanizado (cambio de dirección)' },
         { key: 'codoCajaBandeja', tipo: 'plano', etiqueta: 'Codo / caja de pase para bandeja' },
