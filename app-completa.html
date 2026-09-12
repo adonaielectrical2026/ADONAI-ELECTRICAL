@@ -2150,6 +2150,10 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   function clonePrecios(obj) {
     try { return structuredClone(obj); } catch (e) { return JSON.parse(JSON.stringify(obj)); }
   }
+  // Los precios están en pesos. Los que se relevaron en proveedores que cotizan
+  // en dólares (MGI) se convirtieron a $40,23 por dólar, la cotización del
+  // 12/9/2026. Si el dólar se mueve mucho, esos renglones quedan viejos: son los
+  // que dicen "MGI" en el comentario.
   const DEFAULT_PRECIOS = {
     cableUnipolar: {
       0.75: 11, 1: 14, 1.5: 20, 2: 27, 2.5: 34, 4: 54, 6: 80, 10: 136, 16: 217, 25: 333,
@@ -2168,7 +2172,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     tornilloTuercaTaco10mm: 0,
     tornilloTuerca8mm: 0,
     codoPvcRigido: 31,
-    codoGalvanizado: 0,
+    // MGI, curva zincada EMT: 3/4" (20mm) U$S 0,40. Es la medida que más sale en
+    // vivienda. Si se trabaja con caño más grueso, 1" son $29 y 1 1/4" $47.
+    codoGalvanizado: 16,
     codoCajaBandeja: 0,
     // Las térmicas DIN residenciales cotizaron parejo entre 6 y 40A en Fivisa; para 50A+ se
     // aplica un escalón proporcional (no relevado) porque suelen pasar a otro bastidor/marco.
@@ -2192,11 +2198,22 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     // precio hasta que se confirme.
     borneraTierra: 55,
     borneraNeutro: 55,
-    cajaMedidor: 0,
+    // MGI, caja medidor trifásica con ICP (TAF): U$S 51,67. Es la única que
+    // publican; para monofásica hay que buscar en otro lado.
+    cajaMedidor: 2079,
     jabalina: 978,
     canoPvc1pulg3m: 197,
     codoPvc1pulg: 31,
   };
+  // Los que pasaron de "sin relevar" a relevado. Al agregar uno nuevo acá, se
+  // actualiza solo en los celulares que ya tienen la app.
+  const PRECIOS_RELEVADOS = [
+    { clave: 'termicaUnipolarBase', viejo: 166, nuevo: 80 },
+    { clave: 'borneraTierra', viejo: 0, nuevo: 55 },
+    { clave: 'borneraNeutro', viejo: 0, nuevo: 55 },
+    { clave: 'cajaMedidor', viejo: 0, nuevo: 2079 },
+    { clave: 'codoGalvanizado', viejo: 0, nuevo: 16 },
+  ];
   const DEFAULT_MANO_OBRA = { tarifaHora: 500, horasJornada: 8 };
   const BASE_POR_TIPO = { unipolar: 'termicaUnipolarBase', bipolar: 'termicaBipolarBase',
                           tripolar: 'termicaTetrapolarBase', tetrapolar: 'termicaTetrapolarBase' };
@@ -2802,6 +2819,15 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   Object.keys(DEFAULT_PRECIOS).forEach((k) => {
     if (DB.settings.precios[k] === undefined) {
       DB.settings.precios[k] = clonePrecios(DEFAULT_PRECIOS[k]);
+      clavesAgregadas = true;
+    }
+  });
+  // Precios que en su momento salieron sin relevar —en $0 o estimados— y que
+  // después se relevaron. Se actualizan sólo si el catálogo guardado todavía
+  // tiene el valor viejo: si el técnico lo corrigió a mano, manda lo suyo.
+  PRECIOS_RELEVADOS.forEach((r) => {
+    if (DB.settings.precios[r.clave] === r.viejo) {
+      DB.settings.precios[r.clave] = r.nuevo;
       clavesAgregadas = true;
     }
   });
