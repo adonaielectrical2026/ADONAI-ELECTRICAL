@@ -2253,6 +2253,10 @@
     });
     $('#btn-regenerar-materiales').addEventListener('click', () => {
       draft.materiales = generarMateriales(draft.circuitos, draft);
+      // Se guarda en el acto: si no, alguien regenera, se va derecho a hacer el
+      // PDF y sale con la lista vieja, porque el PDF lee el relevamiento
+      // guardado y no el borrador en pantalla.
+      persistDraft();
       renderMaterialesList();
       toast('Materiales regenerados desde los circuitos');
     });
@@ -2398,7 +2402,7 @@
 
     if (naturaleza) {
       const descLines = doc.splitTextToSize(NATURALEZA_DESC[naturaleza] || '', pageWidth - 2 * margin - 8);
-      const boxH = 8 + descLines.length * 5 + 7;
+      const boxH = 8 + descLines.length * 5 + 2;
       doc.setFillColor(244, 244, 245);
       doc.roundedRect(margin, y, pageWidth - 2 * margin, boxH, 2, 2, 'F');
       let ty = y + 7;
@@ -2407,9 +2411,6 @@
       ty += 6;
       doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(23, 23, 25);
       doc.text(descLines, margin + 4, ty);
-      ty += descLines.length * 5;
-      doc.setTextColor(111, 114, 119);
-      doc.text('Plazo estimado: ' + p.plazo + ' días', margin + 4, ty);
       y += boxH + 8;
     } else {
       y += 4;
