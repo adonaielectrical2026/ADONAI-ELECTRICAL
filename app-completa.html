@@ -1935,6 +1935,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   // alumbrado 0,75mm2; derivacion para tomacorrientes "en salto" 1,5mm2 (mas conservador
   // que 1mm2 para un solo tomacorriente); derivacion para otros usos 1mm2.
   const MINIMOS_REGLAMENTARIOS = { iluminacion: 0.75, tomacorrientes: 1.5, fuerza: 1 };
+  // El reglamento admite 0,75 mm² en iluminación, pero en plaza no se consigue:
+  // se arranca en 1 mm². Va aparte del mínimo reglamentario a propósito — la
+  // tabla de arriba dice lo que dice la norma y no se toca; manda el mayor de
+  // los dos.
+  const SECCION_MINIMA_COMERCIAL = 1;
   const CAIDA_MAX_DEFAULT = { iluminacion: 3, tomacorrientes: 5, fuerza: 5 };
   const DIAMETRO_CANO = [{ s: 2.5, d: 16 }, { s: 6, d: 20 }, { s: 10, d: 25 }, { s: 16, d: 32 }, { s: 95, d: 40 }];
 
@@ -2000,6 +2005,12 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   }
   // Ancho de bandeja portacable según cantidad de cables que lleva (criterio del usuario,
   // no una tabla normativa).
+  // Con qué cable se resuelve cada método. Los que no figuran van con cable
+  // unipolar por dentro del caño, que es lo habitual.
+  const CABLE_POR_METODO = {
+    aire: { precio: 'cableBajoGoma', etiqueta: 'bajo goma' },
+    bandeja: { precio: 'cableBajoPlastico', etiqueta: 'bajo plástico' },
+  };
   const ANCHO_BANDEJA = [{ n: 6, ancho: 150 }, { n: Infinity, ancho: 200 }];
   // Medida de caño que hay que comprar para un diámetro calculado: la misma si
   // se consigue, y si no la siguiente hacia arriba. Si el cálculo pide más de
@@ -2059,7 +2070,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     const rho = material === 'aluminio' ? RHO_COBRE * FACTOR_RESIST_ALUMINIO : RHO_COBRE;
     const caidaMax = Number(p.caidaMax) || 5;
     const uso = p.uso || 'fuerza';
-    const minimo = MINIMOS_REGLAMENTARIOS[uso] ?? 1;
+    const minimo = Math.max(MINIMOS_REGLAMENTARIOS[uso] ?? 1, SECCION_MINIMA_COMERCIAL);
     const curva = CURVA_SUGERIDA[uso] || 'C';
 
     let seccionCapacidad = null, seccionCaida = null, elegido = null;
@@ -2166,8 +2177,19 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   // 12/9/2026. Si el dólar se mueve mucho, esos renglones quedan viejos: son los
   // que dicen "MGI" en el comentario.
   const DEFAULT_PRECIOS = {
+    // Cable multipolar, por metro. Relevado en Fivisa, que lo vende en rollos de
+    // 100 m y cotiza en dólares: precio del rollo pasado a metro a $40,23.
+    // El bajo goma va al aire libre y el bajo plástico en bandeja.
+    cableBajoGoma: {
+      '2x1': 39, '2x1.5': 55, '2x2': 73, '2x2.5': 89, '2x4': 134, '2x6': 197,
+      '3x1': 54, '3x1.5': 77, '3x2': 102, '3x2.5': 125, '3x4': 192,
+    },
+    cableBajoPlastico: {
+      '2x1': 38, '2x1.5': 51, '2x2': 67, '2x2.5': 81, '2x4': 122, '2x6': 178,
+      '3x1': 61, '3x1.5': 82, '3x2': 106, '3x2.5': 129, '3x4': 195,
+    },
     cableUnipolar: {
-      0.75: 11, 1: 14, 1.5: 20, 2: 27, 2.5: 34, 4: 54, 6: 80, 10: 136, 16: 217, 25: 333,
+      1: 14, 1.5: 20, 2: 27, 2.5: 34, 4: 54, 6: 80, 10: 136, 16: 217, 25: 333,
       // 35mm² en adelante: pocos presupuestos los usan y Fivisa no los tiene en su buscador
       // minorista — estimados por extrapolación lineal desde el precio real de 16 y 25mm².
       35: 462, 50: 655, 70: 913, 95: 1236, 120: 1559, 150: 1946, 185: 2398, 240: 3108,
@@ -2282,8 +2304,22 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       const calc = calcularCircuito(c);
       if (!calc.apto) return;
       const conductores = c.fases === 1 ? 2 : 4;
-      const largoCable = Math.ceil((Number(c.l) || 0) * conductores * 1.1);
-      if (largoCable > 0) add('Cable unipolar ' + fmt(calc.seccionAdoptada, calc.seccionAdoptada < 10 ? 1 : 0).replace(/,00$/, '') + ' mm²', 'm', largoCable, precios.cableUnipolar[calc.seccionAdoptada] || 0);
+      // Al aire libre se tira cable bajo goma y en bandeja bajo plástico: son un
+      // cable solo con todos los conductores adentro, así que se cotiza el largo
+      // del tramo y no el largo por conductor.
+      const multi = CABLE_POR_METODO[c.metodo];
+      const seccionTxt = fmt(calc.seccionAdoptada, calc.seccionAdoptada < 10 ? 1 : 0).replace(/,00$/, '');
+      if (multi) {
+        const medida = conductores + 'x' + calc.seccionAdoptada;
+        const largoMulti = Math.ceil((Number(c.l) || 0) * 1.1);
+        if (largoMulti > 0) {
+          add('Cable ' + multi.etiqueta + ' ' + conductores + 'x' + seccionTxt + ' mm²', 'm', largoMulti,
+              precios[multi.precio][medida] || 0);
+        }
+      } else {
+        const largoCable = Math.ceil((Number(c.l) || 0) * conductores * 1.1);
+        if (largoCable > 0) add('Cable unipolar ' + seccionTxt + ' mm²', 'm', largoCable, precios.cableUnipolar[calc.seccionAdoptada] || 0);
+      }
       const largo = Math.ceil((Number(c.l) || 0) * 1.1);
       if (largo > 0) {
         const d = diametroCano(calc.seccionAdoptada);
@@ -3969,6 +4005,21 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     })).catch(() => null);
   }
 
+  // jsPDF escribe con las fuentes base del PDF, que sólo entienden Latin-1. Los
+  // acentos entran, pero el guión largo y las comillas tipográficas caen en un
+  // rango que Latin-1 usa para caracteres de control: en pantalla se ven y en el
+  // PDF desaparecen, dejando un hueco. Se cambian por su equivalente simple.
+  const PDF_REEMPLAZOS = [[/[—–]/g, '-'], [/[‘’]/g, "'"],
+                          [/[“”]/g, '"'], [/…/g, '...'], [/ /g, ' ']];
+  function pdfTexto(t) {
+    let r = String(t == null ? '' : t);
+    for (const [de, a] of PDF_REEMPLAZOS) r = r.replace(de, a);
+    return r;
+  }
+  function pdfFilas(filas) {
+    return filas.map((f) => f.map(pdfTexto));
+  }
+
   async function construirPdfPresupuesto(p) {
     savePresupuesto();
     const t = calcularTotalesPresupuesto(p);
@@ -3997,7 +4048,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     doc.text('Presupuesto ' + p.codigo, margin, y);
     y += 7;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
-    doc.text('Cliente / proyecto: ' + (p.clienteNombre || '—'), margin, y);
+    doc.text(pdfTexto('Cliente / proyecto: ' + (p.clienteNombre || '-')), margin, y);
     y += 6;
 
     if (naturaleza) {
@@ -4032,7 +4083,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
           startY: y,
           margin: { left: margin, right: margin },
           head: [['Circuito', 'Sección de cable', 'Protección']],
-          body: filasCircuitos,
+          body: pdfFilas(filasCircuitos),
           theme: 'plain',
           styles: { fontSize: 9, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
           headStyles: { textColor: [111, 114, 119], fontStyle: 'bold', fontSize: 8, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
@@ -4044,7 +4095,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         // (falta confirmación de un electricista matriculado), eso no se le oculta al
         // cliente pero tampoco se sobreafirma acá.
         doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(111, 114, 119);
-        const normLines = doc.splitTextToSize('Secciones y protecciones calculadas según ' + NORMATIVE_PACK.nombre + '.', pageWidth - 2 * margin);
+        const normLines = doc.splitTextToSize(pdfTexto('Secciones y protecciones calculadas según ' + NORMATIVE_PACK.nombre + '.'), pageWidth - 2 * margin);
         doc.text(normLines, margin, y);
         y += normLines.length * 4 + 8;
       }
@@ -4062,7 +4113,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       startY: y,
       margin: { left: margin, right: margin },
       head: [['Material', 'Cant.']],
-      body: filasMateriales,
+      body: pdfFilas(filasMateriales),
       theme: 'plain',
       styles: { fontSize: 9, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
       headStyles: { textColor: [111, 114, 119], fontStyle: 'bold', fontSize: 8, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
@@ -4088,7 +4139,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       startY: y,
       margin: { left: margin, right: margin },
       body: [
-        ['Forma de pago', p.formaPago],
+        ['Forma de pago', pdfTexto(p.formaPago)],
         ['Validez de la oferta', p.validez + ' días'],
         ['Plazo de ejecución', p.plazo + ' días'],
       ],
