@@ -637,12 +637,45 @@
     return Math.round(last.p + porModulo * (nModulos - last.n));
   }
 
+  // Rubro de cada material, para agrupar la lista en el presupuesto en vez de
+  // que salga en el orden en que la fue armando el cálculo. El orden de la
+  // tabla importa: lo de puesta a tierra también empieza con "Caño" y "Codo",
+  // así que se resuelve antes que la canalización.
+  const RUBROS_MATERIAL = [
+    [/puesta a tierra|^Jabalina/i, 'Puesta a tierra'],
+    [/^Cable /i, 'Cables'],
+    [/^(Caño|Codo|Grampa|Bandeja|Ménsula)/i, 'Canalización'],
+    [/^(Térmica|Diferencial|Interruptor)/i, 'Protecciones'],
+    [/^(Tablero|Bornera|Caja para medidor)/i, 'Tablero'],
+    [/^(Caja de embutir|Portalámparas|Llave de luz|Tomacorriente)/i, 'Cajas y accesorios'],
+  ];
+  // En este orden salen los rubros en el presupuesto.
+  const ORDEN_RUBROS = ['Cables', 'Canalización', 'Protecciones', 'Tablero',
+                        'Cajas y accesorios', 'Puesta a tierra', 'Otros'];
+  function rubroDe(nombre) {
+    for (const [patron, rubro] of RUBROS_MATERIAL) if (patron.test(nombre)) return rubro;
+    return 'Otros';
+  }
+  // Agrupa respetando ORDEN_RUBROS. Los materiales cargados a mano no traen
+  // rubro, así que se clasifican por el nombre en el momento.
+  function materialesPorRubro(materiales) {
+    const grupos = new Map();
+    (materiales || []).forEach((m) => {
+      const r = m.rubro || rubroDe(m.nombre || '');
+      if (!grupos.has(r)) grupos.set(r, []);
+      grupos.get(r).push(m);
+    });
+    return ORDEN_RUBROS.filter((r) => grupos.has(r)).map((r) => ({ rubro: r, items: grupos.get(r) }))
+      .concat([...grupos.keys()].filter((r) => ORDEN_RUBROS.indexOf(r) === -1)
+        .map((r) => ({ rubro: r, items: grupos.get(r) })));
+  }
+
   function generarMateriales(circuitos, draft) {
     const precios = DB.settings.precios;
     const mapa = {};
     function add(nombre, unidad, cantidad, precioUnit) {
       const key = nombre;
-      if (!mapa[key]) mapa[key] = { id: 'mat-' + key.replace(/\s+/g, '-'), nombre, unidad, cantidad: 0, precioUnit: precioUnit || 0, auto: true };
+      if (!mapa[key]) mapa[key] = { id: 'mat-' + key.replace(/\s+/g, '-'), nombre, unidad, cantidad: 0, precioUnit: precioUnit || 0, auto: true, rubro: rubroDe(nombre) };
       mapa[key].cantidad += cantidad;
     }
     circuitos.forEach((c) => {
@@ -2335,6 +2368,7 @@
       toast('Presupuesto aprobado');
     });
     $('#btn-pres-pdf').addEventListener('click', () => generarPdfPresupuesto(presActual));
+    $('#btn-pres-pdf-interno').addEventListener('click', () => generarPdfPresupuesto(presActual, { interno: true }));
     $('#btn-pres-doc').addEventListener('click', () => generarPdfPresupuesto(presActual));
     $('#btn-pres-whatsapp').addEventListener('click', () => compartirPdfPorWhatsapp(presActual));
   }
@@ -2369,7 +2403,13 @@
     return filas.map((f) => f.map(pdfTexto));
   }
 
-  async function construirPdfPresupuesto(p) {
+  /**
+   * Arma el PDF del presupuesto.
+   * opciones.interno: incluye el desglose de costos y el precio de cada
+   * material. Es la copia para la empresa; la del cliente lleva sólo el total.
+   */
+  async function construirPdfPresupuesto(p, opciones) {
+    const interno = !!(opciones && opciones.interno);
     savePresupuesto();
     const t = calcularTotalesPresupuesto(p);
     const trabajo = p.trabajoId ? DB.trabajos.find((tr) => tr.id === p.trabajoId) : null;
@@ -2397,8 +2437,34 @@
     doc.text('Presupuesto ' + p.codigo, margin, y);
     y += 7;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
-    doc.text(pdfTexto('Cliente / proyecto: ' + (p.clienteNombre || '-')), margin, y);
+    doc.text(pdfTexto('Cliente: ' + (p.clienteNombre || '-')), margin, y);
+    y += 5;
+    // Datos de contacto y de la obra: si el presupuesto se imprime y circula,
+    // tiene que poder saberse de qué obra habla sin volver a la app.
+    const datos = [];
+    if (trabajo) {
+      const tel = trabajo.cliente.telefono || trabajo.cliente.whatsapp;
+      if (tel) datos.push('Tel. ' + tel);
+      const lugar = [trabajo.obra.nombre, trabajo.obra.direccion, trabajo.obra.localidad]
+        .filter(Boolean).join(', ');
+      if (lugar) datos.push('Obra: ' + lugar);
+    }
+    datos.forEach((linea) => {
+      doc.text(pdfTexto(linea), margin, y);
+      y += 5;
+    });
+    const fecha = new Date(p.createdAt || Date.now());
+    let fechaTxt;
+    try { fechaTxt = fecha.toLocaleDateString('es-UY', { day: 'numeric', month: 'long', year: 'numeric' }); }
+    catch (e) { fechaTxt = fecha.toLocaleDateString(); }
+    doc.text(pdfTexto('Fecha: ' + fechaTxt), margin, y);
     y += 6;
+    if (interno) {
+      doc.setFont('helvetica', 'bold'); doc.setTextColor(179, 38, 30);
+      doc.text('COPIA INTERNA - NO ENTREGAR AL CLIENTE', margin, y);
+      doc.setFont('helvetica', 'normal'); doc.setTextColor(111, 114, 119);
+      y += 6;
+    }
 
     if (naturaleza) {
       const descLines = doc.splitTextToSize(NATURALEZA_DESC[naturaleza] || '', pageWidth - 2 * margin - 8);
@@ -2450,25 +2516,66 @@
     doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
     doc.text('MATERIALES', margin, y);
     y += 4;
-    // El listado de materiales va como alcance del trabajo, sin precios: al
-    // cliente se le informa qué incluye, no cuánto cuesta cada pieza.
-    const filasMateriales = materialesItems
-      ? materialesItems.map((m) => [m.nombre, fmt(m.cantidad, 0) + ' ' + m.unidad])
-      : [['Materiales de la instalación', '']];
+    // Agrupado por rubro: en el orden en que lo arma el cálculo los cables
+    // quedan salteados entre las térmicas y cuesta leerlo. Los precios por
+    // material van sólo en la copia interna.
+    const filasMateriales = [];
+    if (materialesItems) {
+      materialesPorRubro(materialesItems).forEach((g) => {
+        filasMateriales.push([{ content: g.rubro, colSpan: interno ? 3 : 2, styles: { fontStyle: 'bold', textColor: [111, 114, 119], fontSize: 8 } }]);
+        g.items.forEach((m) => {
+          const fila = [m.nombre, fmt(m.cantidad, 0) + ' ' + m.unidad];
+          if (interno) fila.push(money(m.cantidad * m.precioUnit));
+          filasMateriales.push(fila);
+        });
+      });
+    } else {
+      filasMateriales.push(interno ? ['Materiales de la instalación', '', money(p.materiales)]
+                                   : ['Materiales de la instalación', '']);
+    }
     doc.autoTable({
       startY: y,
       margin: { left: margin, right: margin },
-      head: [['Material', 'Cant.']],
-      body: pdfFilas(filasMateriales),
+      head: [interno ? ['Material', 'Cant.', 'Costo'] : ['Material', 'Cant.']],
+      body: filasMateriales.map((f) => f.map((c) => (typeof c === 'string' ? pdfTexto(c) : c))),
       theme: 'plain',
       styles: { fontSize: 9, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
       headStyles: { textColor: [111, 114, 119], fontStyle: 'bold', fontSize: 8, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
-      columnStyles: { 1: { halign: 'right', cellWidth: 30 } },
+      columnStyles: interno ? { 1: { halign: 'right', cellWidth: 26 }, 2: { halign: 'right', cellWidth: 28 } }
+                            : { 1: { halign: 'right', cellWidth: 30 } },
     });
     y = doc.lastAutoTable.finalY + 12;
 
-    // Del dinero, sólo el total. El desglose de costos y el margen son datos
-    // internos y no tienen por qué viajar en el presupuesto del cliente.
+    if (interno) {
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
+      doc.text('DESGLOSE', margin, y);
+      y += 4;
+      const filasDesglose = [
+        ['Materiales', money(p.materiales)],
+        ['Mano de obra', money(p.manoObra)],
+        ['Traslados', money(p.traslados)],
+        ['Otros gastos', money(p.otros)],
+        ['Costo total', money(t.costoTotal)],
+        ['Margen (' + p.margen + '%)', money(t.subtotal - t.costoTotal)],
+        ['Subtotal de venta', money(t.subtotal)],
+        ['IVA (' + p.iva + '%)', money(t.ivaMonto)],
+      ];
+      doc.autoTable({
+        startY: y,
+        margin: { left: margin, right: margin },
+        body: filasDesglose,
+        theme: 'plain',
+        styles: { fontSize: 9, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
+        columnStyles: { 1: { halign: 'right' } },
+        didParseCell: (data) => {
+          if (data.row.index === 4) { data.cell.styles.fontStyle = 'bold'; }
+        },
+      });
+      y = doc.lastAutoTable.finalY + 10;
+    }
+
+    // Del dinero, en la del cliente sólo el total: el desglose de costos y el
+    // margen son datos internos y no tienen por qué viajar con el presupuesto.
     const altoCaja = 22;
     doc.setFillColor(244, 244, 245);
     doc.roundedRect(margin, y, pageWidth - 2 * margin, altoCaja, 2, 2, 'F');
@@ -2529,11 +2636,11 @@
       }
     }
 
-    return { doc, filename: p.codigo + '.pdf' };
+    return { doc, filename: p.codigo + (interno ? '-interno' : '') + '.pdf' };
   }
 
-  async function generarPdfPresupuesto(p) {
-    const { doc, filename } = await construirPdfPresupuesto(p);
+  async function generarPdfPresupuesto(p, opciones) {
+    const { doc, filename } = await construirPdfPresupuesto(p, opciones);
     doc.save(filename);
   }
 
