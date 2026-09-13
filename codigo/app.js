@@ -796,17 +796,9 @@
 
   const TAB_IMG = 'img/';
 
-  // Posición del riel dentro de cada gabinete abierto, medida sobre la imagen.
-  // A diferencia de las ventanas de las tapas, que se detectan solas, acá la
-  // detección automática no es confiable: el interior tiene sombras y molduras
-  // que se confunden con el riel. Son cuatro imágenes fijas, así que se miden
-  // una vez y se anotan.
-  const TAB_RIELES = {
-    'wall-12': { x0: 535, x1: 1185, y: [500] },
-    'wall-24': { x0: 620, x1: 1230, y: [385, 655] },
-    'wall-36': { x0: 605, x1: 1230, y: [295, 535, 775] },
-    'wall-48': { x0: 640, x1: 1235, y: [330, 610, 885, 1160] },
-  };
+  // La posición de los rieles de cada gabinete abierto —igual que las ventanas
+  // de las tapas— viene medida en img/medidas.json, bajo "rieles".
+  // Las calcula herramientas/preparar-gabinetes.py sobre las propias fotos.
 
   // Proporciones de una llave modular, medidas sobre las propias imágenes.
   const TAB_ALTO_POR_MODULO = 4.86;  // alto = ancho de un módulo x esto
@@ -898,7 +890,8 @@
     const modulos = conBarras.reduce((t, it) => t + it.modulos, 0);
     const medida = medidaTablero(modulos, DB.settings.precios);
     const gabinete = 'wall-' + medida;
-    if (!TAB_RIELES[gabinete]) return null;
+    const rieles = ((tabMedidas || {})[gabinete] || {}).rieles;
+    if (!rieles) return null;
     // reparto en filas de 12 sin partir una llave entre dos filas
     const filas = [];
     let fila = [], usado = 0;
@@ -907,8 +900,8 @@
       fila.push(it); usado += it.modulos;
     });
     if (fila.length) filas.push(fila);
-    while (filas.length < TAB_RIELES[gabinete].y.length) filas.push([]);
-    return { items, barras, filas, gabinete, medida, modulos };
+    while (filas.length < rieles.y.length) filas.push([]);
+    return { items, barras, filas, gabinete, medida, modulos, rieles };
   }
 
   /* ---------- dibujo ---------- */
@@ -999,9 +992,11 @@
    * vista: 'cerrado' (con tapa interna) o 'abierto' (interior y conductores)
    */
   async function tabDibujar(draft, vista, datos) {
+    // Las medidas van primero: el reparto en filas depende de cuántos rieles
+    // tiene el gabinete, y eso sale de medidas.json.
+    await tabCargarMedidas();
     const layout = tabLayout(draft);
     if (!layout) return null;
-    await tabCargarMedidas();
     await Promise.all(tabPiezasNecesarias(layout, vista).map(tabCargarImagen));
 
     const esCerrado = vista === 'cerrado';
@@ -1022,7 +1017,7 @@
     if (esCerrado) {
       ranuras = (ficha.ventanas || []).map((v) => ({ x0: v[0], x1: v[2], cy: (v[1] + v[3]) / 2, alto: v[3] - v[1] }));
     } else {
-      const g = TAB_RIELES[layout.gabinete];
+      const g = layout.rieles;
       ranuras = g.y.map((cy) => ({ x0: g.x0, x1: g.x1, cy, alto: 0 }));
     }
     if (!ranuras.length) return null;

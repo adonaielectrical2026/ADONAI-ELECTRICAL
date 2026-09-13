@@ -73,10 +73,9 @@ PIEZAS = {
     'terminal-feed':     {'tipo': 'bornera', 'modulos': None},
     'terminal-neutral':  {'tipo': 'bornera', 'modulos': None},
     'buttons-start-stop': {'tipo': 'puerta', 'modulos': None},
-    'wall-12':           {'tipo': 'gabinete', 'filas': 1, 'modulos': 12},
-    'wall-24':           {'tipo': 'gabinete', 'filas': 2, 'modulos': 24},
-    'wall-36':           {'tipo': 'gabinete', 'filas': 3, 'modulos': 36},
-    'wall-48':           {'tipo': 'gabinete', 'filas': 4, 'modulos': 48},
+    # Los cuatro gabinetes abiertos (wall-12 a wall-48) no salen del paquete:
+    # son las fotos de herramientas/fotos-gabinetes/ y las prepara el script
+    # preparar-gabinetes.py, que además les mide los rieles.
     'control-metal':     {'tipo': 'gabinete', 'filas': 2, 'modulos': 24},
     'wall-12-cover':     {'tipo': 'tapa', 'de': 'wall-12', 'filas': 1, 'modulos': 12},
     'wall-24-cover':     {'tipo': 'tapa', 'de': 'wall-24', 'filas': 2, 'modulos': 24},
