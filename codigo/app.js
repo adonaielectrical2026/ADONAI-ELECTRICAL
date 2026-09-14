@@ -980,8 +980,8 @@
   function tabPiezasNecesarias(layout, vista) {
     const set = {};
     layout.items.concat(layout.barras).forEach((it) => { set[it.img] = true; });
-    set['blind-module'] = true;
-    if (vista === 'cerrado') set[layout.gabinete + '-cover'] = true;
+    // Las tapas ciegas sólo se usan con la tapa interna puesta.
+    if (vista === 'cerrado') { set['blind-module'] = true; set[layout.gabinete + '-cover'] = true; }
     else set[layout.gabinete] = true;
     set['adonai-logo-y-nombre'] = true;
     return Object.keys(set);
@@ -1024,6 +1024,12 @@
     const mod = (ranuras[0].x1 - ranuras[0].x0) / MODULOS_POR_FILA;
     const altoLlave = mod * TAB_ALTO_POR_MODULO;
 
+    function ciegos(x, top, cuantos) {
+      for (let k = 0; k < cuantos; k++) {
+        ctx.drawImage(tabImagenes['blind-module'], x + k * mod, top, mod, altoLlave);
+      }
+    }
+
     // En la vista cerrada primero van las llaves y encima la tapa; en la
     // abierta, el gabinete primero y las llaves sobre el riel.
     if (!esCerrado) ctx.drawImage(base, 0, CAB);
@@ -1044,23 +1050,30 @@
       fila.forEach((it) => {
         const w = it.modulos * mod;
         if (it.barra) {
-          // la bornera va parada sobre el riel, como se monta de verdad
-          tabDibujarBarra(ctx, tabImagenes[it.img], x, w, r.cy + CAB);
-          barrasPuestas.push({ it, x, w, cy: r.cy + CAB });
+          if (esCerrado) {
+            // Con la tapa puesta la bornera no se ve: queda detrás del
+            // plástico y por la ventana asoman tapas ciegas, como en un
+            // tablero terminado.
+            ciegos(x, top, it.modulos);
+          } else {
+            // la bornera va parada sobre el riel, como se monta de verdad
+            tabDibujarBarra(ctx, tabImagenes[it.img], x, w, r.cy + CAB);
+            barrasPuestas.push({ it, x, w, cy: r.cy + CAB });
+          }
         } else {
           ctx.drawImage(tabImagenes[it.img], x, top, w, altoLlave);
           tabEtiqueta(ctx, it, x, top, altoLlave, mod, fracArriba);
           puestos.push({ it, x, w, cy: r.cy + CAB, fila: fi });
         }
-        rotulos.push({ it, x, w, cy: r.cy + CAB, alto: r.alto });
+        // Si la bornera no se ve, su rótulo tampoco.
+        if (!(esCerrado && it.barra)) rotulos.push({ it, x, w, cy: r.cy + CAB, alto: r.alto });
         x += w;
       });
-      // Los módulos que sobran se tapan, salvo los dos primeros de la última
-      // fila con lugar, que se reservan para las borneras de neutro y tierra.
-      const libresFila = MODULOS_POR_FILA - fila.reduce((t, it) => t + it.modulos, 0);
-      for (let k = 0; k < libresFila; k++) {
-        ctx.drawImage(tabImagenes['blind-module'], x, top, mod, altoLlave);
-        x += mod;
+      // Los módulos que sobran se tapan con tapas ciegas. Sin tapa interna no
+      // hay nada que tapar: ahí queda el riel a la vista, como en la obra.
+      if (esCerrado) {
+        const libresFila = MODULOS_POR_FILA - fila.reduce((t, it) => t + it.modulos, 0);
+        ciegos(x, top, libresFila);
       }
     });
 
