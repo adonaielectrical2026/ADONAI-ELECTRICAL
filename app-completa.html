@@ -2790,14 +2790,20 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     const items = [];
     const pg = calcularProteccionGeneral(draft);
     if (pg.aplica) {
+      // Los puentes de la general y del diferencial llevan la sección que
+      // corresponde a la térmica general.
+      const seccionGeneral = calcularCircuito({
+        ib: pg.termicaIn, v: sistema.v, fases: sistema.fases, l: 1, material: 'cobre', metodo: 'embutido',
+        aislacion: 'pvc', tempAmb: 30, agrupados: 1, caidaMax: 5, cosPhi: 1, uso: 'fuerza',
+      }).seccionAdoptada || null;
       items.push({
-        img: mono ? 'thermal-2p' : 'thermal-4p', modulos: mono ? 2 : 4,
+        img: mono ? 'thermal-2p' : 'thermal-4p', modulos: mono ? 2 : 4, seccion: seccionGeneral,
         cara: pg.termicaCurva + pg.termicaIn, caraChica: null,
         rotulo: 'GENERAL', etiqueta: 'Térmica general',
         detalle: pg.termicaIn + ' A · ' + pg.termicaPolos + 'P · curva ' + pg.termicaCurva,
       });
       items.push({
-        img: mono ? 'rcd-2p' : 'rcd-4p', modulos: mono ? 2 : 4,
+        img: mono ? 'rcd-2p' : 'rcd-4p', modulos: mono ? 2 : 4, seccion: seccionGeneral,
         cara: pg.diferencialIn + 'A', caraChica: pg.diferencialSensibilidad + 'mA',
         rotulo: 'DIFERENCIAL', etiqueta: 'Diferencial general',
         detalle: pg.diferencialIn + ' A · ' + pg.diferencialSensibilidad + ' mA · tipo ' + pg.diferencialTipo,
@@ -2811,6 +2817,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         img: IMG_POLOS[polos], modulos: polos,
         cara: calc.apto ? calc.curva + calc.breaker : '?', caraChica: null,
         n: i + 1, etiqueta: c.nombre || ('Circuito ' + (i + 1)),
+        seccion: calc.apto ? calc.seccionAdoptada : null,
         detalle: calc.apto
           ? calc.breaker + ' A · curva ' + calc.curva + ' · ' + calc.seccionAdoptada + ' mm²'
           : 'sin protección definida',
@@ -3108,32 +3115,86 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     ctx.lineTo(u[0], u[1]);
   }
 
+  // Diámetro exterior de un cable unipolar con aislación de PVC, en mm, según
+  // su sección. Con esto cada conductor se dibuja con su grosor real respecto
+  // del módulo DIN de 17,5 mm (un poco afinado, para que se lean los mazos).
+  const TAB_DIAMETRO = [[1, 2.6], [1.5, 3.0], [2.5, 3.6], [4, 4.2], [6, 4.8], [10, 6.2],
+                        [16, 7.4], [25, 9.2], [35, 10.4], [50, 12.2]];
+  function tabGrosor(seccion, mod) {
+    const fila = TAB_DIAMETRO.find(([s]) => s >= (seccion || 2.5)) || TAB_DIAMETRO[TAB_DIAMETRO.length - 1];
+    return Math.max(2.5, mod * fila[1] / 17.5 * 0.75);
+  }
+
+  // Terminal tipo pin preaislado: el pin metálico entra al borne y el cuello
+  // de plástico abraza la punta del cable. El cuello va del color que trae de
+  // fábrica según la sección: rojo hasta 1,5 mm², azul hasta 2,5 y amarillo
+  // de 4 para arriba.
+  const TAB_PIN = { pin: 1.2, cuello: 1.7 };  // largos, en grosores de cable
+  function tabColorPuntera(seccion) {
+    if (seccion && seccion <= 1.5) return '#c9262d';
+    if (seccion && seccion > 2.5) return '#e2b01a';
+    return '#1f5fbf';
+  }
+  function tabPuntera(ctx, punta, desde, g, seccion) {
+    const ang = Math.atan2(punta[1] - desde[1], punta[0] - desde[0]);
+    const largoPin = g * TAB_PIN.pin, anchoPin = g * 0.46;
+    const largoCuello = g * TAB_PIN.cuello, anchoCuello = g * 1.35;
+    const x1 = -largoPin, x0 = x1 - largoCuello;
+    ctx.save();
+    ctx.translate(punta[0], punta[1]);
+    ctx.rotate(ang);
+    // pin estañado
+    ctx.fillStyle = '#b4b9bf';
+    ctx.fillRect(x1, -anchoPin / 2, largoPin, anchoPin);
+    ctx.fillStyle = 'rgba(255,255,255,0.65)';
+    ctx.fillRect(x1, -anchoPin / 2, largoPin, anchoPin * 0.3);
+    // cuello, afinado hacia el pin
+    ctx.shadowColor = 'rgba(0,0,0,0.3)';
+    ctx.shadowBlur = g;
+    ctx.shadowOffsetY = g * 0.4;
+    ctx.fillStyle = tabColorPuntera(seccion);
+    ctx.beginPath();
+    ctx.moveTo(x0, -anchoCuello / 2);
+    ctx.lineTo(x1 - g * 0.5, -anchoCuello / 2);
+    ctx.lineTo(x1, -anchoPin * 0.8);
+    ctx.lineTo(x1, anchoPin * 0.8);
+    ctx.lineTo(x1 - g * 0.5, anchoCuello / 2);
+    ctx.lineTo(x0, anchoCuello / 2);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowColor = 'transparent';
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.fillRect(x0 + g * 0.15, -anchoCuello / 2 + g * 0.12, largoCuello - g * 0.75, anchoCuello * 0.22);
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.fillRect(x0 + g * 0.35, -anchoCuello / 2, g * 0.12, anchoCuello);
+    ctx.restore();
+  }
+
   // Un conductor con volumen: sombra sobre el fondo, borde oscuro, cuerpo del
-  // color de la vaina y un brillo fino. Donde entra a un borne la vaina se
-  // corta y asoma el cobre pelado.
-  function tabCable(ctx, c, g) {
+  // color de la vaina y un brillo fino. Donde entra a un borne lleva su
+  // terminal tipo pin.
+  function tabCable(ctx, c) {
+    const g = c.g;
     const pts = c.pts.filter((p, i, arr) => i === 0 || Math.hypot(p[0] - arr[i - 1][0], p[1] - arr[i - 1][1]) > 0.5);
     if (pts.length < 2) return;
     const color = TAB_COLOR[c.fase];
     const radio = g * 2.4;
+    // la vaina termina adentro del cuello del terminal
+    const hastaCuello = g * (TAB_PIN.pin + TAB_PIN.cuello * 0.6);
     const recortar = (desde, hacia) => {
       const d = Math.hypot(hacia[0] - desde[0], hacia[1] - desde[1]) || 1;
-      const k = Math.min(g * 1.3, d * 0.6) / d;
+      const k = Math.min(hastaCuello, d * 0.95) / d;
       return [hacia[0] - (hacia[0] - desde[0]) * k, hacia[1] - (hacia[1] - desde[1]) * k];
     };
     const vaina = pts.slice();
-    const cobre = [];
+    const puntas = [];
     const n = pts.length;
-    if (c.borneInicio) { vaina[0] = recortar(pts[1], pts[0]); cobre.push([pts[0], vaina[0]]); }
-    if (c.borneFin) { vaina[n - 1] = recortar(pts[n - 2], pts[n - 1]); cobre.push([pts[n - 1], vaina[n - 1]]); }
+    if (c.borneInicio) { vaina[0] = recortar(pts[1], pts[0]); puntas.push([pts[0], pts[1]]); }
+    if (c.borneFin) { vaina[n - 1] = recortar(pts[n - 2], pts[n - 1]); puntas.push([pts[n - 1], pts[n - 2]]); }
 
     ctx.save();
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    ctx.strokeStyle = '#c47a3c';
-    ctx.lineWidth = g * 0.45;
-    cobre.forEach(([a, b]) => { ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); });
-
     ctx.shadowColor = 'rgba(0,0,0,0.35)';
     ctx.shadowBlur = g * 1.5;
     ctx.shadowOffsetX = g * 0.4;
@@ -3160,6 +3221,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     ctx.translate(-g * 0.17, -g * 0.17);
     tabTrazar(ctx, vaina, radio); ctx.stroke();
     ctx.restore();
+
+    puntas.forEach(([punta, desde]) => tabPuntera(ctx, punta, desde, g, c.seccion));
   }
 
   // Troquel sacado, con la boca del caño asomando.
@@ -3221,7 +3284,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     const abajo = bocasDe('abajo');
     if (!arriba.length || !abajo.length) return;
 
-    const g = Math.max(3, mod * 0.12);
+    // grosor de referencia (2,5 mm²) para los carriles y los precintos
+    const g = tabGrosor(2.5, mod);
     const sp = g * 1.2;
     const filas = ranuras.length;
     const ultima = filas - 1;
@@ -3253,7 +3317,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
 
     const cables = [];
     const bajadas = [];
-    const tender = (fase, pts, borneInicio, borneFin) => cables.push({ fase, pts, borneInicio, borneFin });
+    const tender = (fase, pts, borneInicio, borneFin, seccion) => cables.push({ fase, pts, borneInicio, borneFin, seccion });
+    // Lo que alimenta al tablero y a cada fila lleva la sección de la general;
+    // sin general, la del circuito más grueso.
+    const SECCION_ALIMENTACION = (puestos.find((p) => p.it.rotulo === 'GENERAL') || {}).it?.seccion
+      || Math.max(2.5, ...puestos.map((p) => p.it.seccion || 0));
     const porCanal = (x, ya, yb) => bajadas.push({ x, y0: Math.min(ya, yb), y1: Math.max(ya, yb) });
 
     const polo = (p, k) => p.x + (k + 0.5) * p.w / p.it.modulos;
@@ -3292,7 +3360,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       const yA = RED.map(() => carrilArriba(dif.fila));
       RED.forEach((f, k) => {
         tender(f, [[polo(general, k), bAbajo(general)], [polo(general, k), yB[k]], [xc[k], yB[k]],
-                   [xc[k], yA[k]], [polo(dif, k), yA[k]], [polo(dif, k), bArriba(dif)]], true, true);
+                   [xc[k], yA[k]], [polo(dif, k), yA[k]], [polo(dif, k), bArriba(dif)]], true, true, SECCION_ALIMENTACION);
         porCanal(xc[k], yB[k], yA[k]);
       });
     }
@@ -3302,7 +3370,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     circuitos.forEach((p, i) => {
       conductoresDe(p, i).forEach((f, k) => {
         const clave = p.fila + '|' + f;
-        (tomas[clave] = tomas[clave] || []).push([polo(p, k), bArriba(p)]);
+        (tomas[clave] = tomas[clave] || []).push([polo(p, k), bArriba(p), p.it.seccion]);
       });
     });
     const filasConCircuitos = [...new Set(circuitos.map((p) => p.fila))].sort((a, b) => a - b);
@@ -3325,11 +3393,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
           bocaAcometida.cables.push(f);
           porCanal(xc, yT, yA);
         }
-        tender(f, inicio.concat([[xc, yA], [lista[0][0], yA], lista[0]]), !!fuente, true);
+        tender(f, inicio.concat([[xc, yA], [lista[0][0], yA], lista[0]]), !!fuente, true, SECCION_ALIMENTACION);
         for (let j = 1; j < lista.length; j++) {
           const a = lista[j - 1], b = lista[j];
           const yP = techo(fi) - Math.min(mod * (0.2 + 0.12 * k), huecoArriba(fi) * (0.1 + 0.05 * k));
-          tender(f, [a, [a[0], yP], [b[0], yP], b], true, true);
+          tender(f, [a, [a[0], yP], [b[0], yP], b], true, true, Math.max(a[2] || 0, b[2] || 0) || null);
         }
       });
     });
@@ -3343,7 +3411,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       const n = b.bornes.length;
       const i = bornesTomados[b.it.barra]++ % (n - 1);
       const h = b.it.barra === 'tierra' ? n - 2 - i : n - 1 - i;
-      return { h: b.bornes[h], dx: sp * (0.8 + (n - 1 - h) * 0.85), fila: b.fila };
+      return { h: b.bornes[h], dx: g * 3.2 + (n - 1 - h) * sp * 0.7, fila: b.fila };
     };
     const desdeBorne = (fase, t) => ({ fase, x: t.h.x + t.dx, y: t.h.y, fila: t.fila, borne: t.h });
 
@@ -3351,12 +3419,12 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     if (bNeutro && fuente) {
       const kN = RED.indexOf('N');
       const h = bNeutro.bornes[0];
-      const dx = sp * (0.8 + bNeutro.bornes.length * 0.85);
+      const dx = tabGrosor(SECCION_ALIMENTACION, mod) * 3.2 + bNeutro.bornes.length * sp * 0.7;
       const yB = carrilAbajo(fuente.fila);
       const xc = carrilCanal('izq');
       const yA = carrilArriba(bNeutro.fila);
       tender('N', [[polo(fuente, kN), bAbajo(fuente)], [polo(fuente, kN), yB], [xc, yB], [xc, yA],
-                   [h.x + dx, yA], [h.x + dx, h.y], [h.x, h.y]], true, true);
+                   [h.x + dx, yA], [h.x + dx, h.y], [h.x, h.y]], true, true, SECCION_ALIMENTACION);
       porCanal(xc, yB, yA);
     }
 
@@ -3375,7 +3443,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       if (bNeutro && neutroDeBornera(p)) hilos.push(desdeBorne('N', tomarBorne(bNeutro)));
       if (bTierra) hilos.push(desdeBorne('PE', tomarBorne(bTierra)));
       const centro = p.x + p.w / 2;
-      return { hilos, fila: p.fila, x: centro, canal: centro < medio ? 'izq' : 'der' };
+      return { hilos, fila: p.fila, x: centro, canal: centro < medio ? 'izq' : 'der', seccion: p.it.seccion };
     });
     const totalCircuitos = grupos.reduce((t, gr) => t + gr.hilos.length, 0);
     let llevados = 0;
@@ -3386,7 +3454,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     });
     if (bTierra) {
       const h = bTierra.bornes[bTierra.bornes.length - 1];
-      const hilo = { fase: 'PE', x: h.x + sp * 0.8, y: h.y, fila: bTierra.fila, borne: h, entra: true };
+      const hilo = { fase: 'PE', x: h.x + tabGrosor(SECCION_ALIMENTACION, mod) * 3.2, y: h.y, fila: bTierra.fila, borne: h, entra: true };
       grupos.push({ hilos: [hilo], fila: bTierra.fila, x: hilo.x, canal: 'der', sube: false, directo: bTierra.fila === ultima });
     }
 
@@ -3447,8 +3515,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         pts.push([c.x, y], [c.xc, y], [c.xc, c.yFin], [c.bx, c.yFin], [c.bx, t.y]);
         porCanal(c.xc, y, c.yFin);
       }
-      if (c.entra) tender(c.fase, pts.reverse(), false, true);
-      else tender(c.fase, pts, true, false);
+      if (c.entra) tender(c.fase, pts.reverse(), false, true, SECCION_ALIMENTACION);
+      else tender(c.fase, pts, true, false, gr.seccion);
     }));
 
     // 5) acometida: va última para quedar en los carriles más altos
@@ -3461,7 +3529,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       const paso = Math.min(sp, bocaAcometida.w * 0.75 / RED.length);
       RED.forEach((f, k) => {
         const xb = bocaAcometida.x + (k - (RED.length - 1) / 2) * paso;
-        tender(f, [[xb, bocaAcometida.y], [xb, ys[k]], [polo(cabecera, k), ys[k]], [polo(cabecera, k), bArriba(cabecera)]], false, true);
+        tender(f, [[xb, bocaAcometida.y], [xb, ys[k]], [polo(cabecera, k), ys[k]], [polo(cabecera, k), bArriba(cabecera)]], false, true, SECCION_ALIMENTACION);
         bocaAcometida.cables.push(f);
       });
     }
@@ -3469,7 +3537,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     // dibujo: troqueles, cables, conectores y precintos
     const usadas = arriba.concat(abajo).filter((t) => t.cables.length);
     usadas.forEach((t) => tabTroquelAbierto(ctx, t));
-    cables.forEach((c) => tabCable(ctx, c, g));
+    cables.forEach((c) => { c.g = tabGrosor(c.seccion, mod); tabCable(ctx, c); });
     usadas.forEach((t) => tabConector(ctx, t));
 
     arriba.concat(abajo).forEach((t) => {
