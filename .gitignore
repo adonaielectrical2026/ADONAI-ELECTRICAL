@@ -7,3 +7,6 @@ __pycache__/
 
 # Carpeta temporal que arma el build de Netlify
 _publicar/
+
+# Copia descomprimida del ZIP dentro del proyecto: no va al repositorio
+ADONAI-Herramientas-Tecnicas/
