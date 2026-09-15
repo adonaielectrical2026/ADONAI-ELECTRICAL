@@ -21,6 +21,11 @@ COMO-INSTALAR.txt    Este archivo.
 
 COMO INSTALARLA EN EL CELULAR
 -----------------------------
+DIRECCION ACTUAL DE LA APP
+  https://adonaielectrical2026.github.io/ADONAI-ELECTRICAL/
+  Se actualiza sola con cada cambio que se sube a GitHub (rama main).
+  Abrila en el celular y seguí los pasos de "Android" o "iPhone" de abajo.
+
 Para que se instale como app (icono propio, pantalla completa, sin barra del
 navegador) el celular tiene que abrirla desde una direccion web (https://),
 no desde un archivo suelto. Hay dos caminos:
