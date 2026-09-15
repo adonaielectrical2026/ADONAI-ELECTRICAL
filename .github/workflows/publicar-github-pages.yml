@@ -1,0 +1,35 @@
+# Publica la app en GitHub Pages con cada push a main.
+#
+# Arma el sitio igual que netlify.toml: el contenido de codigo/ en la raíz y
+# app-completa.html al lado, para poder descargarlo desde el propio sitio.
+name: Publicar en GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Armar el sitio
+        run: |
+          rm -rf _site && mkdir _site
+          cp -R codigo/. _site/
+          cp app-completa.html _site/
+          touch _site/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - uses: actions/deploy-pages@v4
