@@ -1,0 +1,669 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ADONAI ELECTRICAL</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b0b0c">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ADONAI ELECTRICAL">
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="estilos.css">
+  <style>
+    :root{ color-scheme:light dark; }
+    body{ margin:0; }
+    img{ max-width:100%; }
+    [hidden]{ display:none !important; }
+  </style>
+</head>
+<body>
+
+<!-- ============================================================
+     ICONOS / LOGO — símbolos SVG reutilizables
+     ============================================================ -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="ic-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/></symbol>
+    <symbol id="ic-check-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="m9 12 2 2 4-4"/></symbol>
+    <symbol id="ic-clipboard-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1"/><path d="M12 10v6M9 13h6"/></symbol>
+    <symbol id="ic-cable" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></symbol>
+    <symbol id="ic-calc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M8 6h8M7 11h2M11 11h2M15 11h2M7 15h2M11 15h2M15 15v4M7 19h2"/></symbol>
+    <symbol id="ic-invoice" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l4 4v16H6z"/><circle cx="9.5" cy="14.5" r="2.2"/><path d="M13 19h5"/></symbol>
+    <symbol id="ic-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+    <symbol id="ic-file-dollar" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l4 4v16H6z"/><path d="M12 9v9M14.2 11.3a2.2 2.2 0 0 0-2.2-1.3c-1.4 0-2.2.8-2.2 1.7 0 2.4 4.4 1.1 4.4 3.5 0 .9-.8 1.8-2.2 1.8a2.4 2.4 0 0 1-2.4-1.5"/></symbol>
+    <symbol id="ic-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 9-8 9 8"/><path d="M5 10v10h14V10"/></symbol>
+    <symbol id="ic-briefcase" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+    <symbol id="ic-money" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="ic-user" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4.5 5-6 8-6s6.5 1.5 8 6"/></symbol>
+    <symbol id="ic-chevron-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="ic-chevron-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></symbol>
+    <symbol id="ic-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="ic-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/></symbol>
+    <symbol id="ic-save" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v6h8V4M8 21v-6h8v6"/></symbol>
+    <symbol id="ic-check-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="m8 12 2.5 2.5L16 9"/></symbol>
+    <symbol id="ic-x-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9.5"/><path d="m9 9 6 6M15 9l-6 6"/></symbol>
+    <symbol id="ic-zap" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M13 2 4 14h6l-1 8 9-12h-6z"/></symbol>
+    <symbol id="ic-percent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 5 5 19"/><circle cx="7" cy="7" r="2.2"/><circle cx="17" cy="17" r="2.2"/></symbol>
+    <symbol id="ic-truck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h11v9H2z"/><path d="M13 11h4l4 3v3h-8z"/><circle cx="6" cy="19" r="1.8"/><circle cx="17.5" cy="19" r="1.8"/></symbol>
+    <symbol id="ic-tag" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2h6a2 2 0 0 1 2 2v6L11 19l-9-9 9-9z"/><circle cx="16" cy="8" r="1.5" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="ic-tool" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 4.6L3 17.2V21h3.8l6.3-6.3a4 4 0 0 0 4.6-5.4l-2.7 2.7-2-2z"/></symbol>
+    <symbol id="ic-thermo" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 14V4a2 2 0 1 0-4 0v10a4 4 0 1 0 4 0Z"/></symbol>
+    <symbol id="ic-ruler" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 16 5-5 12 12-5 5z"/><path d="m9 12 2 2M12 9l2 2M15 6l2 2"/></symbol>
+    <symbol id="ic-eye" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="ic-doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l4 4v16H6z"/><path d="M8 12h8M8 16h8M8 8h3"/></symbol>
+    <symbol id="ic-edit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+    <symbol id="ic-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 11 18-8-8 18-2-8Z"/></symbol>
+    <symbol id="ic-building" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21V5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1v16"/><path d="M15 10h4a1 1 0 0 1 1 1v10"/><path d="M8 8h.01M11 8h.01M8 12h.01M11 12h.01M8 16h.01M11 16h.01"/></symbol>
+    <symbol id="ic-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="ic-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.6M12 18.9v2.6M4.6 4.6l1.85 1.85M17.55 17.55l1.85 1.85M2.5 12h2.6M18.9 12h2.6M4.6 19.4l1.85-1.85M17.55 6.45l1.85-1.85"/></symbol>
+    <symbol id="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.5 14.5A8.5 8.5 0 0 1 9.5 3.5a8.5 8.5 0 1 0 11 11Z"/></symbol>
+  </defs>
+</svg>
+
+<div class="shell" id="shell">
+
+  <div class="lock-screen" id="lock-screen" hidden>
+    <div class="lock-card">
+      <span class="brand-logo-plate" style="width:56px;height:56px;margin:0 auto 14px;display:flex"><img data-logo alt="ADONAI ELECTRICAL"></span>
+      <div class="lock-title">Herramientas Técnicas</div>
+      <p class="lock-sub">Ingresá tu PIN para continuar</p>
+      <input class="input lock-input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="lock-pin-input" placeholder="••••" autocomplete="off">
+      <button class="btn btn-primary btn-block" id="btn-lock-unlock">Desbloquear</button>
+      <p class="lock-error" id="lock-error" hidden>PIN incorrecto. Intentá de nuevo.</p>
+      <button type="button" class="lock-forgot" id="btn-lock-olvide">¿Olvidaste tu PIN?</button>
+      <p class="lock-forgot-note" id="lock-olvide-nota" hidden>El PIN no se puede recuperar: es solo un bloqueo de pantalla, no hay cuenta ni copia en la nube. Para volver a entrar hay que borrar los datos del sitio desde el navegador, lo que también borra los trabajos y presupuestos guardados en este dispositivo.</p>
+    </div>
+  </div>
+
+  <div class="util-bar" id="util-bar">
+    <div class="util-brand">
+      <span class="brand-logo-plate"><img data-logo alt="ADONAI ELECTRICAL"></span>
+      <span class="util-wordmark">ADONAI ELECTRICAL</span>
+    </div>
+    <div class="util-right">
+      <span class="date" id="util-date"></span>
+      <button type="button" class="theme-toggle" id="btn-theme-toggle" aria-label="Cambiar tema" aria-pressed="false">
+        <svg id="theme-toggle-icon"><use href="#ic-moon"></use></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       INICIO
+       ============================================================ -->
+  <main class="view" id="view-home">
+    <div class="brand-header">
+      <span class="brand-logo-plate"><img data-logo alt="ADONAI ELECTRICAL"></span>
+      <div>
+        <div class="wordmark-lg">ADONAI<small>ELECTRICAL</small></div>
+        <div class="tagline">Energía con propósito</div>
+      </div>
+    </div>
+
+    <div class="stack" style="margin-top:18px">
+      <div>
+        <div class="page-title" style="font-size:1.15rem">Herramientas Técnicas</div>
+        <div class="page-sub" style="margin-bottom:0">Uso interno</div>
+      </div>
+
+      <div class="stat-pill-row" id="home-stats"></div>
+
+      <div class="action-grid">
+        <button class="action-tile" data-action="nuevo-relevamiento">
+          <div class="head"><span class="ic"><svg><use href="#ic-clipboard-plus"/></svg></span><svg class="chev"><use href="#ic-chevron-right"/></svg></div>
+          <div class="label">Nuevo<br>relevamiento</div>
+        </button>
+        <button class="action-tile" data-action="calcular-conductor">
+          <div class="head"><span class="ic"><svg><use href="#ic-cable"/></svg></span><svg class="chev"><use href="#ic-chevron-right"/></svg></div>
+          <div class="label">Calcular<br>conductor</div>
+        </button>
+        <button class="action-tile" data-action="calculos-electricos">
+          <div class="head"><span class="ic"><svg><use href="#ic-calc"/></svg></span><svg class="chev"><use href="#ic-chevron-right"/></svg></div>
+          <div class="label">Cálculos<br>eléctricos</div>
+        </button>
+        <button class="action-tile" data-action="nuevo-presupuesto">
+          <div class="head"><span class="ic"><svg><use href="#ic-invoice"/></svg></span><svg class="chev"><use href="#ic-chevron-right"/></svg></div>
+          <div class="label">Nuevo<br>presupuesto</div>
+        </button>
+        <button class="action-tile" data-action="trabajos">
+          <div class="head"><span class="ic"><svg><use href="#ic-folder"/></svg></span><svg class="chev"><use href="#ic-chevron-right"/></svg></div>
+          <div class="label">Trabajos<br>guardados</div>
+        </button>
+        <button class="action-tile" data-action="presupuestos">
+          <div class="head"><span class="ic"><svg><use href="#ic-file-dollar"/></svg></span><svg class="chev"><use href="#ic-chevron-right"/></svg></div>
+          <div class="label">Presupuestos</div>
+        </button>
+      </div>
+
+      <div class="card card-pad">
+        <div class="row-between" style="margin-bottom:6px">
+          <div class="section-label" style="margin:0">Actividad reciente</div>
+        </div>
+        <div id="home-activity"></div>
+        <button class="btn btn-ghost btn-block btn-sm" id="btn-ver-todos" style="margin-top:6px">Ver todos los trabajos <svg style="width:14px;height:14px"><use href="#ic-chevron-right"/></svg></button>
+      </div>
+    </div>
+  </main>
+
+  <!-- ============================================================
+       NUEVO RELEVAMIENTO — asistente de 6 pasos
+       ============================================================ -->
+  <main class="view" id="view-relevamiento" hidden>
+    <div class="topbar">
+      <div class="topbar-row">
+        <button class="icon-btn" data-back="home"><svg><use href="#ic-chevron-left"/></svg></button>
+        <div class="brand-mini" style="margin:0 auto">
+          <span class="brand-logo-plate"><img data-logo alt="ADONAI ELECTRICAL"></span>
+          <div class="wordmark">ADONAI<b>ELECTRICAL</b></div>
+        </div>
+        <span style="width:36px"></span>
+      </div>
+    </div>
+    <div style="padding-top:14px">
+      <div class="page-title">Nuevo relevamiento</div>
+      <div class="stepper" id="wizard-stepper"></div>
+    </div>
+
+    <!-- Paso 1: Cliente -->
+    <section class="wizard-step stack" id="step-cliente" data-step="0">
+      <div class="card card-pad stack-sm">
+        <div class="section-label">Datos del cliente</div>
+        <div class="field"><label>Nombre o razón social</label><input class="input" id="f-cliente-nombre" placeholder="Ej: Empresa Delta"></div>
+        <div class="field"><label>Teléfono</label><input class="input" id="f-cliente-telefono" type="tel" placeholder="0"></div>
+        <div class="field"><label>WhatsApp</label><input class="input" id="f-cliente-whatsapp" type="tel" placeholder="0"></div>
+        <div class="field"><label>Correo electrónico</label><input class="input" id="f-cliente-email" type="email" placeholder="cliente@correo.com"></div>
+        <div class="field"><label>Persona de contacto</label><input class="input" id="f-cliente-contacto" placeholder="Nombre y apellido"></div>
+        <div class="field"><label>Observaciones</label><textarea class="textarea" id="f-cliente-obs" placeholder="Notas sobre el cliente…"></textarea></div>
+      </div>
+      <div class="card card-pad" id="clientes-existentes-wrap">
+        <div class="section-label" style="margin-bottom:10px">Selección rápida</div>
+        <select class="select" id="f-cliente-existente">
+          <option value="">Seleccionar cliente existente…</option>
+        </select>
+      </div>
+      <div class="grid-2">
+        <button class="btn btn-outline" id="btn-guardar-borrador"><svg><use href="#ic-save"/></svg> Guardar borrador</button>
+        <button class="btn btn-primary" data-step-next>Continuar <svg><use href="#ic-chevron-right"/></svg></button>
+      </div>
+    </section>
+
+    <!-- Paso 2: Obra -->
+    <section class="wizard-step stack" id="step-obra" data-step="1" hidden>
+      <div class="card card-pad stack-sm">
+        <div class="section-label">Datos de la obra</div>
+        <div class="field"><label>Nombre de la obra</label><input class="input" id="f-obra-nombre" placeholder="Ej: Depósito Central"></div>
+        <div class="field"><label>Dirección</label><input class="input" id="f-obra-direccion" placeholder="Calle y número"></div>
+        <div class="field"><label>Localidad</label><input class="input" id="f-obra-localidad" placeholder="Salto" value="Salto"></div>
+        <div class="grid-2">
+          <div class="field"><label>Tipo de obra</label>
+            <select class="select" id="f-obra-tipo">
+              <option>Residencial</option><option>Comercial</option><option>Industrial</option>
+            </select>
+          </div>
+          <div class="field"><label>Naturaleza</label>
+            <select class="select" id="f-obra-naturaleza">
+              <option>Trámite</option><option>Instalación nueva</option><option>Modificación</option><option>Emergencia</option>
+            </select>
+          </div>
+        </div>
+        <div class="field"><label>Observaciones de obra</label><textarea class="textarea" id="f-obra-obs" placeholder="Accesos, horarios, condiciones del lugar…"></textarea></div>
+      </div>
+      <div class="grid-2">
+        <button class="btn btn-outline" data-step-prev><svg><use href="#ic-chevron-left"/></svg> Atrás</button>
+        <button class="btn btn-primary" data-step-next>Continuar <svg><use href="#ic-chevron-right"/></svg></button>
+      </div>
+    </section>
+
+    <!-- Paso 3: Cargas -->
+    <section class="wizard-step stack" id="step-cargas" data-step="2" hidden>
+      <div class="card card-pad">
+        <div class="field" style="max-width:340px;margin-bottom:0">
+          <label>Sistema de suministro</label>
+          <select class="select" id="f-sistema">
+            <option value="mono">Monofásico 230V</option>
+            <option value="tri_it">Trifásico 230V (sistema IT)</option>
+            <option value="tri_tt" selected>Trifásico 400V (sistema TT)</option>
+          </select>
+        </div>
+      </div>
+      <div class="card card-pad">
+        <div class="section-label">Factores de demanda (ajustables)</div>
+        <div class="item-grid" id="factores-grid"></div>
+        <p style="font-size:0.78rem;color:var(--steel);margin:10px 0 0">Valores de referencia — confirmalos contra la normativa de UTE vigente.</p>
+      </div>
+      <div class="card card-pad">
+        <div class="row-between" style="margin-bottom:14px">
+          <div class="section-label" style="margin:0">Circuitos / cargas</div>
+          <button class="btn btn-outline btn-sm" id="btn-add-carga"><svg><use href="#ic-plus"/></svg> Agregar</button>
+        </div>
+        <div class="stack-sm" id="cargas-list"></div>
+      </div>
+      <div class="panel-dark card-pad">
+        <div class="stat-grid" id="potencia-resultado"></div>
+        <p id="potencia-warning" style="font-size:0.78rem;color:var(--panel-dark-muted);margin:16px 0 0"></p>
+      </div>
+      <div class="grid-2">
+        <button class="btn btn-outline" data-step-prev><svg><use href="#ic-chevron-left"/></svg> Atrás</button>
+        <button class="btn btn-primary" id="btn-ir-circuitos">Continuar <svg><use href="#ic-chevron-right"/></svg></button>
+      </div>
+    </section>
+
+    <!-- Paso 4: Circuitos -->
+    <section class="wizard-step stack" id="step-circuitos" data-step="3" hidden>
+      <div class="row-between">
+        <p class="page-sub" style="margin:0;max-width:none">Sección mínima que cumple corriente admisible y caída de tensión, con protección sugerida.</p>
+      </div>
+      <button class="btn btn-outline btn-block" id="btn-add-circuito"><svg><use href="#ic-plus"/></svg> Agregar circuito</button>
+      <div class="stack" id="circuitos-list"></div>
+      <div class="card" style="padding:0;overflow:hidden" id="circuitos-tabla-wrap" hidden>
+        <div style="padding:14px 18px;font-weight:700;border-bottom:1px solid var(--line)">Planilla resumen</div>
+        <div class="table-wrap">
+          <table class="data" id="circuitos-tabla">
+            <thead><tr><th>Circuito</th><th>Ib (A)</th><th>Sección</th><th>Protección</th><th>ΔU %</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="panel-dark card-pad" id="circuitos-proteccion-general" style="display:flex;flex-wrap:wrap;gap:20px" hidden></div>
+      <div class="grid-2">
+        <button class="btn btn-outline" data-step-prev><svg><use href="#ic-chevron-left"/></svg> Atrás</button>
+        <button class="btn btn-primary" data-step-next>Continuar <svg><use href="#ic-chevron-right"/></svg></button>
+      </div>
+    </section>
+
+    <!-- Paso 5: Materiales -->
+    <section class="wizard-step stack" id="step-materiales" data-step="4" hidden>
+      <div class="card card-pad">
+        <div class="row-between" style="margin-bottom:6px">
+          <div class="section-label" style="margin:0">Materiales sugeridos</div>
+          <button class="btn btn-ghost btn-sm" id="btn-regenerar-materiales">Regenerar</button>
+        </div>
+        <p style="font-size:0.78rem;color:var(--steel);margin:0 0 12px">Calculados a partir de los circuitos. Editá cantidades o agregá ítems manuales.</p>
+        <div class="stack-sm" id="materiales-list"></div>
+      </div>
+      <button class="btn btn-outline btn-block" id="btn-add-material"><svg><use href="#ic-plus"/></svg> Agregar material manual</button>
+      <div class="grid-2">
+        <button class="btn btn-outline" data-step-prev><svg><use href="#ic-chevron-left"/></svg> Atrás</button>
+        <button class="btn btn-primary" data-step-next>Continuar <svg><use href="#ic-chevron-right"/></svg></button>
+      </div>
+    </section>
+
+    <!-- Paso 6: Resumen -->
+    <section class="wizard-step stack" id="step-resumen" data-step="5" hidden>
+      <div class="page-title" style="font-size:1.3rem">Resumen técnico</div>
+      <div class="grid-2">
+        <div class="card card-pad">
+          <div class="eyebrow" style="margin-bottom:6px">Cliente</div>
+          <div style="font-weight:700" id="resumen-cliente">—</div>
+        </div>
+        <div class="card card-pad">
+          <div class="eyebrow" style="margin-bottom:6px">Obra</div>
+          <div style="font-weight:700" id="resumen-obra">—</div>
+        </div>
+      </div>
+      <div class="grid-2">
+        <div class="card card-pad">
+          <div class="eyebrow" style="margin-bottom:8px">Estado</div>
+          <select class="select" id="resumen-estado">
+            <option value="pendiente">Pendiente</option>
+            <option value="revision">En revisión</option>
+            <option value="aprobado">Aprobado</option>
+          </select>
+        </div>
+        <div class="card card-pad">
+          <div class="eyebrow" style="margin-bottom:6px">Carga total</div>
+          <div style="font-weight:800;font-size:1.1rem" id="resumen-carga">—</div>
+        </div>
+      </div>
+
+      <div class="section-label">Circuitos</div>
+      <div class="stack-sm" id="resumen-circuitos"></div>
+
+      <div class="card card-pad" id="resumen-proteccion-general" hidden>
+        <div class="section-label" style="margin-bottom:10px">Protección general</div>
+        <div class="stack-sm" id="resumen-proteccion-general-stats"></div>
+        <div class="field" style="margin-top:12px"><label>Sensibilidad diferencial general</label>
+          <select class="select" id="resumen-diferencial-sensibilidad">
+            <option value="30">30 mA</option>
+            <option value="300">300 mA</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="card card-pad">
+        <div class="row-between" style="margin-bottom:10px">
+          <div class="section-label" style="margin:0">Materiales</div>
+          <span id="resumen-materiales-count" style="font-size:0.78rem;color:var(--steel)"></span>
+        </div>
+        <div class="stack-sm" id="resumen-materiales-preview"></div>
+      </div>
+
+      <div class="card card-pad">
+        <div class="section-label">Observaciones</div>
+        <textarea class="textarea" id="resumen-observaciones" placeholder="Notas técnicas del relevamiento…"></textarea>
+      </div>
+
+      <div class="grid-2">
+        <button class="btn btn-outline" data-step-prev><svg><use href="#ic-edit"/></svg> Editar</button>
+        <button class="btn btn-outline" id="btn-enviar-revision"><svg><use href="#ic-send"/></svg> Enviar a revisión</button>
+      </div>
+      <button class="btn btn-primary btn-block" id="btn-crear-presupuesto"><svg><use href="#ic-file-dollar"/></svg> Crear presupuesto</button>
+    </section>
+  </main>
+
+  <!-- ============================================================
+       CALCULAR CONDUCTOR (standalone)
+       ============================================================ -->
+  <main class="view" id="view-conductor" hidden>
+    <div class="topbar">
+      <div class="topbar-row">
+        <button class="icon-btn" data-back="home"><svg><use href="#ic-chevron-left"/></svg></button>
+        <div class="topbar-title">Calcular conductor</div>
+        <div class="brand-mini"><span class="brand-logo-plate"><img data-logo alt="ADONAI ELECTRICAL"></span></div>
+      </div>
+    </div>
+    <div class="stack" style="padding-top:14px">
+      <div class="segmented" id="cond-fases">
+        <button class="active" data-fases="1">Monofásico</button>
+        <button data-fases="3">Trifásico</button>
+      </div>
+
+      <div class="card card-pad stack-sm">
+        <div class="field"><label>Tensión</label>
+          <select class="select" id="cond-tension"></select>
+        </div>
+        <div class="field"><label>Dato conocido</label>
+          <select class="select" id="cond-dato">
+            <option value="potencia">Potencia</option>
+            <option value="corriente">Corriente</option>
+          </select>
+        </div>
+        <div class="field"><label id="cond-valor-label">Valor (kW)</label><input class="input" type="number" id="cond-valor" value="15"></div>
+        <div class="field"><label>cos φ</label><input class="input" type="number" step="0.05" min="0" max="1" id="cond-cosphi" value="0.90"></div>
+        <div class="field"><label>Longitud (m)</label><input class="input" type="number" id="cond-longitud" value="42"></div>
+        <div class="field"><label>Material</label>
+          <select class="select" id="cond-material"><option value="cobre">Cobre</option><option value="aluminio">Aluminio</option></select>
+        </div>
+        <div class="field"><label>Aislación</label>
+          <select class="select" id="cond-aislacion"><option value="pvc">PVC</option><option value="xlpe">XLPE</option></select>
+        </div>
+        <div class="field"><label>Uso</label>
+          <select class="select" id="cond-uso">
+            <option value="fuerza">Fuerza</option>
+            <option value="iluminacion">Iluminación</option>
+            <option value="tomacorrientes">Tomacorrientes</option>
+          </select>
+        </div>
+        <div class="grid-2">
+          <div class="field"><label>Método de instalación</label>
+            <select class="select" id="cond-metodo">
+              <option value="embutido">Embutido en pared</option>
+              <option value="amurado_pvc">Amurado — caño PVC rígido</option>
+              <option value="amurado_galvanizado">Amurado — caño de acero galvanizado</option>
+              <option value="bandeja">Bandeja</option>
+              <option value="aire">Aire libre</option>
+              <option value="enterrado">Enterrado bajo tierra</option>
+            </select>
+          </div>
+          <div class="field"><label>Temp. ambiente (°C)</label><input class="input" type="number" id="cond-temp" value="30"></div>
+        </div>
+        <div class="grid-2">
+          <div class="field"><label>Circuitos agrupados</label><input class="input" type="number" min="1" id="cond-agrupados" value="1"></div>
+          <div class="field"><label>Caída máx. (%)</label><input class="input" type="number" step="0.5" id="cond-caidamax" value="5"></div>
+        </div>
+      </div>
+
+      <div class="card card-pad" id="cond-resultado-wrap">
+        <div class="row-between" style="margin-bottom:14px">
+          <div class="section-label" style="margin:0">Resultado del circuito</div>
+          <span id="cond-badge"></span>
+        </div>
+        <div class="light-stat-grid" id="cond-resultado"></div>
+      </div>
+
+      <div class="grid-2">
+        <button class="btn btn-outline" id="btn-cond-guardar"><svg><use href="#ic-save"/></svg> Guardar</button>
+        <button class="btn btn-outline" id="btn-cond-a-relevamiento">Agregar al relevamiento</button>
+      </div>
+      <button class="btn btn-primary btn-block" id="btn-cond-a-presupuesto"><svg><use href="#ic-file-dollar"/></svg> Agregar al presupuesto</button>
+    </div>
+  </main>
+
+  <!-- ============================================================
+       CÁLCULOS ELÉCTRICOS (accesos directos a los dos módulos)
+       ============================================================ -->
+  <main class="view" id="view-calculos" hidden>
+    <div class="topbar">
+      <div class="topbar-row">
+        <button class="icon-btn" data-back="home"><svg><use href="#ic-chevron-left"/></svg></button>
+        <div class="topbar-title">Cálculos eléctricos</div>
+        <div class="brand-mini"><span class="brand-logo-plate"><img data-logo alt="ADONAI ELECTRICAL"></span></div>
+      </div>
+    </div>
+    <div class="stack" style="padding-top:14px">
+      <button class="action-tile" style="flex-direction:row;align-items:center;gap:14px" data-goto="conductor">
+        <span class="ic"><svg><use href="#ic-cable"/></svg></span>
+        <div style="flex:1">
+          <div class="label">Sección de conductor y protección</div>
+          <div style="font-size:0.78rem;color:var(--steel);margin-top:2px">Corriente admisible, caída de tensión, protección sugerida</div>
+        </div>
+        <svg class="chev" style="margin:0"><use href="#ic-chevron-right"/></svg>
+      </button>
+      <button class="action-tile" style="flex-direction:row;align-items:center;gap:14px" data-goto="potencia-libre">
+        <span class="ic"><svg><use href="#ic-zap"/></svg></span>
+        <div style="flex:1">
+          <div class="label">Cálculo de potencia a contratar</div>
+          <div style="font-size:0.78rem;color:var(--steel);margin-top:2px">Sumar cargas y estimar el suministro sugerido</div>
+        </div>
+        <svg class="chev" style="margin:0"><use href="#ic-chevron-right"/></svg>
+      </button>
+    </div>
+  </main>
+
+  <!-- ============================================================
+       TRABAJOS GUARDADOS
+       ============================================================ -->
+  <main class="view" id="view-trabajos" hidden>
+    <div class="topbar">
+      <div class="topbar-row">
+        <button class="icon-btn" data-back="home"><svg><use href="#ic-chevron-left"/></svg></button>
+        <div class="topbar-title">Trabajos guardados</div>
+        <button class="icon-btn" id="btn-trabajos-nuevo"><svg><use href="#ic-plus"/></svg></button>
+      </div>
+    </div>
+    <div class="stack" style="padding-top:14px" id="trabajos-list"></div>
+  </main>
+
+  <!-- ============================================================
+       PRESUPUESTOS (listado)
+       ============================================================ -->
+  <main class="view" id="view-presupuestos" hidden>
+    <div class="topbar">
+      <div class="topbar-row">
+        <button class="icon-btn" data-back="home"><svg><use href="#ic-chevron-left"/></svg></button>
+        <div class="topbar-title">Presupuestos</div>
+        <button class="icon-btn" id="btn-presupuestos-nuevo"><svg><use href="#ic-plus"/></svg></button>
+      </div>
+    </div>
+    <div class="stack" style="padding-top:14px" id="presupuestos-list"></div>
+  </main>
+
+  <!-- ============================================================
+       PRESUPUESTO — detalle
+       ============================================================ -->
+  <main class="view" id="view-presupuesto-detalle" hidden>
+    <div class="topbar">
+      <div class="topbar-row">
+        <button class="icon-btn" data-back="presupuestos"><svg><use href="#ic-chevron-left"/></svg></button>
+        <div class="topbar-title" id="pres-codigo">Presupuesto</div>
+        <button class="icon-btn" id="btn-pres-doc"><svg><use href="#ic-doc"/></svg></button>
+      </div>
+    </div>
+    <div class="stack" style="padding-top:14px">
+      <div class="card card-pad" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div style="flex:1;min-width:0">
+          <div class="eyebrow" style="margin-bottom:4px">Cliente / proyecto</div>
+          <input class="input" id="pres-cliente-nombre" style="border:none;padding:0;font-weight:700;font-size:0.95rem;min-height:auto">
+        </div>
+        <span class="status-pill status-draft" id="pres-estado-pill">Borrador</span>
+      </div>
+      <div class="segmented" id="pres-vista-toggle">
+        <button class="active" data-vista="interno"><svg style="width:15px;height:15px;vertical-align:-2px;margin-right:5px"><use href="#ic-user"/></svg>Interno</button>
+        <button data-vista="cliente"><svg style="width:15px;height:15px;vertical-align:-2px;margin-right:5px"><use href="#ic-user"/></svg>Cliente</button>
+      </div>
+
+      <div class="card card-pad" id="pres-vista-interno">
+        <div class="budget-row"><span class="lbl"><svg><use href="#ic-cable"/></svg>Materiales:</span><span class="val" id="pi-materiales">$0</span></div>
+        <div class="budget-row"><span class="lbl"><svg><use href="#ic-user"/></svg>Mano de obra:</span><span class="val"><input class="input" style="min-height:34px;width:120px;text-align:right" type="number" id="pi-manoobra" value="0"></span></div>
+        <div class="budget-row"><span class="lbl"><svg><use href="#ic-truck"/></svg>Traslados:</span><span class="val"><input class="input" style="min-height:34px;width:120px;text-align:right" type="number" id="pi-traslados" value="0"></span></div>
+        <div class="budget-row"><span class="lbl"><svg><use href="#ic-tag"/></svg>Otros gastos:</span><span class="val"><input class="input" style="min-height:34px;width:120px;text-align:right" type="number" id="pi-otros" value="0"></span></div>
+        <p style="font-size:0.72rem;color:var(--steel);margin:-2px 0 6px">Acá van los que no están en la lista de materiales: tornillería, precintos, consumibles.</p>
+        <div class="hr"></div>
+        <div class="budget-row"><span class="lbl"><svg><use href="#ic-calc"/></svg><b>Costo total:</b></span><span class="val" id="pi-costototal">$0</span></div>
+        <div class="budget-row"><span class="lbl"><svg><use href="#ic-percent"/></svg>Margen aplicado:</span><span class="val"><input class="input" style="min-height:34px;width:80px;text-align:right" type="number" id="pi-margen" value="30">%</span></div>
+        <div class="budget-row"><span class="lbl">Subtotal venta:</span><span class="val" id="pi-subtotal">$0</span></div>
+        <div class="budget-row"><span class="lbl">IVA <input class="input" style="min-height:30px;width:52px;text-align:right;display:inline-block;padding:0 6px" type="number" id="pi-iva" value="22">%:</span><span class="val" id="pi-ivamonto">$0</span></div>
+        <div class="budget-total"><span>TOTAL CLIENTE:</span><span class="val" id="pi-total">$0</span></div>
+      </div>
+
+      <div class="card card-pad" id="pres-vista-cliente" hidden>
+        <div class="eyebrow" style="margin-bottom:10px">ADONAI ELECTRICAL — Presupuesto</div>
+        <div id="pc-cliente" style="font-weight:700;margin-bottom:14px"></div>
+        <div class="budget-total"><span>Total del servicio:</span><span class="val" id="pc-total">$0</span></div>
+        <p style="font-size:0.78rem;color:var(--steel);margin-top:12px">IVA incluido. Precio final llave en mano.</p>
+      </div>
+
+      <div class="card card-pad">
+        <div class="section-label">Condiciones</div>
+        <div class="light-stat-row"><span class="lbl">Validez</span><span class="val"><input class="input" style="min-height:34px;width:90px;text-align:right" type="number" id="pi-validez" value="15"> días</span></div>
+        <div class="light-stat-row"><span class="lbl">Forma de pago</span><span class="val"><input class="input" style="min-height:34px;width:150px;text-align:right" id="pi-formapago" value="50% anticipo / 50% final"></span></div>
+        <div class="light-stat-row"><span class="lbl">Plazo estimado</span><span class="val"><input class="input" style="min-height:34px;width:90px;text-align:right" type="number" id="pi-plazo" value="5"> días</span></div>
+      </div>
+
+      <button class="btn btn-primary btn-block" id="btn-pres-aprobar"><svg><use href="#ic-check-circle"/></svg> Aprobar presupuesto</button>
+      <button class="btn btn-outline btn-block" id="btn-pres-pdf"><svg><use href="#ic-doc"/></svg> PDF para el cliente</button>
+      <button class="btn btn-outline btn-block" id="btn-pres-pdf-interno"><svg><use href="#ic-calc"/></svg> PDF interno (con costos)</button>
+      <p style="font-size:0.72rem;color:var(--steel);margin:-2px 0 6px;text-align:center">El interno lleva el desglose y el precio de cada material. No se le entrega al cliente.</p>
+      <button class="btn btn-outline btn-block" id="btn-pres-whatsapp"><svg><use href="#ic-send"/></svg> Compartir por WhatsApp</button>
+    </div>
+  </main>
+
+  <!-- ============================================================
+       PERFIL
+       ============================================================ -->
+  <main class="view" id="view-perfil" hidden>
+    <div class="topbar">
+      <div class="topbar-row">
+        <button class="icon-btn" data-back="home"><svg><use href="#ic-chevron-left"/></svg></button>
+        <div class="topbar-title">Perfil</div>
+        <span style="width:36px"></span>
+      </div>
+    </div>
+    <div class="stack" style="padding-top:14px">
+      <div class="card card-pad" style="display:flex;align-items:center;gap:14px">
+        <span class="brand-logo-plate" style="width:52px;height:52px"><img data-logo alt="ADONAI ELECTRICAL"></span>
+        <div>
+          <div style="font-weight:800">ADONAI ELECTRICAL</div>
+          <div style="font-size:0.8rem;color:var(--steel)">Energía con propósito · Salto</div>
+        </div>
+      </div>
+      <div class="card card-pad stack-sm">
+        <div class="section-label">Valores por defecto de presupuesto</div>
+        <div class="grid-2">
+          <div class="field"><label>Margen (%)</label><input class="input" type="number" id="perfil-margen" value="30"></div>
+          <div class="field"><label>IVA (%)</label><input class="input" type="number" id="perfil-iva" value="22"></div>
+        </div>
+      </div>
+      <div class="card card-pad stack-sm">
+        <div class="section-label">Mano de obra</div>
+        <div class="grid-2">
+          <div class="field"><label>Tarifa por hora ($)</label><input class="input" type="number" id="perfil-tarifahora" value="500"></div>
+          <div class="field"><label>Horas por jornada</label><input class="input" type="number" id="perfil-horasjornada" value="8"></div>
+        </div>
+        <p style="font-size:0.78rem;color:var(--steel);margin:2px 0 0">Mano de obra = Plazo estimado (días) × horas × tarifa. Se puede ajustar a mano en cada presupuesto.</p>
+      </div>
+      <div class="card card-pad stack-sm">
+        <div class="section-label">Catálogo de precios</div>
+        <p style="font-size:0.78rem;color:var(--steel);margin:0">Precios de referencia que usan los materiales generados automáticamente en cada relevamiento.</p>
+        <button class="btn btn-outline btn-block" id="btn-abrir-catalogo">Editar catálogo de precios</button>
+      </div>
+      <div class="card card-pad stack-sm">
+        <div class="section-label">Datos</div>
+        <div class="light-stat-row"><span class="lbl">Trabajos guardados</span><span class="val" id="perfil-count-trabajos">0</span></div>
+        <div class="light-stat-row"><span class="lbl">Presupuestos</span><span class="val" id="perfil-count-presupuestos">0</span></div>
+        <p style="font-size:0.78rem;color:var(--steel);margin:6px 0 0">Todos los datos se guardan solo en este dispositivo.</p>
+        <div class="grid-2" style="margin-top:4px">
+          <button class="btn btn-outline" id="btn-exportar-backup">Exportar copia de seguridad</button>
+          <button class="btn btn-outline" id="btn-importar-backup">Importar copia de seguridad</button>
+        </div>
+        <input type="file" accept="application/json" id="input-importar-backup" hidden>
+      </div>
+
+      <div class="card card-pad stack-sm">
+        <div class="section-label">Paquete normativo</div>
+        <div class="light-stat-row"><span class="lbl">Referencia</span><span class="val" id="perfil-norm-nombre" style="text-align:right">—</span></div>
+        <div class="light-stat-row"><span class="lbl">Versión</span><span class="val" id="perfil-norm-version">—</span></div>
+        <div class="light-stat-row"><span class="lbl">Motor de cálculo</span><span class="val" id="perfil-norm-motor">—</span></div>
+        <div class="light-stat-row"><span class="lbl">Estado</span><span id="perfil-norm-estado"></span></div>
+        <p style="font-size:0.78rem;color:var(--steel);margin:6px 0 0" id="perfil-norm-notas"></p>
+      </div>
+
+      <div class="card card-pad stack-sm">
+        <div class="section-label">Seguridad</div>
+        <div class="light-stat-row"><span class="lbl">Bloqueo por PIN</span><span class="val" id="perfil-pin-estado">Desactivado</span></div>
+        <p style="font-size:0.78rem;color:var(--steel);margin:0">Pide un PIN de 4 dígitos al abrir la app en este dispositivo. Es un bloqueo de pantalla simple: todavía no cifra los datos guardados.</p>
+        <div id="perfil-pin-set" class="stack-sm" style="margin-top:4px">
+          <div class="grid-2">
+            <div class="field"><label>PIN nuevo</label><input class="input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="perfil-pin-nuevo" placeholder="••••"></div>
+            <div class="field"><label>Confirmar</label><input class="input" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="4" id="perfil-pin-confirmar" placeholder="••••"></div>
+          </div>
+          <button class="btn btn-primary btn-block" id="btn-pin-activar">Activar bloqueo por PIN</button>
+        </div>
+        <div id="perfil-pin-quitar" class="stack-sm" style="margin-top:4px" hidden>
+          <button class="btn btn-outline btn-block" id="btn-pin-quitar">Quitar bloqueo por PIN</button>
+        </div>
+      </div>
+
+      <button class="btn btn-outline btn-block" id="btn-instalar">📲 Instalar en este dispositivo</button>
+    </div>
+  </main>
+
+  <main class="view" id="view-catalogo-precios" hidden>
+    <div class="topbar">
+      <div class="topbar-row">
+        <button class="icon-btn" data-back="perfil"><svg><use href="#ic-chevron-left"/></svg></button>
+        <div class="topbar-title">Catálogo de precios</div>
+        <span style="width:36px"></span>
+      </div>
+    </div>
+    <div class="stack" style="padding-top:14px">
+      <p class="page-sub" style="margin:0">Precios de referencia de los materiales que la app genera sola en cada relevamiento. Tocá una categoría para abrirla y editar los valores.</p>
+      <div id="catalogo-precios-list" class="stack"></div>
+      <button class="btn btn-outline btn-block" id="btn-restablecer-precios">Restablecer precios de fábrica</button>
+    </div>
+  </main>
+
+  <!-- ============================================================
+       NAV INFERIOR
+       ============================================================ -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <button class="nav-item" data-nav="home"><svg><use href="#ic-home"/></svg>Inicio</button>
+    <button class="nav-item" data-nav="trabajos"><svg><use href="#ic-briefcase"/></svg>Trabajos</button>
+    <button class="nav-item" data-nav="presupuestos"><svg><use href="#ic-money"/></svg>Presupuestos</button>
+    <button class="nav-item" data-nav="perfil"><svg><use href="#ic-user"/></svg>Perfil</button>
+  </nav>
+
+  <div class="toast" id="toast"></div>
+</div>
+<script src="jspdf.umd.min.js"></script>
+<script src="jspdf.plugin.autotable.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

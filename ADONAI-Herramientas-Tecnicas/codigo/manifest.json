@@ -1,0 +1,25 @@
+{
+  "name": "ADONAI ELECTRICAL",
+  "short_name": "ADONAI ELECTRICAL",
+  "description": "Relevamientos, cálculos eléctricos y presupuestos para uso interno de ADONAI ELECTRICAL.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#f4f4f5",
+  "theme_color": "#0b0b0c",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

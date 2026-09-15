@@ -51,22 +51,6 @@ GABINETES = {
     'wall-48': {'tipo': 'gabinete', 'filas': 4, 'modulos': 48},
 }
 
-# Troqueles de las paredes de arriba y de abajo, por donde entran y salen los
-# caños. El relieve es tan suave que no hay forma confiable de encontrarlos
-# solos, así que se midieron a ojo sobre cada foto. Van en fracciones del
-# ancho y el alto de la caja: sobreviven a cualquier cambio de escala.
-#   x: centro de cada troquel · y: centro · w, h: ancho y alto (sobre el ancho)
-TROQUELES = {
-    'wall-12': {'arriba': {'x': [0.2336, 0.4008, 0.5894, 0.7576], 'y': 0.1138, 'w': 0.0997, 'h': 0.0342},
-                'abajo': {'x': [0.2336, 0.4008, 0.5894, 0.7576], 'y': 0.8834, 'w': 0.0997, 'h': 0.0342}},
-    'wall-24': {'arriba': {'x': [0.1807, 0.337, 0.4989, 0.6596, 0.8171], 'y': 0.0733, 'w': 0.0865, 'h': 0.031},
-                'abajo': {'x': [0.1829, 0.3392, 0.4989, 0.6563, 0.8137], 'y': 0.9243, 'w': 0.0887, 'h': 0.0333}},
-    'wall-36': {'arriba': {'x': [0.1891, 0.3406, 0.5, 0.6576, 0.8109], 'y': 0.0567, 'w': 0.0902, 'h': 0.0324},
-                'abajo': {'x': [0.1891, 0.3406, 0.5, 0.6576, 0.8109], 'y': 0.9425, 'w': 0.0902, 'h': 0.0324}},
-    'wall-48': {'arriba': {'x': [0.1843, 0.3384, 0.5, 0.6649, 0.8147], 'y': 0.0429, 'w': 0.0948, 'h': 0.0302},
-                'abajo': {'x': [0.1853, 0.3384, 0.5, 0.6595, 0.8136], 'y': 0.9542, 'w': 0.0948, 'h': 0.0345}},
-}
-
 # Cuánto le tiene que ganar el azul al rojo para que el píxel sea riel.
 AZUL_MINIMO = 12
 # Un riel DIN mide 35 mm de alto y un módulo 17,5: la mitad justo. Midiendo el
@@ -170,14 +154,9 @@ def procesar(nombre, ficha, medidas):
     salida = os.path.join(DESTINO, nombre + '.webp')
     lienzo.save(salida, format='WEBP', quality=CALIDAD, method=6)
 
-    troqueles = {}
-    for lado, t in TROQUELES.get(nombre, {}).items():
-        troqueles[lado] = [{'x': round(dx + fx * ancho), 'y': round(t['y'] * alto),
-                            'w': round(t['w'] * ancho), 'h': round(t['h'] * ancho)} for fx in t['x']]
-
     ficha = dict(ficha)
     ficha.update({'w': lienzo.width, 'h': lienzo.height, 'modulo': round(modulo, 2),
-                  'rieles': {'x0': x0, 'x1': x1, 'y': ys}, 'troqueles': troqueles})
+                  'rieles': {'x0': x0, 'x1': x1, 'y': ys}})
     print('  %-10s %4d x %-4d %6.0f KB   %d riel(es), módulo %.1f px (foto %.1f, x%.3f)'
           % (nombre, lienzo.width, lienzo.height, os.path.getsize(salida) / 1024,
              len(ys), modulo, modulo_foto, escala))

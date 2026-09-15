@@ -1,0 +1,86 @@
+ADONAI ELECTRICAL — HERRAMIENTAS TECNICAS
+=========================================
+App interna de relevamientos, calculos electricos y presupuestos.
+
+
+QUE HAY EN ESTA CARPETA
+-----------------------
+app-completa.html    La app entera en un solo archivo. Doble clic y se abre
+                     en el navegador. No necesita internet ni instalar nada.
+
+codigo/              La misma app, separada en archivos legibles para editar:
+                       index.html      estructura de las pantallas
+                       estilos.css     colores, tipografia, componentes
+                       app.js          calculos, wizard, presupuestos, PIN
+                       manifest.json   datos de instalacion (nombre, iconos)
+                       logo.png        logo de la marca (fondo transparente)
+                       icon-*.png      iconos para la pantalla de inicio
+
+COMO-INSTALAR.txt    Este archivo.
+
+
+COMO INSTALARLA EN EL CELULAR
+-----------------------------
+Para que se instale como app (icono propio, pantalla completa, sin barra del
+navegador) el celular tiene que abrirla desde una direccion web (https://),
+no desde un archivo suelto. Hay dos caminos:
+
+CAMINO A — rapido, solo para vos
+  1. Abri en el celular el link del artifact que te pase en el chat
+     (tenes que estar con tu cuenta de Claude iniciada en ese celular).
+  2. Seguí los pasos de "Android" o "iPhone" de mas abajo.
+
+CAMINO B — recomendado, para que la use todo el equipo
+  1. Entra a  https://app.netlify.com/drop
+  2. Arrastra la carpeta "codigo" completa a esa pagina.
+  3. En unos segundos te da una direccion fija tipo
+     https://algo-random.netlify.app  — esa direccion la puede abrir
+     cualquier tecnico, sin cuenta de Claude y sin contraseña.
+  4. Pasale ese link a los tecnicos y que sigan los pasos de aca abajo.
+  (Es gratis. Si despues queres, se le puede poner un dominio propio.)
+
+  ANDROID (Chrome)
+    1. Abri el link en Chrome.
+    2. Menu de los 3 puntos (arriba a la derecha).
+    3. Tocá "Instalar aplicacion" o "Agregar a pantalla principal".
+    4. Confirmá. Queda el icono de ADONAI en la pantalla de inicio.
+
+  iPHONE / iPAD (Safari — tiene que ser Safari, no Chrome)
+    1. Abri el link en Safari.
+    2. Tocá el boton Compartir (el cuadrado con la flecha para arriba).
+    3. Bajá y tocá "Agregar a inicio" / "Add to Home Screen".
+    4. Tocá "Agregar". Queda el icono en la pantalla de inicio.
+
+
+TABLET
+------
+Si, funciona igual que en el celular y se instala con los mismos pasos
+(Android: Chrome / iPad: Safari). En pantallas grandes la app se muestra
+centrada, con el ancho de un celular, para que los formularios no queden
+estirados a lo ancho de toda la tablet.
+
+
+EN LA COMPUTADORA
+-----------------
+Doble clic en app-completa.html y se abre en el navegador. Funciona todo:
+calculos, relevamientos, presupuestos y el PDF.
+Tambien se puede instalar como app de escritorio si en vez del archivo abris
+la direccion web del CAMINO B: en Chrome/Edge aparece un icono de instalar
+a la derecha de la barra de direcciones.
+
+
+DONDE SE GUARDAN LOS DATOS
+--------------------------
+Todo queda guardado SOLO en el dispositivo donde se usa la app (navegador),
+no hay servidor ni sincronizacion. Consecuencias a tener en cuenta:
+  - Lo que carga un tecnico en su celular no se ve en el tuyo.
+  - Si se borran los datos del navegador, se borran los trabajos guardados.
+  - El PIN es un bloqueo de pantalla simple: todavia no cifra los datos.
+
+
+IMPORTANTE SOBRE LOS CALCULOS
+-----------------------------
+Las tablas de ampacidad, factores de correccion, secciones minimas y curvas
+sugeridas figuran en la app como "Pendiente de verificacion". Son valores de
+referencia y hay que confirmarlos contra el Reglamento de Baja Tension de UTE
+y las normas UNIT/IEC vigentes antes de usarlos en una instalacion real.

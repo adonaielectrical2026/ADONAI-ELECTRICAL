@@ -935,23 +935,15 @@
   }
 
   // Una bornera se monta parada sobre el riel: la imagen viene acostada, así
-  // que se la gira un cuarto de vuelta, hacia el lado en que los agujeros de
-  // los bornes quedan a la derecha, mirando al riel libre, que es por donde
-  // llegan los cables. Devuelve dónde quedó cada agujero, de arriba abajo.
-  const TAB_BORNES = {  // centro de cada borne, sobre el largo de la imagen
-    'terminal-earth': [128, 325, 522, 719, 916, 1113].map((x) => x / 1244),
-    'terminal-neutral': [118, 330, 543, 755, 968, 1180].map((x) => x / 1302),
-  };
-  function tabDibujarBarra(ctx, img, nombre, x, ancho, cy) {
-    if (!img) return [];
+  // que se la gira un cuarto de vuelta.
+  function tabDibujarBarra(ctx, img, x, ancho, cy) {
+    if (!img) return;
     const largo = ancho * img.width / img.height;
     ctx.save();
     ctx.translate(x + ancho / 2, cy);
-    ctx.rotate(Math.PI / 2);
+    ctx.rotate(-Math.PI / 2);
     ctx.drawImage(img, -largo / 2, -ancho / 2, largo, ancho);
     ctx.restore();
-    const xAgujero = x + ancho * 0.93;
-    return (TAB_BORNES[nombre] || []).map((f) => ({ x: xAgujero, y: cy - largo / 2 + f * largo }));
   }
 
   // Nombre corto para el rótulo: los circuitos suelen llamarse "Living — 2
@@ -1055,9 +1047,7 @@
       let x = r.x0;
       const top = r.cy - TAB_ANCLA * altoLlave + CAB;
       const fracArriba = esCerrado ? TAB_ANCLA - (r.alto / 2) / altoLlave : 0;
-      const libresFila = MODULOS_POR_FILA - fila.reduce((t, it) => t + it.modulos, 0);
-      let libresSinUsar = libresFila;
-      fila.forEach((it, idx) => {
+      fila.forEach((it) => {
         const w = it.modulos * mod;
         if (it.barra) {
           if (esCerrado) {
@@ -1066,13 +1056,9 @@
             // tablero terminado.
             ciegos(x, top, it.modulos);
           } else {
-            // Si hay lugar, entre la bornera de neutro y la de tierra queda un
-            // módulo libre: por ahí bajan los cables del neutro.
-            const antes = fila[idx - 1];
-            if (antes && antes.barra && libresSinUsar > 0) { x += mod; libresSinUsar--; }
             // la bornera va parada sobre el riel, como se monta de verdad
-            const bornes = tabDibujarBarra(ctx, tabImagenes[it.img], it.img, x, w, r.cy + CAB);
-            barrasPuestas.push({ it, x, w, cy: r.cy + CAB, fila: fi, bornes });
+            tabDibujarBarra(ctx, tabImagenes[it.img], x, w, r.cy + CAB);
+            barrasPuestas.push({ it, x, w, cy: r.cy + CAB });
           }
         } else {
           ctx.drawImage(tabImagenes[it.img], x, top, w, altoLlave);
@@ -1085,7 +1071,10 @@
       });
       // Los módulos que sobran se tapan con tapas ciegas. Sin tapa interna no
       // hay nada que tapar: ahí queda el riel a la vista, como en la obra.
-      if (esCerrado) ciegos(x, top, libresFila);
+      if (esCerrado) {
+        const libresFila = MODULOS_POR_FILA - fila.reduce((t, it) => t + it.modulos, 0);
+        ciegos(x, top, libresFila);
+      }
     });
 
     if (!esCerrado) tabConductores(ctx, ranuras, puestos, mod, altoLlave, CAB, layout, barrasPuestas);
@@ -1134,388 +1123,106 @@
 
   // Traza un camino ortogonal con las esquinas redondeadas, como se dibuja un
   // unifilar a mano.
-  /* ---------- conductores ---------- */
-
-  // Colores normalizados (IEC 60445, los que pide el reglamento de UTE):
-  // fases marrón, negro y gris; neutro celeste; tierra verde y amarilla.
-  const TAB_COLOR = { L1: '#7b4a26', L2: '#2b2b2e', L3: '#8e9297', N: '#2b8ad6', PE: '#2e9a47' };
-  const TAB_PE_RAYA = '#f1c318';
-
-  function tabTono(hex, k) {
-    const n = parseInt(hex.slice(1), 16);
-    const c = [(n >> 16) & 255, (n >> 8) & 255, n & 255]
-      .map((v) => Math.round(k >= 0 ? v + (255 - v) * k : v * (1 + k)));
-    return 'rgb(' + c.join(',') + ')';
-  }
-
-  // Recorre la polilínea redondeando cada quiebre, como dobla un cable.
-  function tabTrazar(ctx, pts, radio) {
-    ctx.beginPath();
-    ctx.moveTo(pts[0][0], pts[0][1]);
-    for (let i = 1; i < pts.length - 1; i++) {
-      const a = pts[i - 1], p = pts[i], n = pts[i + 1];
-      const r = Math.min(radio, Math.hypot(p[0] - a[0], p[1] - a[1]) / 2, Math.hypot(n[0] - p[0], n[1] - p[1]) / 2);
-      ctx.arcTo(p[0], p[1], n[0], n[1], r);
-    }
-    const u = pts[pts.length - 1];
-    ctx.lineTo(u[0], u[1]);
-  }
-
-  // Un conductor con volumen: sombra sobre el fondo, borde oscuro, cuerpo del
-  // color de la vaina y un brillo fino. Donde entra a un borne la vaina se
-  // corta y asoma el cobre pelado.
-  function tabCable(ctx, c, g) {
-    const pts = c.pts.filter((p, i, arr) => i === 0 || Math.hypot(p[0] - arr[i - 1][0], p[1] - arr[i - 1][1]) > 0.5);
-    if (pts.length < 2) return;
-    const color = TAB_COLOR[c.fase];
-    const radio = g * 2.4;
-    const recortar = (desde, hacia) => {
-      const d = Math.hypot(hacia[0] - desde[0], hacia[1] - desde[1]) || 1;
-      const k = Math.min(g * 1.3, d * 0.6) / d;
-      return [hacia[0] - (hacia[0] - desde[0]) * k, hacia[1] - (hacia[1] - desde[1]) * k];
-    };
-    const vaina = pts.slice();
-    const cobre = [];
-    const n = pts.length;
-    if (c.borneInicio) { vaina[0] = recortar(pts[1], pts[0]); cobre.push([pts[0], vaina[0]]); }
-    if (c.borneFin) { vaina[n - 1] = recortar(pts[n - 2], pts[n - 1]); cobre.push([pts[n - 1], vaina[n - 1]]); }
-
-    ctx.save();
+  function tabCamino(ctx, puntos, color, grosor) {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = grosor;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    ctx.strokeStyle = '#c47a3c';
-    ctx.lineWidth = g * 0.45;
-    cobre.forEach(([a, b]) => { ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); });
-
-    ctx.shadowColor = 'rgba(0,0,0,0.35)';
-    ctx.shadowBlur = g * 1.5;
-    ctx.shadowOffsetX = g * 0.4;
-    ctx.shadowOffsetY = g * 0.7;
-    ctx.strokeStyle = tabTono(color, -0.5);
-    ctx.lineWidth = g;
-    tabTrazar(ctx, vaina, radio); ctx.stroke();
-    ctx.shadowColor = 'transparent';
-
-    ctx.strokeStyle = color;
-    ctx.lineWidth = g * 0.72;
-    tabTrazar(ctx, vaina, radio); ctx.stroke();
-    if (c.fase === 'PE') {
-      ctx.strokeStyle = TAB_PE_RAYA;
-      ctx.lineCap = 'butt';
-      ctx.setLineDash([g * 1.8, g * 1.8]);
-      tabTrazar(ctx, vaina, radio); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(puntos[0][0], puntos[0][1]);
+    for (let i = 1; i < puntos.length - 1; i++) {
+      const [px, py] = puntos[i];
+      const [nx, ny] = puntos[i + 1];
+      const rr = Math.min(14, Math.abs(nx - px) / 2 || 14, Math.abs(ny - py) / 2 || 14);
+      ctx.arcTo(px, py, px + Math.sign(nx - px) * rr, py + Math.sign(ny - py) * rr, rr);
     }
-    // la luz viene de arriba a la izquierda
-    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-    ctx.lineWidth = g * 0.2;
-    ctx.translate(-g * 0.17, -g * 0.17);
-    tabTrazar(ctx, vaina, radio); ctx.stroke();
-    ctx.restore();
+    ctx.lineTo(puntos[puntos.length - 1][0], puntos[puntos.length - 1][1]);
+    ctx.stroke();
   }
 
-  // Troquel sacado, con la boca del caño asomando.
-  function tabTroquelAbierto(ctx, t) {
-    ctx.save();
-    ctx.fillStyle = '#1f2124';
-    ctx.beginPath(); ctx.ellipse(t.x, t.y, t.w / 2, t.h / 2, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#5d6167';
-    ctx.lineWidth = Math.max(2, t.h * 0.22);
-    ctx.beginPath(); ctx.ellipse(t.x, t.y, t.w * 0.38, t.h * 0.34, 0, 0, Math.PI * 2); ctx.stroke();
-    ctx.restore();
+  function tabPunto(ctx, x, y, color) {
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(x, y, 2, 0, Math.PI * 2); ctx.fill();
   }
 
-  // Anillo del conector del caño. Va encima de los cables: así parece que
-  // pasan por adentro.
-  function tabConector(ctx, t) {
-    ctx.save();
-    ctx.lineWidth = Math.max(2.5, t.h * 0.2);
-    ctx.strokeStyle = '#d9dcdf';
-    ctx.beginPath(); ctx.ellipse(t.x, t.y, t.w * 0.47, t.h * 0.44, 0, 0, Math.PI * 2); ctx.stroke();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = 'rgba(0,0,0,0.35)';
-    ctx.beginPath(); ctx.ellipse(t.x, t.y, t.w * 0.53, t.h * 0.53, 0, 0, Math.PI * 2); ctx.stroke();
-    ctx.restore();
-  }
+  const TAB_FASE = '#e8a33d';
+  const TAB_NEUTRO = '#4fc3e8';
+  const TAB_TIERRA = '#57b65a';
 
-  // Precinto que junta un mazo de cables.
-  function tabPrecinto(ctx, x0, y0, x1, y1, g) {
-    ctx.save();
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#1c1d20';
-    ctx.lineWidth = g * 0.8;
-    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
-    ctx.lineWidth = g * 0.2;
-    ctx.beginPath(); ctx.moveTo(x0, y0 - g * 0.15); ctx.lineTo(x1, y1 - g * 0.15); ctx.stroke();
-    ctx.restore();
-  }
-
-  /*
-   * Tendido del interior, como lo arma un electricista:
-   *
-   *   - La acometida entra por un troquel de arriba y llega a la térmica general.
-   *   - De la general al diferencial, un puente que da la vuelta por el canal
-   *     izquierdo.
-   *   - Del diferencial sale una troncal por el canal izquierdo a cada fila, y
-   *     ahí se reparte de llave en llave con puentes cortos.
-   *   - El neutro de las llaves unipolares sale de la bornera de neutro, que se
-   *     alimenta del diferencial. La tierra entra por abajo a su bornera.
-   *   - Cada circuito sale con sus fases, su neutro y su tierra por un troquel
-   *     de abajo. Los de la última fila bajan derecho; los de las filas de
-   *     arriba bajan por el canal derecho.
-   */
   function tabConductores(ctx, ranuras, puestos, mod, altoLlave, CAB, layout, barras) {
     if (!puestos.length) return;
-    const troq = (tabMedidas[layout.gabinete] || {}).troqueles || {};
-    const bocasDe = (lado) => (troq[lado] || []).map((t) => ({ x: t.x, y: t.y + CAB, w: t.w, h: t.h, cables: [] }));
-    const arriba = bocasDe('arriba');
-    const abajo = bocasDe('abajo');
-    if (!arriba.length || !abajo.length) return;
+    const grosor = Math.max(3, mod * 0.09);
+    const general = puestos[0];
+    const dif = puestos[1];
 
-    const g = Math.max(3, mod * 0.12);
-    const sp = g * 1.2;
-    const filas = ranuras.length;
-    const ultima = filas - 1;
-    const techo = (fi) => ranuras[fi].cy + CAB - TAB_ANCLA * altoLlave;
-    const piso = (fi) => techo(fi) + altoLlave;
-    const huecoArriba = (fi) => techo(fi) - (fi ? piso(fi - 1) : arriba[0].y + arriba[0].h / 2);
-    const huecoAbajo = (fi) => (fi < ultima ? techo(fi + 1) : abajo[0].y - abajo[0].h / 2) - piso(fi);
-    const canalIzq = ranuras[0].x0 - mod * 0.45;
-    const canalDer = ranuras[0].x1 + mod * 0.45;
-
-    // Carriles: cada tendido horizontal va a su propia altura dentro del hueco
-    // entre filas, y cada bajada por un canal lateral a su propia distancia.
-    // Si son más de los que entran, se enciman como un mazo de verdad.
-    const usoArriba = new Array(filas).fill(0);
-    const usoAbajo = new Array(filas).fill(0);
-    const usoCanal = { izq: 0, der: 0 };
-    const carrilArriba = (fi) => {
-      const max = Math.max(1, Math.floor(huecoArriba(fi) * 0.5 / sp));
-      return techo(fi) - huecoArriba(fi) * 0.22 - (usoArriba[fi]++ % max) * sp;
+    // Las borneras ya se dibujaron con el resto de las piezas; acá sólo se
+    // necesita saber dónde quedaron para llevarles los cables.
+    const anchoB = MODULOS_BORNERA * mod;
+    const ubicar = (tipo) => {
+      const b = barras.find((x) => x.it.barra === tipo);
+      return b ? { x: b.x + b.w / 2, y: b.cy } : null;
     };
-    const carrilAbajo = (fi) => {
-      const max = Math.max(1, Math.floor(huecoAbajo(fi) * 0.5 / sp));
-      return piso(fi) + huecoAbajo(fi) * 0.22 + (usoAbajo[fi]++ % max) * sp;
-    };
-    const carrilCanal = (lado) => {
-      const i = usoCanal[lado]++ % Math.max(1, Math.floor(mod * 1.1 / sp));
-      return lado === 'izq' ? canalIzq - i * sp : canalDer + i * sp;
-    };
+    const pNeutro = ubicar('neutro');
+    const pTierra = ubicar('tierra');
 
-    const cables = [];
-    const bajadas = [];
-    const tender = (fase, pts, borneInicio, borneFin) => cables.push({ fase, pts, borneInicio, borneFin });
-    const porCanal = (x, ya, yb) => bajadas.push({ x, y0: Math.min(ya, yb), y1: Math.max(ya, yb) });
+    const arriba = (p) => p.cy - altoLlave * 0.42;
+    const abajo = (p) => p.cy + altoLlave * 0.42;
 
-    const polo = (p, k) => p.x + (k + 0.5) * p.w / p.it.modulos;
-    const bArriba = (p) => p.cy - TAB_ANCLA * altoLlave + altoLlave * 0.03;
-    const bAbajo = (p) => p.cy - TAB_ANCLA * altoLlave + altoLlave * 0.97;
-    const masCerca = (lista, x) => lista.reduce((m, t) => (Math.abs(t.x - x) < Math.abs(m.x - x) ? t : m));
+    // 1) del general al diferencial
+    if (dif) {
+      tabCamino(ctx, [[general.x + general.w * 0.28, arriba(general)],
+                      [general.x + general.w * 0.28, arriba(general) - mod * 0.55],
+                      [dif.x + dif.w * 0.28, arriba(dif) - mod * 0.55],
+                      [dif.x + dif.w * 0.28, arriba(dif)]], TAB_FASE, grosor);
+      tabPunto(ctx, general.x + general.w * 0.28, arriba(general), TAB_FASE);
+      tabPunto(ctx, dif.x + dif.w * 0.28, arriba(dif), TAB_FASE);
+    }
 
-    const general = puestos.find((p) => p.it.rotulo === 'GENERAL');
-    const dif = puestos.find((p) => p.it.rotulo === 'DIFERENCIAL');
-    const circuitos = puestos.filter((p) => !p.it.rotulo);
-    const tri = general ? general.it.modulos >= 4 : circuitos.some((p) => p.it.modulos >= 3);
-    const RED = tri ? ['L1', 'L2', 'L3', 'N'] : ['L1', 'N'];
-    const fuente = dif || general;
-    const cabecera = general || dif;
-    const bocaAcometida = masCerca(arriba, cabecera ? polo(cabecera, 0) : canalIzq);
-
-    // Lo que entra por los polos de una llave de circuito. En trifásica las
-    // llaves monofásicas se reparten entre las tres fases.
-    const conductoresDe = (p, i) => {
-      const fase = tri ? ['L1', 'L2', 'L3'][i % 3] : 'L1';
-      switch (p.it.modulos) {
-        case 1: return [fase];
-        case 2: return [fase, 'N'];
-        case 3: return ['L1', 'L2', 'L3'];
-        default: return ['L1', 'L2', 'L3', 'N'];
+    // 2) del diferencial al peine que alimenta cada circuito, fila por fila
+    const circuitos = puestos.slice(dif ? 2 : 1);
+    ranuras.forEach((r, fi) => {
+      const enFila = circuitos.filter((p) => p.fila === fi);
+      if (!enFila.length) return;
+      const yPeine = r.cy + CAB - altoLlave * 0.42 - mod * 0.35;
+      const x0 = enFila[0].x + enFila[0].w * 0.28;
+      const x1 = enFila[enFila.length - 1].x + enFila[enFila.length - 1].w * 0.28;
+      tabCamino(ctx, [[x0, yPeine], [x1, yPeine]], TAB_FASE, grosor);
+      enFila.forEach((p) => {
+        const xc = p.x + p.w * 0.28;
+        tabCamino(ctx, [[xc, yPeine], [xc, arriba(p)]], TAB_FASE, grosor);
+        tabPunto(ctx, xc, arriba(p), TAB_FASE);
+        // salida del circuito hacia abajo
+        tabCamino(ctx, [[xc, abajo(p)], [xc, abajo(p) + mod * 0.5]], TAB_FASE, grosor);
+        const xn = p.x + p.w * 0.72;
+        tabCamino(ctx, [[xn, abajo(p)], [xn, abajo(p) + mod * 0.5]], TAB_NEUTRO, grosor);
+        tabPunto(ctx, xc, abajo(p), TAB_FASE);
+        tabPunto(ctx, xn, abajo(p), TAB_NEUTRO);
+      });
+      // el diferencial alimenta el peine de la primera fila
+      if (fi === 0 && dif) {
+        tabCamino(ctx, [[dif.x + dif.w * 0.28, abajo(dif)],
+                        [dif.x + dif.w * 0.28, abajo(dif) + mod * 0.45],
+                        [x0 - mod * 0.35, abajo(dif) + mod * 0.45],
+                        [x0 - mod * 0.35, yPeine], [x0, yPeine]], TAB_FASE, grosor);
+        tabPunto(ctx, dif.x + dif.w * 0.28, abajo(dif), TAB_FASE);
       }
-    };
-    const neutroDeBornera = (p) => p.it.modulos === 1 || p.it.modulos === 3;
-    const bNeutro = barras.find((b) => b.it.barra === 'neutro' && b.bornes.length);
-    const bTierra = barras.find((b) => b.it.barra === 'tierra' && b.bornes.length);
+    });
 
-    // 1) puente de la general al diferencial
-    if (general && dif) {
-      const yB = RED.map(() => carrilAbajo(general.fila));
-      const xc = RED.map(() => carrilCanal('izq'));
-      const yA = RED.map(() => carrilArriba(dif.fila));
-      RED.forEach((f, k) => {
-        tender(f, [[polo(general, k), bAbajo(general)], [polo(general, k), yB[k]], [xc[k], yB[k]],
-                   [xc[k], yA[k]], [polo(dif, k), yA[k]], [polo(dif, k), bArriba(dif)]], true, true);
-        porCanal(xc[k], yB[k], yA[k]);
-      });
+    // 3) neutro: del diferencial a la bornera
+    if (dif && pNeutro) {
+      const xn = dif.x + dif.w * 0.72;
+      tabCamino(ctx, [[xn, abajo(dif)], [xn, abajo(dif) + mod * 0.85],
+                      [pNeutro.x, abajo(dif) + mod * 0.85], [pNeutro.x, pNeutro.y - anchoB * 0.9]],
+                TAB_NEUTRO, grosor);
+      tabPunto(ctx, xn, abajo(dif), TAB_NEUTRO);
     }
-
-    // 2) troncal a cada fila y puentes de llave en llave
-    const tomas = {};
-    circuitos.forEach((p, i) => {
-      conductoresDe(p, i).forEach((f, k) => {
-        const clave = p.fila + '|' + f;
-        (tomas[clave] = tomas[clave] || []).push([polo(p, k), bArriba(p)]);
-      });
-    });
-    const filasConCircuitos = [...new Set(circuitos.map((p) => p.fila))].sort((a, b) => a - b);
-    RED.forEach((f, k) => {
-      filasConCircuitos.forEach((fi) => {
-        const lista = (tomas[fi + '|' + f] || []).sort((a, b) => a[0] - b[0]);
-        if (!lista.length) return;
-        const yA = carrilArriba(fi);
-        const xc = carrilCanal('izq');
-        let inicio;
-        if (fuente) {
-          const yB = carrilAbajo(fuente.fila);
-          inicio = [[polo(fuente, k), bAbajo(fuente)], [polo(fuente, k), yB], [xc, yB]];
-          porCanal(xc, yB, yA);
-        } else {
-          // sin protección general, la acometida va directo a las llaves
-          const yT = carrilArriba(0);
-          const xb = bocaAcometida.x + (k - (RED.length - 1) / 2) * sp;
-          inicio = [[xb, bocaAcometida.y], [xb, yT], [xc, yT]];
-          bocaAcometida.cables.push(f);
-          porCanal(xc, yT, yA);
-        }
-        tender(f, inicio.concat([[xc, yA], [lista[0][0], yA], lista[0]]), !!fuente, true);
-        for (let j = 1; j < lista.length; j++) {
-          const a = lista[j - 1], b = lista[j];
-          const yP = techo(fi) - Math.min(mod * (0.2 + 0.12 * k), huecoArriba(fi) * (0.1 + 0.05 * k));
-          tender(f, [a, [a[0], yP], [b[0], yP], b], true, true);
-        }
-      });
-    });
-
-    // Bornes de las borneras. La de tierra se alimenta por el de más abajo y la
-    // de neutro por el de más arriba; los circuitos toman los otros de abajo
-    // hacia arriba. Cuanto más arriba el borne, más lejos de la bornera baja su
-    // cable: así ningún cable pisa el tramo corto de otro.
-    const bornesTomados = { tierra: 0, neutro: 0 };
-    const tomarBorne = (b) => {
-      const n = b.bornes.length;
-      const i = bornesTomados[b.it.barra]++ % (n - 1);
-      const h = b.it.barra === 'tierra' ? n - 2 - i : n - 1 - i;
-      return { h: b.bornes[h], dx: sp * (0.8 + (n - 1 - h) * 0.85), fila: b.fila };
-    };
-    const desdeBorne = (fase, t) => ({ fase, x: t.h.x + t.dx, y: t.h.y, fila: t.fila, borne: t.h });
-
-    // 3) alimentación de la bornera de neutro
-    if (bNeutro && fuente) {
-      const kN = RED.indexOf('N');
-      const h = bNeutro.bornes[0];
-      const dx = sp * (0.8 + bNeutro.bornes.length * 0.85);
-      const yB = carrilAbajo(fuente.fila);
-      const xc = carrilCanal('izq');
-      const yA = carrilArriba(bNeutro.fila);
-      tender('N', [[polo(fuente, kN), bAbajo(fuente)], [polo(fuente, kN), yB], [xc, yB], [xc, yA],
-                   [h.x + dx, yA], [h.x + dx, h.y], [h.x, h.y]], true, true);
-      porCanal(xc, yB, yA);
+    // 4) tierra: de la bornera hacia el borde, como llegada de la jabalina
+    if (pTierra) {
+      tabCamino(ctx, [[pTierra.x, pTierra.y + anchoB * 0.9],
+                      [pTierra.x, pTierra.y + anchoB * 1.4]], TAB_TIERRA, grosor);
     }
-
-    // 4) salidas de los circuitos y entrada de la tierra
-    //
-    // Cada circuito sale en un mazo. Los de la última fila bajan derecho al
-    // piso; los de las filas de arriba bajan por el canal del lado que les
-    // queda más cerca. Los troqueles se reparten en el mismo orden en que los
-    // mazos llegan al piso, de izquierda a derecha, para que no se crucen.
-    const medio = (ranuras[0].x0 + ranuras[0].x1) / 2;
-    const grupos = circuitos.map((p, i) => {
-      const hilos = conductoresDe(p, i).map((f, k) => ({ fase: f, x: polo(p, k), y: bAbajo(p), fila: p.fila }));
-      if (bNeutro && neutroDeBornera(p)) hilos.push(desdeBorne('N', tomarBorne(bNeutro)));
-      if (bTierra) hilos.push(desdeBorne('PE', tomarBorne(bTierra)));
-      const centro = p.x + p.w / 2;
-      const lado = p.fila === ultima ? 'piso' : (centro < medio ? 'izq' : 'der');
-      return { hilos, fila: p.fila, x: centro, lado };
-    });
-    if (bTierra) {
-      const h = bTierra.bornes[bTierra.bornes.length - 1];
-      const hilo = { fase: 'PE', x: h.x + sp * 0.8, y: h.y, fila: bTierra.fila, borne: h, entra: true };
-      grupos.push({ hilos: [hilo], fila: bTierra.fila, x: hilo.x, lado: bTierra.fila === ultima ? 'piso' : 'der' });
-    }
-    // Orden de llegada al piso. Por el canal izquierdo, la fila más alta va por
-    // afuera y llega primera; por el derecho, al revés.
-    grupos.forEach((gr) => {
-      gr.orden = gr.lado === 'izq' ? -1e6 + gr.fila * 1e4 + gr.x
-        : gr.lado === 'der' ? 1e6 - gr.fila * 1e4 + gr.x : gr.x;
-      gr.canal = gr.lado === 'izq' ? 'izq' : 'der';
-    });
-    grupos.sort((a, b) => a.orden - b.orden);
-    const totalHilos = grupos.reduce((t, gr) => t + gr.hilos.length, 0) || 1;
-    let acumulado = 0;
-    grupos.forEach((gr) => {
-      const k = Math.min(abajo.length - 1, Math.floor((acumulado + gr.hilos.length / 2) / totalHilos * abajo.length));
-      gr.boca = abajo[k];
-      gr.nBoca = k;
-      acumulado += gr.hilos.length;
-      gr.hilos.forEach((h) => gr.boca.cables.push(h));
-    });
-    abajo.forEach((t) => {
-      const paso = Math.min(sp, t.w * 0.75 / Math.max(1, t.cables.length));
-      t.cables.forEach((c, j) => { c.bx = t.x + (j - (t.cables.length - 1) / 2) * paso; });
-    });
-
-    // Carriles de los canales: la fila más baja por adentro, así el mazo de una
-    // fila de más arriba no le pasa por encima.
-    grupos.filter((gr) => gr.lado !== 'piso').sort((a, b) => b.fila - a.fila)
-      .forEach((gr) => gr.hilos.forEach((h) => {
-        if (h.fila !== ultima) h.xc = carrilCanal(gr.canal);
-      }));
-    // Carriles del piso: primero los mazos que van a los troqueles del medio;
-    // los de las puntas doblan más abajo y no cortan a nadie.
-    const centroBocas = (abajo.length - 1) / 2;
-    grupos.slice().sort((a, b) => Math.abs(a.nBoca - centroBocas) - Math.abs(b.nBoca - centroBocas))
-      .forEach((gr) => gr.hilos.forEach((h) => { h.yPiso = carrilAbajo(ultima); }));
-
-    grupos.forEach((gr) => gr.hilos.forEach((c) => {
-      const t = gr.boca;
-      const pts = c.borne ? [[c.borne.x, c.borne.y], [c.x, c.y]] : [[c.x, c.y]];
-      if (c.fila === ultima) {
-        pts.push([c.x, c.yPiso], [c.bx, c.yPiso], [c.bx, t.y]);
-      } else {
-        const y = carrilAbajo(c.fila);
-        pts.push([c.x, y], [c.xc, y], [c.xc, c.yPiso], [c.bx, c.yPiso], [c.bx, t.y]);
-        porCanal(c.xc, y, c.yPiso);
-      }
-      if (c.entra) tender(c.fase, pts.reverse(), false, true);
-      else tender(c.fase, pts, true, false);
-    }));
-
-    // 5) acometida: va última para quedar en los carriles más altos
-    if (cabecera) {
-      const derecha = polo(cabecera, 0) >= bocaAcometida.x;
-      const ys = {};
-      const orden = RED.map((f, k) => k);
-      if (!derecha) orden.reverse();
-      orden.forEach((k) => { ys[k] = carrilArriba(cabecera.fila); });
-      const paso = Math.min(sp, bocaAcometida.w * 0.75 / RED.length);
-      RED.forEach((f, k) => {
-        const xb = bocaAcometida.x + (k - (RED.length - 1) / 2) * paso;
-        tender(f, [[xb, bocaAcometida.y], [xb, ys[k]], [polo(cabecera, k), ys[k]], [polo(cabecera, k), bArriba(cabecera)]], false, true);
-        bocaAcometida.cables.push(f);
-      });
-    }
-
-    // dibujo: troqueles, cables, conectores y precintos
-    const usadas = arriba.concat(abajo).filter((t) => t.cables.length);
-    usadas.forEach((t) => tabTroquelAbierto(ctx, t));
-    cables.forEach((c) => tabCable(ctx, c, g));
-    usadas.forEach((t) => tabConector(ctx, t));
-
-    abajo.forEach((t) => {
-      if (t.cables.length < 2) return;
-      const xs = t.cables.map((c) => c.bx);
-      const y = t.y - t.h * 0.5 - g * 2.6;
-      tabPrecinto(ctx, Math.min(...xs) - g * 0.7, y, Math.max(...xs) + g * 0.7, y, g);
-    });
-    ranuras.forEach((r) => {
-      const y = r.cy + CAB;
-      [canalIzq, canalDer].forEach((borde) => {
-        const xs = bajadas.filter((b) => b.y0 < y - g && b.y1 > y + g && Math.abs(b.x - borde) < mod * 1.3).map((b) => b.x);
-        if (xs.length < 2) return;
-        tabPrecinto(ctx, Math.min(...xs) - g * 0.7, y, Math.max(...xs) + g * 0.7, y, g);
-      });
-    });
   }
 
   /* ============================================================
