@@ -525,13 +525,17 @@
     // Cable multipolar, por metro. Relevado en Fivisa, que lo vende en rollos de
     // 100 m y cotiza en dólares: precio del rollo pasado a metro a $40,23.
     // El bajo goma va al aire libre y el bajo plástico en bandeja.
+    // Los de 4 conductores —los que pide un circuito trifásico— no están
+    // relevados: salen del de 3 conductores más un 30 %. Confirmalos.
     cableBajoGoma: {
       '2x1': 39, '2x1.5': 55, '2x2': 73, '2x2.5': 89, '2x4': 134, '2x6': 197,
       '3x1': 54, '3x1.5': 77, '3x2': 102, '3x2.5': 125, '3x4': 192,
+      '4x1': 70, '4x1.5': 100, '4x2': 133, '4x2.5': 163, '4x4': 250,
     },
     cableBajoPlastico: {
       '2x1': 38, '2x1.5': 51, '2x2': 67, '2x2.5': 81, '2x4': 122, '2x6': 178,
       '3x1': 61, '3x1.5': 82, '3x2': 106, '3x2.5': 129, '3x4': 195,
+      '4x1': 79, '4x1.5': 107, '4x2': 138, '4x2.5': 168, '4x4': 254,
     },
     cableUnipolar: {
       1: 14, 1.5: 20, 2: 27, 2.5: 34, 4: 54, 6: 80, 10: 136, 16: 217, 25: 333,
@@ -610,7 +614,9 @@
   //   Fivisa (fivisa.com.uy) y Electro Uruguay (electrouruguay.com) cotizan en
   //   pesos; MGI (mgi.com.uy) en dólares. Las bandejas no están en catálogo web
   //   de ninguno: Electro Uruguay las publica en MercadoLibre.
-  const DEFAULT_MANO_OBRA = { tarifaHora: 500, horasJornada: 8 };
+  // Rendimiento para estimar el plazo de una obra (ver estimarPlazo). Se
+  // ajustan en Perfil, junto con la tarifa.
+  const DEFAULT_MANO_OBRA = { tarifaHora: 500, horasJornada: 8, bocasPorJornada: 6, jornadasCargaFija: 0.5, jornadasTablero: 1 };
   const BASE_POR_TIPO = { unipolar: 'termicaUnipolarBase', bipolar: 'termicaBipolarBase',
                           tripolar: 'termicaTetrapolarBase', tetrapolar: 'termicaTetrapolarBase' };
   function precioTermica(tipo, amp, precios) {
@@ -771,6 +777,26 @@
       add('Codo PVC 1" (puesta a tierra)', 'un.', 6, precios.codoPvc1pulg);
     }
     return Object.values(mapa);
+  }
+  // Plazo de ejecución a partir de lo relevado, en jornadas enteras:
+  //   - bocas de luz y tomas: una jornada cada tantas bocas (canalizar,
+  //     cablear y colocar mecanismos);
+  //   - cada carga fija (aire, horno, bomba...): su circuito propio;
+  //   - el tablero, en una instalación nueva: armado, acometida y tierra.
+  // Como la mano de obra sale del plazo, esto es lo que la hace depender del
+  // tamaño de la obra en vez de ser siempre la misma.
+  function estimarPlazo(trabajo) {
+    const mo = DB.settings.manoObra;
+    let bocas = 0, fijas = 0;
+    ((trabajo && trabajo.cargas) || []).forEach((c) => {
+      const n = Number(c.cantidad) || 0;
+      if (c.categoria === 'cargaFija') fijas += n; else bocas += n;
+    });
+    const tablero = !!(trabajo && trabajo.obra && trabajo.obra.naturaleza === 'Instalación nueva');
+    const jornadas = bocas / (Number(mo.bocasPorJornada) || 6)
+      + fijas * (Number(mo.jornadasCargaFija) || 0)
+      + (tablero ? Number(mo.jornadasTablero) || 0 : 0);
+    return { dias: Math.max(1, Math.ceil(jornadas - 1e-9)), bocas, fijas, tablero };
   }
   function calcularManoObra(plazoDias) {
     const mo = DB.settings.manoObra;
@@ -1676,14 +1702,14 @@
   });
   // Los precios que van por medida —caño por diámetro, bandeja por ancho— son
   // objetos, y la lista de arriba sólo alcanza a los sueltos. Acá se completan
-  // los que siguen en $0, que es como salieron cuando no estaban relevados. Un
-  // valor ya cargado no se toca.
+  // los que siguen en $0, que es como salieron cuando no estaban relevados, y
+  // las medidas que se agregaron después. Un valor ya cargado no se toca.
   Object.keys(DEFAULT_PRECIOS).forEach((k) => {
     const def = DEFAULT_PRECIOS[k], guardado = DB.settings.precios[k];
     if (!def || typeof def !== 'object' || Array.isArray(def)) return;
     if (!guardado || typeof guardado !== 'object') return;
     Object.keys(def).forEach((medida) => {
-      if (guardado[medida] === 0 && def[medida] !== 0) {
+      if ((guardado[medida] === 0 || guardado[medida] === undefined) && def[medida] !== 0) {
         guardado[medida] = def[medida];
         clavesAgregadas = true;
       }
@@ -1708,11 +1734,56 @@
     });
   });
   if (!DB.settings.manoObra) DB.settings.manoObra = { ...DEFAULT_MANO_OBRA };
+  Object.keys(DEFAULT_MANO_OBRA).forEach((k) => {
+    if (DB.settings.manoObra[k] === undefined) { DB.settings.manoObra[k] = DEFAULT_MANO_OBRA[k]; clavesAgregadas = true; }
+  });
   if (!DB.seq) DB.seq = { trabajo: 0, presupuesto: 0 };
+
+  // Las primeras versiones de la app armaban la lista de materiales sin
+  // precio, y el catálogo llegó después: esos relevamientos quedaron guardados
+  // con todo en $0 aunque el catálogo ya tenga precio. Se cotizan de nuevo los
+  // materiales automáticos que no tienen precio, buscándolos por nombre en la
+  // lista que armaría hoy el cálculo. Las cantidades y lo cargado a mano no se
+  // tocan.
+  function cotizarMaterialesSinPrecio(trabajo) {
+    if (!trabajo || !Array.isArray(trabajo.materiales) || !trabajo.materiales.length) return false;
+    const sinPrecio = trabajo.materiales.filter((m) => m.auto !== false && !(Number(m.precioUnit) > 0));
+    if (!sinPrecio.length) return false;
+    let referencia;
+    try { referencia = generarMateriales(trabajo.circuitos || [], trabajo); } catch (e) { return false; }
+    const precioPorNombre = {};
+    referencia.forEach((m) => { if (m.precioUnit > 0) precioPorNombre[m.nombre] = m.precioUnit; });
+    let cambio = false;
+    sinPrecio.forEach((m) => {
+      if (precioPorNombre[m.nombre]) { m.precioUnit = precioPorNombre[m.nombre]; cambio = true; }
+    });
+    return cambio;
+  }
+
+  // El total de materiales de un presupuesto sale de su relevamiento. Mientras
+  // no esté aprobado, se mantiene al día: si se corrige el relevamiento, el
+  // presupuesto lo acompaña. Uno aprobado ya se le pasó al cliente y no cambia.
+  function costoMaterialesTrabajo(trabajo) {
+    return (trabajo.materiales || []).reduce((t, m) => t + (Number(m.cantidad) || 0) * (Number(m.precioUnit) || 0), 0);
+  }
+  function sincronizarPresupuestos(trabajoId) {
+    let cambio = false;
+    DB.presupuestos.forEach((pr) => {
+      if (!pr.trabajoId || pr.estado === 'aprobado') return;
+      if (trabajoId && pr.trabajoId !== trabajoId) return;
+      const tr = DB.trabajos.find((x) => x.id === pr.trabajoId);
+      if (!tr || !(tr.materiales || []).length) return;
+      const costo = costoMaterialesTrabajo(tr);
+      if (costo !== pr.materiales) { pr.materiales = costo; cambio = true; }
+    });
+    return cambio;
+  }
 
   function saveDB() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); } catch (e) {} }
   // La conversión de medidas se guarda enseguida; si no, se repetiría en cada
   // arranque y el catálogo en pantalla no coincidiría con el del disco.
+  DB.trabajos.forEach((tr) => { if (cotizarMaterialesSinPrecio(tr)) clavesAgregadas = true; });
+  if (sincronizarPresupuestos()) clavesAgregadas = true;
   if (medidasConvertidas || clavesAgregadas) saveDB();
 
   function seedSampleData() {
@@ -1736,10 +1807,12 @@
     };
     DB.trabajos.push(trabajo);
     const costoMateriales = materiales.reduce((s, m) => s + m.cantidad * m.precioUnit, 0);
+    const plazoEjemplo = estimarPlazo(trabajo).dias;
     const presupuesto = {
       id: 'P' + (++DB.seq.presupuesto), codigo: 'AE-' + new Date().getFullYear() + '-0001', trabajoId: trabajo.id,
-      clienteNombre: 'Empresa Delta (ejemplo)', materiales: 82450, manoObra: 28000, traslados: 4500, otros: 3000,
-      margen: 30, iva: 22, validez: 15, formaPago: '50% anticipo / 50% final', plazo: 5, estado: 'borrador',
+      clienteNombre: 'Empresa Delta (ejemplo)', materiales: costoMateriales, manoObra: calcularManoObra(plazoEjemplo),
+      traslados: 4500, otros: 3000,
+      margen: 30, iva: 22, validez: 15, formaPago: '50% anticipo / 50% final', plazo: plazoEjemplo, estado: 'borrador',
       createdAt: now - 5 * 3600e3, updatedAt: now - 5 * 3600e3,
     };
     DB.presupuestos.push(presupuesto);
@@ -1906,6 +1979,7 @@
   function openTrabajo(id) {
     const t = DB.trabajos.find((x) => x.id === id);
     if (!t) return;
+    if (cotizarMaterialesSinPrecio(t)) { sincronizarPresupuestos(t.id); saveDB(); }
     draft = JSON.parse(JSON.stringify(t));
     if (!draft.proteccionGeneral) draft.proteccionGeneral = { diferencialSensibilidad: 30 };
     wizardStep = WIZARD_STEPS.length - 1;
@@ -2298,6 +2372,7 @@
       const idx = DB.trabajos.findIndex((t) => t.id === draft.id);
       if (idx >= 0) DB.trabajos[idx] = draft; else DB.trabajos.push(draft);
     }
+    sincronizarPresupuestos(draft.id);
     saveDB();
   }
 
@@ -2395,6 +2470,9 @@
     $('#perfil-iva').value = DB.settings.iva;
     $('#perfil-tarifahora').value = DB.settings.manoObra.tarifaHora;
     $('#perfil-horasjornada').value = DB.settings.manoObra.horasJornada;
+    $('#perfil-bocasjornada').value = DB.settings.manoObra.bocasPorJornada;
+    $('#perfil-jornadascargafija').value = DB.settings.manoObra.jornadasCargaFija;
+    $('#perfil-jornadastablero').value = DB.settings.manoObra.jornadasTablero;
     renderPerfilNormativa();
     renderPerfilSeguridad();
   }
@@ -2562,12 +2640,13 @@
 
   function crearPresupuestoDesdeTrabajo(trabajoId) {
     const t = DB.trabajos.find((x) => x.id === trabajoId);
-    const materialesCosto = t ? t.materiales.reduce((s, m) => s + (Number(m.cantidad) || 0) * (Number(m.precioUnit) || 0), 0) : 0;
+    const materialesCosto = t ? costoMaterialesTrabajo(t) : 0;
+    const plazo = t ? estimarPlazo(t).dias : 5;
     const p = {
       id: uid('P'), codigo: 'AE-' + new Date().getFullYear() + '-' + String(DB.presupuestos.length + 1).padStart(4, '0'),
       trabajoId: trabajoId || null, clienteNombre: t ? t.cliente.nombre : '',
-      materiales: materialesCosto, manoObra: calcularManoObra(5), traslados: 0, otros: 0,
-      margen: DB.settings.margen, iva: DB.settings.iva, validez: 15, formaPago: '50% anticipo / 50% final', plazo: 5,
+      materiales: materialesCosto, manoObra: calcularManoObra(plazo), traslados: 0, otros: 0,
+      margen: DB.settings.margen, iva: DB.settings.iva, validez: 15, formaPago: '50% anticipo / 50% final', plazo,
       estado: 'borrador', createdAt: Date.now(), updatedAt: Date.now(),
     };
     DB.presupuestos.push(p);
@@ -2597,6 +2676,22 @@
     $('#pi-validez').value = p.validez;
     $('#pi-formapago').value = p.formaPago;
     $('#pi-plazo').value = p.plazo;
+    const tr = p.trabajoId ? DB.trabajos.find((x) => x.id === p.trabajoId) : null;
+    const nota = $('#pi-plazo-nota');
+    if (nota) {
+      if (tr) {
+        const e = estimarPlazo(tr);
+        const partes = [];
+        if (e.bocas) partes.push(e.bocas + (e.bocas === 1 ? ' boca' : ' bocas'));
+        if (e.fijas) partes.push(e.fijas + (e.fijas === 1 ? ' carga fija' : ' cargas fijas'));
+        if (e.tablero) partes.push('tablero');
+        nota.textContent = 'Estimado para esta obra: ' + e.dias + (e.dias === 1 ? ' día' : ' días') +
+          (partes.length ? ' (' + partes.join(', ') + ')' : '') + '. Se ajusta en Perfil.';
+        nota.hidden = false;
+      } else {
+        nota.hidden = true;
+      }
+    }
     recalcPresupuesto();
   }
 
@@ -3102,6 +3197,9 @@
     $('#perfil-iva').addEventListener('change', () => { DB.settings.iva = Number($('#perfil-iva').value) || 0; saveDB(); });
     $('#perfil-tarifahora').addEventListener('change', () => { DB.settings.manoObra.tarifaHora = Number($('#perfil-tarifahora').value) || 0; saveDB(); });
     $('#perfil-horasjornada').addEventListener('change', () => { DB.settings.manoObra.horasJornada = Number($('#perfil-horasjornada').value) || 0; saveDB(); });
+    $('#perfil-bocasjornada').addEventListener('change', () => { DB.settings.manoObra.bocasPorJornada = Number($('#perfil-bocasjornada').value) || 6; saveDB(); });
+    $('#perfil-jornadascargafija').addEventListener('change', () => { DB.settings.manoObra.jornadasCargaFija = Number($('#perfil-jornadascargafija').value) || 0; saveDB(); });
+    $('#perfil-jornadastablero').addEventListener('change', () => { DB.settings.manoObra.jornadasTablero = Number($('#perfil-jornadastablero').value) || 0; saveDB(); });
     $('#btn-abrir-catalogo').addEventListener('click', () => { showView('catalogo-precios'); });
     $('#btn-exportar-backup').addEventListener('click', exportarBackup);
     $('#btn-importar-backup').addEventListener('click', () => { $('#input-importar-backup').click(); });
