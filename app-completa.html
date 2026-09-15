@@ -3083,9 +3083,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   // unifilar a mano.
   /* ---------- conductores ---------- */
 
-  // Colores normalizados (IEC 60445, los que pide el reglamento de UTE):
-  // fases marrón, negro y gris; neutro celeste; tierra verde y amarilla.
-  const TAB_COLOR = { L1: '#7b4a26', L2: '#2b2b2e', L3: '#8e9297', N: '#2b8ad6', PE: '#2e9a47' };
+  // Los colores que usa ADONAI en obra: fases blanco, rojo y negro; neutro
+  // celeste; tierra verde y amarilla. En monofásica la fase va en blanco.
+  const TAB_COLOR = { L1: '#f4f4f2', L2: '#c8252b', L3: '#2b2b2e', N: '#2b8ad6', PE: '#2e9a47' };
   const TAB_PE_RAYA = '#f1c318';
 
   function tabTono(hex, k) {
@@ -3362,67 +3362,90 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
 
     // 4) salidas de los circuitos y entrada de la tierra
     //
-    // Cada circuito sale en un mazo. Los de la última fila bajan derecho al
-    // piso; los de las filas de arriba bajan por el canal del lado que les
-    // queda más cerca. Los troqueles se reparten en el mismo orden en que los
-    // mazos llegan al piso, de izquierda a derecha, para que no se crucen.
+    // Los circuitos se reparten por igual entre los troqueles de arriba y los
+    // de abajo: la primera mitad —las filas de arriba— sale por arriba y el
+    // resto por abajo. Cada circuito sale en un mazo con sus fases, su neutro y
+    // su tierra. Los que van hacia abajo desde la última fila bajan derecho; el
+    // resto va por el canal del costado que le queda más cerca. Los troqueles
+    // se asignan en el orden en que los mazos llegan, de izquierda a derecha,
+    // para que no se crucen.
     const medio = (ranuras[0].x0 + ranuras[0].x1) / 2;
     const grupos = circuitos.map((p, i) => {
       const hilos = conductoresDe(p, i).map((f, k) => ({ fase: f, x: polo(p, k), y: bAbajo(p), fila: p.fila }));
       if (bNeutro && neutroDeBornera(p)) hilos.push(desdeBorne('N', tomarBorne(bNeutro)));
       if (bTierra) hilos.push(desdeBorne('PE', tomarBorne(bTierra)));
       const centro = p.x + p.w / 2;
-      const lado = p.fila === ultima ? 'piso' : (centro < medio ? 'izq' : 'der');
-      return { hilos, fila: p.fila, x: centro, lado };
+      return { hilos, fila: p.fila, x: centro, canal: centro < medio ? 'izq' : 'der' };
+    });
+    const totalCircuitos = grupos.reduce((t, gr) => t + gr.hilos.length, 0);
+    let llevados = 0;
+    grupos.slice().sort((a, b) => (a.fila - b.fila) || (a.x - b.x)).forEach((gr) => {
+      gr.sube = grupos.length > 1 && llevados + gr.hilos.length / 2 < totalCircuitos / 2;
+      llevados += gr.hilos.length;
+      gr.directo = !gr.sube && gr.fila === ultima;
     });
     if (bTierra) {
       const h = bTierra.bornes[bTierra.bornes.length - 1];
       const hilo = { fase: 'PE', x: h.x + sp * 0.8, y: h.y, fila: bTierra.fila, borne: h, entra: true };
-      grupos.push({ hilos: [hilo], fila: bTierra.fila, x: hilo.x, lado: bTierra.fila === ultima ? 'piso' : 'der' });
+      grupos.push({ hilos: [hilo], fila: bTierra.fila, x: hilo.x, canal: 'der', sube: false, directo: bTierra.fila === ultima });
     }
-    // Orden de llegada al piso. Por el canal izquierdo, la fila más alta va por
-    // afuera y llega primera; por el derecho, al revés.
-    grupos.forEach((gr) => {
-      gr.orden = gr.lado === 'izq' ? -1e6 + gr.fila * 1e4 + gr.x
-        : gr.lado === 'der' ? 1e6 - gr.fila * 1e4 + gr.x : gr.x;
-      gr.canal = gr.lado === 'izq' ? 'izq' : 'der';
-    });
-    grupos.sort((a, b) => a.orden - b.orden);
-    const totalHilos = grupos.reduce((t, gr) => t + gr.hilos.length, 0) || 1;
-    let acumulado = 0;
-    grupos.forEach((gr) => {
-      const k = Math.min(abajo.length - 1, Math.floor((acumulado + gr.hilos.length / 2) / totalHilos * abajo.length));
-      gr.boca = abajo[k];
-      gr.nBoca = k;
-      acumulado += gr.hilos.length;
-      gr.hilos.forEach((h) => gr.boca.cables.push(h));
-    });
-    abajo.forEach((t) => {
-      const paso = Math.min(sp, t.w * 0.75 / Math.max(1, t.cables.length));
-      t.cables.forEach((c, j) => { c.bx = t.x + (j - (t.cables.length - 1) / 2) * paso; });
-    });
 
-    // Carriles de los canales: la fila más baja por adentro, así el mazo de una
-    // fila de más arriba no le pasa por encima.
-    grupos.filter((gr) => gr.lado !== 'piso').sort((a, b) => b.fila - a.fila)
+    // Por un canal, el mazo que recorre más tramo va por afuera y llega primero
+    // a la punta: hacia abajo es el de la fila más alta, hacia arriba el de la
+    // más baja.
+    const ordenDe = (gr) => {
+      if (gr.directo) return gr.x;
+      const lejos = gr.sube ? gr.fila : -gr.fila;
+      return gr.canal === 'izq' ? -1e6 - lejos * 1e4 + gr.x : 1e6 + lejos * 1e4 + gr.x;
+    };
+    const repartir = (lista, bocas) => {
+      if (!lista.length || !bocas.length) return;
+      lista.sort((a, b) => ordenDe(a) - ordenDe(b));
+      const total = lista.reduce((t, gr) => t + gr.hilos.length, 0);
+      let acumulado = 0;
+      lista.forEach((gr, j) => {
+        // Con menos mazos que troqueles, uno por troquel y bien repartidos;
+        // con más, en proporción a los cables de cada uno.
+        const k = lista.length <= bocas.length
+          ? (lista.length === 1 ? (gr.canal === 'izq' ? 0 : bocas.length - 1) : Math.round(j * (bocas.length - 1) / (lista.length - 1)))
+          : Math.min(bocas.length - 1, Math.floor((acumulado + gr.hilos.length / 2) / total * bocas.length));
+        gr.boca = bocas[k];
+        gr.lejania = Math.abs(k - (bocas.length - 1) / 2);
+        acumulado += gr.hilos.length;
+        gr.hilos.forEach((h) => gr.boca.cables.push(h));
+      });
+      bocas.forEach((t) => {
+        const paso = Math.min(sp, t.w * 0.75 / Math.max(1, t.cables.length));
+        t.cables.forEach((c, j) => { c.bx = t.x + (j - (t.cables.length - 1) / 2) * paso; });
+      });
+    };
+    // Arriba se deja libre el troquel de la acometida, salvo que no haya otro.
+    const bocasArriba = arriba.length > 1 ? arriba.filter((t) => t !== bocaAcometida) : arriba;
+    repartir(grupos.filter((gr) => gr.sube), bocasArriba);
+    repartir(grupos.filter((gr) => !gr.sube), abajo);
+
+    // Carriles de los canales: el que recorre menos, por adentro.
+    grupos.filter((gr) => !gr.directo)
+      .sort((a, b) => (a.sube ? a.fila : -a.fila) - (b.sube ? b.fila : -b.fila))
       .forEach((gr) => gr.hilos.forEach((h) => {
-        if (h.fila !== ultima) h.xc = carrilCanal(gr.canal);
+        if (gr.sube || h.fila !== ultima) h.xc = carrilCanal(gr.canal);
       }));
-    // Carriles del piso: primero los mazos que van a los troqueles del medio;
-    // los de las puntas doblan más abajo y no cortan a nadie.
-    const centroBocas = (abajo.length - 1) / 2;
-    grupos.slice().sort((a, b) => Math.abs(a.nBoca - centroBocas) - Math.abs(b.nBoca - centroBocas))
-      .forEach((gr) => gr.hilos.forEach((h) => { h.yPiso = carrilAbajo(ultima); }));
+    // Carriles del piso y del techo: primero los mazos que van a los troqueles
+    // del medio; los de las puntas doblan más cerca de la pared y no cortan a
+    // nadie.
+    grupos.slice().sort((a, b) => a.lejania - b.lejania).forEach((gr) => gr.hilos.forEach((h) => {
+      h.yFin = gr.sube ? carrilArriba(0) : carrilAbajo(ultima);
+    }));
 
     grupos.forEach((gr) => gr.hilos.forEach((c) => {
       const t = gr.boca;
       const pts = c.borne ? [[c.borne.x, c.borne.y], [c.x, c.y]] : [[c.x, c.y]];
-      if (c.fila === ultima) {
-        pts.push([c.x, c.yPiso], [c.bx, c.yPiso], [c.bx, t.y]);
+      if (!gr.sube && c.fila === ultima) {
+        pts.push([c.x, c.yFin], [c.bx, c.yFin], [c.bx, t.y]);
       } else {
         const y = carrilAbajo(c.fila);
-        pts.push([c.x, y], [c.xc, y], [c.xc, c.yPiso], [c.bx, c.yPiso], [c.bx, t.y]);
-        porCanal(c.xc, y, c.yPiso);
+        pts.push([c.x, y], [c.xc, y], [c.xc, c.yFin], [c.bx, c.yFin], [c.bx, t.y]);
+        porCanal(c.xc, y, c.yFin);
       }
       if (c.entra) tender(c.fase, pts.reverse(), false, true);
       else tender(c.fase, pts, true, false);
@@ -3449,10 +3472,10 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     cables.forEach((c) => tabCable(ctx, c, g));
     usadas.forEach((t) => tabConector(ctx, t));
 
-    abajo.forEach((t) => {
-      if (t.cables.length < 2) return;
-      const xs = t.cables.map((c) => c.bx);
-      const y = t.y - t.h * 0.5 - g * 2.6;
+    arriba.concat(abajo).forEach((t) => {
+      const xs = t.cables.map((c) => c.bx).filter((x) => x !== undefined);
+      if (xs.length < 2) return;
+      const y = abajo.includes(t) ? t.y - t.h * 0.5 - g * 2.6 : t.y + t.h * 0.5 + g * 2.6;
       tabPrecinto(ctx, Math.min(...xs) - g * 0.7, y, Math.max(...xs) + g * 0.7, y, g);
     });
     ranuras.forEach((r) => {
