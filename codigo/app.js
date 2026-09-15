@@ -2814,6 +2814,17 @@
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 18;
     let y = 18;
+    // Lo que se dibuja a mano —títulos, la caja del total, el texto final— no
+    // pasa solo de hoja como las tablas: si no entra, quedaba dibujado fuera
+    // de la página. Antes de cada bloque se mira si entra entero y, si no, se
+    // empieza hoja nueva.
+    const pie = doc.internal.pageSize.getHeight() - margin;
+    const margenTablas = { left: margin, right: margin, top: margin, bottom: margin };
+    const lugarPara = (alto) => {
+      if (y + alto > pie) { doc.addPage(); y = margin; }
+    };
+    // Alto aproximado de una fila de las tablas de 9 pt.
+    const FILA = 7.8;
 
     if (logo) doc.addImage(logo, 'PNG', margin, y, 12, 12);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(14); doc.setTextColor(23, 23, 25);
@@ -2880,12 +2891,13 @@
         .filter(({ calc }) => calc.apto)
         .map(({ c, calc }) => [c.nombre || 'Circuito', calc.seccionAdoptada + ' mm²', calc.breaker + ' A curva ' + calc.curva]);
       if (filasCircuitos.length) {
+        lugarPara(4 + FILA * 3);
         doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
         doc.text('CIRCUITOS', margin, y);
         y += 4;
         doc.autoTable({
           startY: y,
-          margin: { left: margin, right: margin },
+          margin: margenTablas,
           head: [['Circuito', 'Sección de cable', 'Protección']],
           body: pdfFilas(filasCircuitos),
           theme: 'plain',
@@ -2900,48 +2912,56 @@
         // cliente pero tampoco se sobreafirma acá.
         doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(111, 114, 119);
         const normLines = doc.splitTextToSize(pdfTexto('Secciones y protecciones calculadas según ' + NORMATIVE_PACK.nombre + '.'), pageWidth - 2 * margin);
+        lugarPara(normLines.length * 4);
         doc.text(normLines, margin, y);
         y += normLines.length * 4 + 8;
       }
     }
 
+    lugarPara(4 + FILA * 3);
     doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
     doc.text('MATERIALES', margin, y);
     y += 4;
     // Agrupado por rubro: en el orden en que lo arma el cálculo los cables
     // quedan salteados entre las térmicas y cuesta leerlo. Los precios por
     // material van sólo en la copia interna.
-    const filasMateriales = [];
+    // Una tabla por rubro, para que el nombre del rubro nunca quede solo al pie
+    // de una hoja con sus materiales en la siguiente.
+    const bloquesMateriales = [];
     if (materialesItems) {
       materialesPorRubro(materialesItems).forEach((g) => {
-        filasMateriales.push([{ content: g.rubro, colSpan: interno ? 3 : 2, styles: { fontStyle: 'bold', textColor: [111, 114, 119], fontSize: 8 } }]);
+        const filas = [[{ content: g.rubro, colSpan: interno ? 3 : 2, styles: { fontStyle: 'bold', textColor: [111, 114, 119], fontSize: 8 } }]];
         g.items.forEach((m) => {
           const fila = [m.nombre, fmt(m.cantidad, 0) + ' ' + m.unidad];
           if (interno) fila.push(money(m.cantidad * m.precioUnit));
-          filasMateriales.push(fila);
+          filas.push(fila);
         });
+        bloquesMateriales.push(filas);
       });
     } else {
-      filasMateriales.push(interno ? ['Materiales de la instalación', '', money(p.materiales)]
-                                   : ['Materiales de la instalación', '']);
+      bloquesMateriales.push([interno ? ['Materiales de la instalación', '', money(p.materiales)]
+                                      : ['Materiales de la instalación', '']]);
     }
-    doc.autoTable({
-      startY: y,
-      margin: { left: margin, right: margin },
-      head: [interno ? ['Material', 'Cant.', 'Costo'] : ['Material', 'Cant.']],
-      body: filasMateriales.map((f) => f.map((c) => (typeof c === 'string' ? pdfTexto(c) : c))),
-      theme: 'plain',
-      styles: { fontSize: 9, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
-      headStyles: { textColor: [111, 114, 119], fontStyle: 'bold', fontSize: 8, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
-      columnStyles: interno ? { 1: { halign: 'right', cellWidth: 26 }, 2: { halign: 'right', cellWidth: 28 } }
-                            : { 1: { halign: 'right', cellWidth: 30 } },
+    bloquesMateriales.forEach((filas, i) => {
+      // el rubro entra con al menos su primer material (y el encabezado, en el primero)
+      if (i > 0) lugarPara(FILA * 2);
+      doc.autoTable({
+        startY: y,
+        margin: margenTablas,
+        head: [interno ? ['Material', 'Cant.', 'Costo'] : ['Material', 'Cant.']],
+        showHead: i === 0 ? 'everyPage' : 'never',
+        body: filas.map((f) => f.map((c) => (typeof c === 'string' ? pdfTexto(c) : c))),
+        theme: 'plain',
+        styles: { fontSize: 9, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
+        headStyles: { textColor: [111, 114, 119], fontStyle: 'bold', fontSize: 8, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
+        columnStyles: interno ? { 1: { halign: 'right', cellWidth: 26 }, 2: { halign: 'right', cellWidth: 28 } }
+                              : { 1: { halign: 'right', cellWidth: 30 } },
+      });
+      y = doc.lastAutoTable.finalY;
     });
-    y = doc.lastAutoTable.finalY + 12;
+    y += 12;
 
     if (interno) {
-      doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
-      doc.text('DESGLOSE', margin, y);
-      y += 4;
       const filasDesglose = [
         ['Materiales', money(p.materiales)],
         ['Mano de obra', money(p.manoObra)],
@@ -2952,9 +2972,13 @@
         ['Subtotal de venta', money(t.subtotal)],
         ['IVA (' + p.iva + '%)', money(t.ivaMonto)],
       ];
+      lugarPara(4 + FILA * filasDesglose.length + 2);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
+      doc.text('DESGLOSE', margin, y);
+      y += 4;
       doc.autoTable({
         startY: y,
-        margin: { left: margin, right: margin },
+        margin: margenTablas,
         body: filasDesglose,
         theme: 'plain',
         styles: { fontSize: 9, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
@@ -2969,6 +2993,9 @@
     // Del dinero, en la del cliente sólo el total: el desglose de costos y el
     // margen son datos internos y no tienen por qué viajar con el presupuesto.
     const altoCaja = 22;
+    const incluye = doc.splitTextToSize('El presupuesto contiene costo de materiales y mano de obra incluidos.', pageWidth - 2 * margin);
+    // El total, las condiciones y la nota van juntos en la misma hoja.
+    lugarPara(altoCaja + 10 + 4 + FILA * 3 + 8 + incluye.length * 4);
     doc.setFillColor(244, 244, 245);
     doc.roundedRect(margin, y, pageWidth - 2 * margin, altoCaja, 2, 2, 'F');
     doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
@@ -2982,7 +3009,7 @@
     y += 4;
     doc.autoTable({
       startY: y,
-      margin: { left: margin, right: margin },
+      margin: margenTablas,
       body: [
         ['Forma de pago', pdfTexto(p.formaPago)],
         ['Validez de la oferta', p.validez + ' días'],
@@ -2995,7 +3022,6 @@
     y = doc.lastAutoTable.finalY + 8;
 
     doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(111, 114, 119);
-    const incluye = doc.splitTextToSize('El presupuesto contiene costo de materiales y mano de obra incluidos.', pageWidth - 2 * margin);
     doc.text(incluye, margin, y);
     y += incluye.length * 4;
 
