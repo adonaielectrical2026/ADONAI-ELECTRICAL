@@ -741,7 +741,10 @@
           </select>
         </div>
         <div class="field"><label id="cond-valor-label">Valor (kW)</label><input class="input" type="number" id="cond-valor" value="15"></div>
-        <div class="field"><label>cos φ</label><input class="input" type="number" step="0.05" min="0" max="1" id="cond-cosphi" value="0.90"></div>
+        <div class="grid-2">
+          <div class="field"><label>cos φ</label><input class="input" type="number" step="0.05" min="0" max="1" id="cond-cosphi" value="0.90"></div>
+          <div class="field"><label>Rendimiento η</label><input class="input" type="number" step="0.05" min="0.1" max="1" id="cond-rendimiento" value="1"></div>
+        </div>
         <div class="field"><label>Longitud (m)</label><input class="input" type="number" id="cond-longitud" value="42"></div>
         <div class="field"><label>Material</label>
           <select class="select" id="cond-material"><option value="cobre">Cobre</option><option value="aluminio">Aluminio</option></select>
@@ -781,6 +784,16 @@
           <span id="cond-badge"></span>
         </div>
         <div class="light-stat-grid" id="cond-resultado"></div>
+      </div>
+
+      <div class="card card-pad stack-sm">
+        <div class="section-label" style="margin:0">Comprobación del circuito</div>
+        <p style="font-size:0.78rem;color:var(--steel);margin:0">Capacidad de conducción, coordinación con la protección y caída de tensión. Se puede verificar la sección y la protección que calcula la app, o forzar otras para ver si cumplen.</p>
+        <div class="grid-2">
+          <div class="field"><label>Sección a verificar</label><select class="select" id="cond-seccion"></select></div>
+          <div class="field"><label>Protección a verificar</label><select class="select" id="cond-in"></select></div>
+        </div>
+        <div id="cond-comprobacion"></div>
       </div>
 
       <div class="grid-2">
@@ -2240,8 +2253,18 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     embutido: 'conducto', amurado_pvc: 'conducto', amurado_galvanizado: 'conducto', enterrado: 'conducto',
     bandeja: 'aire', aire: 'aire',
   };
-  const RHO_COBRE = 0.0225;
-  const FACTOR_RESIST_ALUMINIO = 1.68;
+  // Caída de tensión, RBT-UTE Capítulo II - Anexo §8: el reglamento la plantea
+  // por conductividad, no por resistividad.
+  //     monofásico   e = 2·L·W / (K·S·V)
+  //     trifásico    e =   L·W / (K·S·V)
+  // Con W = V·I·cosφ (o √3·V·I·cosφ) queda e = 2·L·I·cosφ/(K·S), que es como lo
+  // resuelve la app. K es la conductividad a 25 °C que da el propio reglamento.
+  const CONDUCTIVIDAD_UTE = { cobre: 56.9, aluminio: 34.7 };
+  // Los interruptores termomagnéticos domiciliarios (IEC 60898) tienen corriente
+  // convencional de disparo I2 = 1,45·In, así que la segunda condición de la
+  // IEC 60364-4-43 §431.4.2 —I2 <= 1,45·Iz— se cumple siempre que In <= Iz. Para
+  // fusibles u otros dispositivos hay que mirar la curva del fabricante.
+  const FACTOR_I2_MCB = 1.45;
   // Factor de correccion por temperatura ambiente, RBT-UTE Anexo Tabla XIV, por aislacion.
   const TEMP_FACTORS_UTE = {
     pvc: [
@@ -2295,6 +2318,27 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     actualizadoEl: '2026-09-03',
     notas: 'Ampacidades (Tablas VI-XIII), sección mínima por resistencia mecánica (Anexo §9) y factor de corrección por temperatura (Tabla XIV) tomados directamente del reglamento. Dos supuestos de mapeo quedan pendientes de confirmar con un electricista matriculado: (1) "Enterrado bajo tubo" se calcula con las tablas de "dentro de conductos" (X-XIII), no con las Tablas XV/XVI de cable armado enterrado directo, porque el reglamento no define una tabla propia para conducto enterrado y XV/XVI son para un producto distinto (cable armado sin caño). (2) El factor de agrupamiento de circuitos "al aire" se dejó en 1,00 (sin reducción) porque el Anexo no da una tabla de agrupamiento para ese método — solo para preensamblado (Tabla II) y dentro de conductos (§5.1, ya aplicado).',
   };
+  // Referencias que respaldan cada paso del motor. El reglamento que rige en
+  // Uruguay es el de UTE: es la referencia principal y es la que manda. La IEC
+  // entra sólo como referencia técnica complementaria, donde aporta la
+  // formulación explícita que el reglamento no escribe con esas letras.
+  const REFERENCIAS_NORMATIVAS = [
+    { rango: 'principal', tema: 'Dimensionado del conductor',
+      cita: 'UTE, Reglamento de Baja Tensión, Capítulo II - Anexo: Cálculo de Secciones de los Conductores. El conductor se dimensiona evitando calentamiento inadmisible y caída de tensión excesiva, y considerando además resistencia mecánica y comportamiento ante cortocircuito.' },
+    { rango: 'principal', tema: 'Corrientes máximas admisibles',
+      cita: 'UTE, RBT Capítulo II - Anexo, Tablas VI a IX (al aire bajo techo) y X a XIII (dentro de conductos: X cobre PVC, XI cobre XLPE, XII aluminio PVC, XIII aluminio XLPE), corregidas por temperatura ambiente (Tabla XIV) y por agrupamiento (§5.1: 4 a 7 conductores 0,90; más de 7, 0,70; no se computa el conductor de protección ni, en las condiciones que indica UTE, el neutro del suministro trifásico).' },
+    { rango: 'principal', tema: 'Protección contra sobrecargas',
+      cita: 'UTE, RBT Capítulo V - Agrupamiento de accesorios de protección - Tableros, numeral 1.a: el dispositivo de protección debe garantizar el límite de corriente admisible del conductor.' },
+    { rango: 'principal', tema: 'Caída de tensión',
+      cita: 'UTE, RBT Capítulo II - Anexo, numeral 8 - Caídas de Tensión: máximo 3 % en circuitos de alumbrado y 5 % en los demás usos, medidos entre el origen de la instalación y cualquier punto de utilización. Fórmulas S = 2LW/(KeV) en monofásico y S = LW/(KeV) en trifásico, con conductividad a 25 °C de 56,9 (cobre) y 34,7 (aluminio).' },
+    { rango: 'complementaria', tema: 'Coordinación conductor - protección',
+      cita: 'IEC 60364-4-43:2023, numeral 431.4.2 - Coordination between conductors and overload protective devices: Ib <= In <= Iz y, además, I2 <= 1,45·Iz. Es la formulación explícita de lo que el Capítulo V numeral 1.a de UTE exige.' },
+    { rango: 'complementaria', tema: 'Corriente convencional de actuación (I2)',
+      cita: 'Los interruptores termomagnéticos según IEC 60898-1 tienen corriente convencional de disparo I2 = 1,45·In, de modo que I2 <= 1,45·Iz queda garantizado cuando In <= Iz. Para fusibles u otros dispositivos hay que verificar I2 contra la curva del fabricante.' },
+    { rango: 'complementaria', tema: 'Canalizaciones',
+      cita: 'IEC 60364-5-52:2009 + AMD1:2024 - Wiring systems, criterios de selección de sistemas de cableado, incluido el numeral 525 sobre caída de tensión.' },
+  ];
+
   const ESTADO_PACK_LABEL = { pendiente: 'Pendiente de verificación', verificado: 'Verificado', personalizado: 'Personalizado (no verificado)' };
   const ESTADO_PACK_CLASS = { pendiente: 'status-pending', verificado: 'status-approved', personalizado: 'status-review' };
 
@@ -2402,7 +2446,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     const conductoresPorCircuito = fases === 1 ? 2 : 3;
     const nConductores = (Number(p.agrupados) || 1) * conductoresPorCircuito;
     const groupF = getGroupFactorUTE(categoria, nConductores);
-    const rho = material === 'aluminio' ? RHO_COBRE * FACTOR_RESIST_ALUMINIO : RHO_COBRE;
+    const k = CONDUCTIVIDAD_UTE[material] || CONDUCTIVIDAD_UTE.cobre;
     const caidaMax = Number(p.caidaMax) || 5;
     const uso = p.uso || 'fuerza';
     const minimo = Math.max(MINIMOS_REGLAMENTARIOS[uso] ?? 1, SECCION_MINIMA_COMERCIAL);
@@ -2414,7 +2458,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       const izBase = fases === 1 ? row.c2 : row.c3;
       const iz = izBase * tempF * groupF;
       if (seccionCapacidad === null && iz >= ib) seccionCapacidad = row.s;
-      const dU = fases === 1 ? (2 * rho * l * ib * cosPhi) / row.s : (SQRT3 * rho * l * ib * cosPhi) / row.s;
+      const dU = caidaVolt(fases, l, ib, cosPhi, k, row.s);
       const dUPct = (dU / v) * 100;
       if (seccionCaida === null && dUPct <= caidaMax) seccionCaida = row.s;
       // Además de capacidad y caída, tiene que existir una térmica estándar que
@@ -2433,12 +2477,70 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     };
   }
 
+  // e = 2·L·I·cosφ/(K·S) en monofásico y √3·L·I·cosφ/(K·S) en trifásico.
+  function caidaVolt(fases, l, ib, cosPhi, k, seccion) {
+    if (!(k > 0) || !(seccion > 0)) return 0;
+    return (fases === 1 ? 2 : SQRT3) * l * ib * cosPhi / (k * seccion);
+  }
+
+  /*
+   * Comprobación del circuito, con la sección y la protección que se quieran
+   * verificar (por defecto, las que eligió la app). Son las tres condiciones
+   * que tienen que cumplirse a la vez:
+   *
+   *   1. capacidad de conducción          Iz >= Ib
+   *   2. coordinación con la protección   Ib <= In <= Iz   (y I2 <= 1,45·Iz)
+   *   3. caída de tensión                 ΔU% <= máximo del uso
+   */
+  function comprobarCircuito(p, opciones) {
+    const o = opciones || {};
+    const base = calcularSeccion(p);
+    const seccion = Number(o.seccion) || base.seccionAdoptada || null;
+    const inProt = Number(o.in) || base.breaker || null;
+    const fases = p.fases || 1;
+    const material = p.material === 'aluminio' ? 'aluminio' : 'cobre';
+    const aislacion = p.aislacion === 'xlpe' ? 'xlpe' : 'pvc';
+    const categoria = CATEGORIA_METODO[p.metodo] || 'conducto';
+    const ib = Number(p.ib) || 0;
+    const v = Number(p.v) || 230;
+    const caidaMax = Number(p.caidaMax) || 5;
+    const r = { ib, seccion, in: inProt, caidaMax, causas: [], base };
+    if (!seccion) { r.causas.push('No hay ninguna sección de tabla que sirva para este circuito.'); r.verificado = false; return r; }
+
+    const fila = tablaAmpacidad(categoria, material, aislacion).find((x) => x.s === seccion);
+    r.ft = getTempFactorUTE(aislacion, Number(p.tempAmb) || 30);
+    r.fa = getGroupFactorUTE(categoria, (Number(p.agrupados) || 1) * (fases === 1 ? 2 : 3));
+    r.izTabla = fila ? (fases === 1 ? fila.c2 : fila.c3) : 0;
+    r.iz = r.izTabla * r.ft * r.fa;
+    r.dU = caidaVolt(fases, Number(p.l) || 0, ib, Number(p.cosPhi) || 1, CONDUCTIVIDAD_UTE[material], seccion);
+    r.dUPct = (r.dU / v) * 100;
+
+    r.cumpleCapacidad = r.iz >= ib;
+    r.cumpleIbIn = inProt !== null && ib <= inProt;
+    r.cumpleInIz = inProt !== null && inProt <= r.iz;
+    r.i2 = inProt !== null ? inProt * FACTOR_I2_MCB : null;
+    r.limite145 = r.iz * 1.45;
+    r.cumpleI2 = r.i2 !== null ? r.i2 <= r.limite145 : null;
+    r.cumpleCaida = r.dUPct <= caidaMax;
+
+    if (!r.cumpleCapacidad) r.causas.push('Sección insuficiente por capacidad térmica: la corriente admisible corregida (' + fmt(r.iz) + ' A) no llega a la corriente de diseño (' + fmt(ib) + ' A).');
+    if (inProt === null) r.causas.push('No hay una protección de catálogo que coordine con este conductor.');
+    if (inProt !== null && !r.cumpleIbIn) r.causas.push('La protección seleccionada es inferior a la corriente de diseño del circuito. Seleccione una corriente nominal superior.');
+    if (inProt !== null && !r.cumpleInIz) r.causas.push('La corriente nominal de la protección supera la capacidad admisible del conductor. Aumente la sección del conductor o seleccione una protección adecuada.');
+    if (!r.cumpleCaida) r.causas.push('Caída de tensión superior al límite permitido: ' + fmt(r.dUPct) + ' % contra un máximo de ' + fmt(caidaMax) + ' %.');
+    r.verificado = r.cumpleCapacidad && r.cumpleIbIn && r.cumpleInIz && r.cumpleCaida && r.cumpleI2 !== false;
+    return r;
+  }
+
   function ibDesdeInput(p) {
-    // p: {datoConocido, potenciaKw, corrienteA, cosPhi, v, fases}
+    // p: {datoConocido, potenciaKw, corrienteA, cosPhi, rendimiento, v, fases}
     if (p.datoConocido === 'corriente') return Number(p.corrienteA) || 0;
     const pW = (Number(p.potenciaKw) || 0) * 1000;
     const cosPhi = Number(p.cosPhi) || 1;
-    const sVA = cosPhi > 0 ? pW / cosPhi : pW;
+    // El rendimiento entra cuando la potencia declarada es la útil en el eje
+    // —motores, bombas—: la que toma de la red es mayor.
+    const rend = Number(p.rendimiento) > 0 ? Number(p.rendimiento) : 1;
+    const sVA = (cosPhi > 0 ? pW / cosPhi : pW) / rend;
     return p.fases === 1 ? sVA / p.v : sVA / (SQRT3 * p.v);
   }
 
@@ -4487,19 +4589,95 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     const dato = $('#cond-dato').value;
     $('#cond-valor-label').textContent = dato === 'potencia' ? 'Valor (kW)' : 'Valor (A)';
   }
+  // Panel de comprobación: las tres condiciones, con sus números a la vista y la
+  // causa concreta cuando alguna no se cumple.
+  function filaComprobacion(titulo, cumple, detalle, formula) {
+    const badge = cumple
+      ? '<span class="badge-apto">' + icon('ic-check-circle') + 'Cumple</span>'
+      : '<span class="badge-noapto">' + icon('ic-x-circle') + 'No cumple</span>';
+    return '<div class="light-stat-row" style="align-items:flex-start;gap:10px">' +
+      '<span class="lbl" style="flex:1"><strong>' + titulo + '</strong>' +
+      '<span style="display:block;font-family:ui-monospace,monospace;font-size:0.78rem;color:var(--steel)">' + escapeHtml(detalle) + '</span>' +
+      (formula ? '<span style="display:block;font-size:0.72rem;color:var(--steel)">' + escapeHtml(formula) + '</span>' : '') +
+      '</span>' + badge + '</div>';
+  }
+  function renderComprobacion(c) {
+    const wrap = $('#cond-comprobacion');
+    if (!wrap) return;
+    if (!c.seccion) {
+      wrap.innerHTML = '<div class="empty-state">No hay sección de tabla que cumpla con estos datos.</div>';
+      return;
+    }
+    const izTxt = fmt(c.izTabla) + ' A x ' + fmt(c.ft, 2) + ' (temp.) x ' + fmt(c.fa, 2) + ' (agrup.) = ' + fmt(c.iz) + ' A';
+    const inTxt = c.in === null ? 'sin protección' : fmt(c.in) + ' A';
+    let html = '<div class="light-stat-grid">' +
+      filaComprobacion('Capacidad de conducción', c.cumpleCapacidad,
+        'Iz ' + fmt(c.iz) + ' A >= Ib ' + fmt(c.ib) + ' A', izTxt) +
+      filaComprobacion('Coordinación con la protección', c.cumpleIbIn && c.cumpleInIz,
+        'Ib ' + fmt(c.ib) + ' A <= In ' + inTxt + ' <= Iz ' + fmt(c.iz) + ' A',
+        'IEC 60364-4-43 §431.4.2 · UTE RBT Cap. V §1.a') +
+      filaComprobacion('Sobrecarga (I2)', c.cumpleI2 !== false,
+        'I2 ' + (c.i2 === null ? '—' : fmt(c.i2) + ' A') + ' <= 1,45 · Iz ' + fmt(c.limite145) + ' A',
+        'I2 = 1,45 · In para termomagnéticos IEC 60898') +
+      filaComprobacion('Caída de tensión', c.cumpleCaida,
+        'ΔU ' + fmt(c.dU) + ' V = ' + fmt(c.dUPct) + ' % <= ' + fmt(c.caidaMax) + ' %',
+        'UTE RBT Cap. II - Anexo §8') +
+      '</div>';
+    html += '<div style="margin-top:12px">' + (c.verificado
+      ? '<span class="badge-apto">' + icon('ic-check-circle') + 'Circuito verificado</span>'
+      : '<span class="badge-noapto">' + icon('ic-x-circle') + 'Circuito no verificado</span>') + '</div>';
+    if (c.causas.length) {
+      html += '<ul style="margin:10px 0 0;padding-left:18px;font-size:0.82rem;color:var(--error)">' +
+        c.causas.map((x) => '<li>' + escapeHtml(x) + '</li>').join('') + '</ul>';
+    }
+    html += '<details style="margin-top:12px"><summary class="section-label" style="margin:0">En qué se respalda</summary>' +
+      '<div class="stack-sm" style="margin-top:8px">' + referenciasHtml() + '</div></details>';
+    wrap.innerHTML = html;
+  }
+
+  // Las referencias, separadas en las dos categorías que corresponden: primero
+  // el reglamento que rige en Uruguay, después lo complementario.
+  function referenciasHtml() {
+    const bloque = (rango, titulo, nota) =>
+      '<div><div class="section-label" style="margin:0">' + titulo + '</div>' +
+      '<div style="font-size:0.74rem;color:var(--steel);margin-bottom:6px">' + nota + '</div>' +
+      REFERENCIAS_NORMATIVAS.filter((r) => r.rango === rango).map((r) =>
+        '<div style="margin-bottom:8px"><div style="font-weight:700;font-size:0.8rem">' + escapeHtml(r.tema) + '</div>' +
+        '<div style="font-size:0.78rem;color:var(--steel)">' + escapeHtml(r.cita) + '</div></div>').join('') + '</div>';
+    return bloque('principal', 'Reglamentación aplicable', 'Reglamento de Baja Tensión de UTE: es la norma que rige en Uruguay y la que manda en todo el cálculo.') +
+      bloque('complementaria', 'Referencia técnica complementaria', 'Normas IEC, citadas donde aportan la formulación explícita de lo que el reglamento exige.');
+  }
+
+  function opcionesComprobacion(material, aislacion, metodo) {
+    const categoria = CATEGORIA_METODO[metodo] || 'conducto';
+    const secciones = tablaAmpacidad(categoria, material, aislacion).map((r) => r.s);
+    const sel = $('#cond-seccion');
+    const inSel = $('#cond-in');
+    const antesS = sel.value, antesIn = inSel.value;
+    sel.innerHTML = '<option value="">La que calcula la app</option>' +
+      secciones.map((x) => '<option value="' + x + '">' + fmt(x, x < 10 ? 1 : 0).replace(/,0$/, '') + ' mm²</option>').join('');
+    inSel.innerHTML = '<option value="">La que calcula la app</option>' +
+      BREAKER_RATINGS.map((x) => '<option value="' + x + '">' + x + ' A</option>').join('');
+    sel.value = antesS; inSel.value = antesIn;
+  }
+
   function calcularConductorForm() {
     const fases = Number($('#cond-fases .active').dataset.fases);
     const v = Number($('#cond-tension').value);
     const dato = $('#cond-dato').value;
     const valor = Number($('#cond-valor').value) || 0;
     const cosPhi = Number($('#cond-cosphi').value) || 1;
-    const ib = ibDesdeInput({ datoConocido: dato, potenciaKw: dato === 'potencia' ? valor : 0, corrienteA: dato === 'corriente' ? valor : 0, cosPhi, v, fases });
-    const r = calcularSeccion({
+    const rendimiento = Number($('#cond-rendimiento').value) || 1;
+    const ib = ibDesdeInput({ datoConocido: dato, potenciaKw: dato === 'potencia' ? valor : 0, corrienteA: dato === 'corriente' ? valor : 0, cosPhi, rendimiento, v, fases });
+    const datos = {
       ib, v, fases, l: Number($('#cond-longitud').value) || 0, material: $('#cond-material').value,
       metodo: $('#cond-metodo').value, aislacion: $('#cond-aislacion').value,
       tempAmb: Number($('#cond-temp').value) || 30, agrupados: Number($('#cond-agrupados').value) || 1,
       cosPhi, caidaMax: Number($('#cond-caidamax').value) || 5, uso: $('#cond-uso').value,
-    });
+    };
+    const r = calcularSeccion(datos);
+    opcionesComprobacion(datos.material, datos.aislacion, datos.metodo);
+    renderComprobacion(comprobarCircuito(datos, { seccion: $('#cond-seccion').value, in: $('#cond-in').value }));
     $('#cond-badge').innerHTML = r.apto
       ? '<span class="badge-apto">' + icon('ic-check-circle') + 'Apto · Cumple RBT UTE</span>'
       : '<span class="badge-noapto">' + icon('ic-x-circle') + 'No apto</span>';
@@ -5139,6 +5317,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     $('#cond-dato').addEventListener('change', () => { renderCondDatoLabel(); calcularConductorForm(); });
     ['#cond-tension', '#cond-valor', '#cond-cosphi', '#cond-longitud', '#cond-material', '#cond-aislacion', '#cond-uso', '#cond-metodo', '#cond-temp', '#cond-agrupados', '#cond-caidamax']
       .forEach((sel) => $(sel).addEventListener('input', calcularConductorForm));
+    ['#cond-seccion', '#cond-in', '#cond-rendimiento'].forEach((sel) => {
+      $(sel).addEventListener('change', calcularConductorForm);
+    });
     $('#btn-cond-guardar').addEventListener('click', () => { calcularConductorForm(); toast('Cálculo guardado en el dispositivo'); });
     $('#btn-cond-a-relevamiento').addEventListener('click', () => {
       const r = calcularConductorForm();
@@ -5346,6 +5527,51 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         doc.text(normLines, margin, y);
         y += normLines.length * 4 + 8;
       }
+    }
+
+    // La copia interna lleva la comprobación de cada circuito, con los números
+    // que respaldan el cálculo y la norma que los pide.
+    if (interno && trabajo && trabajo.circuitos && trabajo.circuitos.length) {
+      const filasComp = trabajo.circuitos.map((c) => {
+        const comp = comprobarCircuito({
+          ib: c.ib, v: c.v, fases: c.fases, l: c.l, material: c.material, metodo: c.metodo,
+          aislacion: c.aislacion, tempAmb: c.tempAmb, agrupados: c.agrupados, cosPhi: c.cosPhi,
+          caidaMax: c.caidaMax, uso: c.uso || 'fuerza',
+        });
+        return [c.nombre || 'Circuito',
+                comp.seccion ? comp.seccion + ' mm²' : '-',
+                fmt(comp.ib) + ' A',
+                comp.in ? comp.in + ' A' : '-',
+                fmt(comp.iz) + ' A',
+                fmt(comp.dUPct) + ' %',
+                comp.verificado ? 'Verificado' : 'Revisar'];
+      });
+      lugarPara(4 + FILA * 3);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
+      doc.text('COMPROBACION DE CIRCUITOS', margin, y);
+      y += 4;
+      doc.autoTable({
+        startY: y,
+        margin: margenTablas,
+        head: [['Circuito', 'Sección', 'Ib', 'In', 'Iz corr.', 'ΔU', 'Estado']],
+        body: pdfFilas(filasComp),
+        theme: 'plain',
+        styles: { fontSize: 8, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
+        headStyles: { textColor: [111, 114, 119], fontStyle: 'bold', fontSize: 7, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
+        columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' } },
+      });
+      y = doc.lastAutoTable.finalY + 4;
+      doc.setFont('helvetica', 'italic'); doc.setFontSize(7); doc.setTextColor(111, 114, 119);
+      const refs = doc.splitTextToSize(pdfTexto(
+        'Cómo se comprobó cada circuito. Capacidad de conducción: Iz = I de tabla x factor de temperatura x factor de agrupamiento, y se verifica Iz >= Ib ' +
+        '(Reglamento de Baja Tensión de UTE, Capítulo II - Anexo, Tablas VI a XIII, Tabla XIV de temperatura y §5.1 de agrupamiento). ' +
+        'Coordinación con la protección: Ib <= In <= Iz (UTE, Capítulo V numeral 1.a, que exige que la protección garantice el límite admisible del conductor; ' +
+        'formulación explícita en IEC 60364-4-43:2023 §431.4.2, como referencia técnica complementaria, que agrega I2 <= 1,45 Iz, cumplida porque en los ' +
+        'termomagnéticos IEC 60898-1 es I2 = 1,45 In). Caída de tensión: e = 2LW/(KSV) en monofásico y LW/(KSV) en trifásico, con K a 25 °C de 56,9 (Cu) y ' +
+        '34,7 (Al), contra un máximo de 3 % en alumbrado y 5 % en los demás usos (UTE, Capítulo II - Anexo, numeral 8).'),
+        pageWidth - 2 * margin);
+      doc.text(refs, margin, y);
+      y += refs.length * 3.2 + 8;
     }
 
     lugarPara(4 + FILA * 3);

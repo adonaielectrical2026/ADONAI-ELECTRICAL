@@ -389,7 +389,10 @@
           </select>
         </div>
         <div class="field"><label id="cond-valor-label">Valor (kW)</label><input class="input" type="number" id="cond-valor" value="15"></div>
-        <div class="field"><label>cos φ</label><input class="input" type="number" step="0.05" min="0" max="1" id="cond-cosphi" value="0.90"></div>
+        <div class="grid-2">
+          <div class="field"><label>cos φ</label><input class="input" type="number" step="0.05" min="0" max="1" id="cond-cosphi" value="0.90"></div>
+          <div class="field"><label>Rendimiento η</label><input class="input" type="number" step="0.05" min="0.1" max="1" id="cond-rendimiento" value="1"></div>
+        </div>
         <div class="field"><label>Longitud (m)</label><input class="input" type="number" id="cond-longitud" value="42"></div>
         <div class="field"><label>Material</label>
           <select class="select" id="cond-material"><option value="cobre">Cobre</option><option value="aluminio">Aluminio</option></select>
@@ -429,6 +432,16 @@
           <span id="cond-badge"></span>
         </div>
         <div class="light-stat-grid" id="cond-resultado"></div>
+      </div>
+
+      <div class="card card-pad stack-sm">
+        <div class="section-label" style="margin:0">Comprobación del circuito</div>
+        <p style="font-size:0.78rem;color:var(--steel);margin:0">Capacidad de conducción, coordinación con la protección y caída de tensión. Se puede verificar la sección y la protección que calcula la app, o forzar otras para ver si cumplen.</p>
+        <div class="grid-2">
+          <div class="field"><label>Sección a verificar</label><select class="select" id="cond-seccion"></select></div>
+          <div class="field"><label>Protección a verificar</label><select class="select" id="cond-in"></select></div>
+        </div>
+        <div id="cond-comprobacion"></div>
       </div>
 
       <div class="grid-2">
