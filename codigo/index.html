@@ -263,6 +263,16 @@
       <div class="row-between">
         <p class="page-sub" style="margin:0;max-width:none">Sección mínima que cumple corriente admisible y caída de tensión, con protección sugerida.</p>
       </div>
+      <div class="card card-pad stack-sm">
+        <div class="section-label" style="margin:0">Alimentador desde el medidor</div>
+        <p style="font-size:0.78rem;color:var(--steel);margin:0">La caída de tensión se mide desde el origen de la instalación, así que lo que se pierde entre el medidor y el tablero general se le descuenta a cada circuito.</p>
+        <div class="grid-2">
+          <div class="field"><label>Longitud medidor → tablero (m)</label><input class="input" type="number" min="0" id="f-acom-l" value="10"></div>
+          <div class="field"><label>Sección del alimentador</label><select class="select" id="f-acom-seccion"></select></div>
+        </div>
+        <div class="light-stat-grid" id="acom-resultado"></div>
+      </div>
+
       <button class="btn btn-outline btn-block" id="btn-add-circuito"><svg><use href="#ic-plus"/></svg> Agregar circuito</button>
       <div class="stack" id="circuitos-list"></div>
       <div class="card" style="padding:0;overflow:hidden" id="circuitos-tabla-wrap" hidden>

@@ -474,7 +474,9 @@
     const corriente = sistema.fases === 1 ? sDemandTotal / v : sDemandTotal / (SQRT3 * v);
     const pKw = pDemandTotal / 1000;
     const suministroSugerido = sistema.fases === 1 ? nearestStepUp(pKw, MONO_STEPS) : nearestStepUp(pKw, TRI_STEPS);
-    const minimoDiseno = sistema.fases === 1 ? 6.6 : 7.6;
+    // Carga mínima que se puede solicitar: 3,5 kW en monofásica —es el escalón
+    // más chico que da UTE— y 7,6 kW en trifásica.
+    const minimoDiseno = sistema.fases === 1 ? 3.5 : 7.6;
     return { potenciaInstalada, pDemandTotal, qDemandTotal, sDemandTotal, cosPhiEq, corriente, suministroSugerido, minimoDiseno };
   }
 
@@ -501,7 +503,10 @@
     const nConductores = (Number(p.agrupados) || 1) * conductoresPorCircuito;
     const groupF = getGroupFactorUTE(categoria, nConductores, p.agrupados, p.disposicion);
     const k = CONDUCTIVIDAD_UTE[material] || CONDUCTIVIDAD_UTE.cobre;
-    const caidaMax = Number(p.caidaMax) || 5;
+    // El reglamento mide la caída desde el origen de la instalación, así que lo
+    // que ya se perdió en el alimentador entre el medidor y el tablero se le
+    // descuenta al margen del circuito.
+    const caidaMax = Math.max(0, (Number(p.caidaMax) || 5) - (Number(p.caidaPrevia) || 0));
     const uso = p.uso || 'fuerza';
     const minimo = Math.max(MINIMOS_REGLAMENTARIOS[uso] ?? 1, MINIMOS_COMERCIALES[uso] ?? 1.5);
     const curva = CURVA_SUGERIDA[uso] || 'C';
@@ -557,8 +562,9 @@
     const categoria = CATEGORIA_METODO[p.metodo] || 'conducto';
     const ib = Number(p.ib) || 0;
     const v = Number(p.v) || 230;
+    const caidaPrevia = Number(p.caidaPrevia) || 0;
     const caidaMax = Number(p.caidaMax) || 5;
-    const r = { ib, seccion, in: inProt, caidaMax, causas: [], base };
+    const r = { ib, seccion, in: inProt, caidaMax, caidaPrevia, causas: [], base };
     if (!seccion) { r.causas.push('No hay ninguna sección de tabla que sirva para este circuito.'); r.verificado = false; return r; }
 
     const fila = tablaAmpacidad(categoria, material, aislacion).find((x) => x.s === seccion);
@@ -568,6 +574,8 @@
     r.iz = r.izTabla * r.ft * r.fa;
     r.dU = caidaVolt(fases, Number(p.l) || 0, ib, Number(p.cosPhi) || 1, CONDUCTIVIDAD_UTE[material], seccion);
     r.dUPct = (r.dU / v) * 100;
+    // total desde el medidor: alimentador + circuito
+    r.dUPctTotal = r.dUPct + caidaPrevia;
 
     r.cumpleCapacidad = r.iz >= ib;
     r.cumpleIbIn = inProt !== null && ib <= inProt;
@@ -575,13 +583,15 @@
     r.i2 = inProt !== null ? inProt * FACTOR_I2_MCB : null;
     r.limite145 = r.iz * 1.45;
     r.cumpleI2 = r.i2 !== null ? r.i2 <= r.limite145 : null;
-    r.cumpleCaida = r.dUPct <= caidaMax;
+    r.cumpleCaida = r.dUPctTotal <= caidaMax;
 
     if (!r.cumpleCapacidad) r.causas.push('Sección insuficiente por capacidad térmica: la corriente admisible corregida (' + fmt(r.iz) + ' A) no llega a la corriente de diseño (' + fmt(ib) + ' A).');
     if (inProt === null) r.causas.push('No hay una protección de catálogo que coordine con este conductor.');
     if (inProt !== null && !r.cumpleIbIn) r.causas.push('La protección seleccionada es inferior a la corriente de diseño del circuito. Seleccione una corriente nominal superior.');
     if (inProt !== null && !r.cumpleInIz) r.causas.push('La corriente nominal de la protección supera la capacidad admisible del conductor. Aumente la sección del conductor o seleccione una protección adecuada.');
-    if (!r.cumpleCaida) r.causas.push('Caída de tensión superior al límite permitido: ' + fmt(r.dUPct) + ' % contra un máximo de ' + fmt(caidaMax) + ' %.');
+    if (!r.cumpleCaida) r.causas.push('Caída de tensión superior al límite permitido: ' + fmt(r.dUPctTotal) + ' % desde el medidor' +
+      (caidaPrevia > 0 ? ' (' + fmt(caidaPrevia) + ' % del alimentador + ' + fmt(r.dUPct) + ' % del circuito)' : '') +
+      ' contra un máximo de ' + fmt(caidaMax) + ' %.');
     r.verificado = r.cumpleCapacidad && r.cumpleIbIn && r.cumpleInIz && r.cumpleCaida && r.cumpleI2 !== false;
     return r;
   }
@@ -598,12 +608,57 @@
     return p.fases === 1 ? sVA / p.v : sVA / (SQRT3 * p.v);
   }
 
-  function calcularCircuito(c) {
+  function calcularCircuito(c, caidaPrevia) {
     return calcularSeccion({
       ib: c.ib, v: c.v, fases: c.fases, l: c.l, material: c.material, metodo: c.metodo, aislacion: c.aislacion,
       tempAmb: c.tempAmb, agrupados: c.agrupados, disposicion: c.disposicion, cosPhi: c.cosPhi,
-      caidaMax: c.caidaMax, uso: c.uso || 'fuerza',
+      caidaMax: c.caidaMax, caidaPrevia, uso: c.uso || 'fuerza',
     });
+  }
+
+  /*
+   * Alimentador entre el medidor y el tablero general. Su caída de tensión es
+   * la que arrastran todos los circuitos, porque el reglamento mide desde el
+   * origen de la instalación (Cap. II - Anexo §8) y no desde el tablero.
+   *
+   * La corriente es la demanda calculada de toda la instalación; la sección,
+   * la que se cargue a mano o la que sale de proteger la térmica general.
+   */
+  const ACOMETIDA_DEFECTO = { l: 10, seccion: null };
+  function calcularAcometida(draft) {
+    const acom = (draft && draft.acometida) || ACOMETIDA_DEFECTO;
+    const sistema = (draft && SISTEMAS[draft.sistemaId]) || SISTEMAS.tri_tt;
+    const l = Number(acom.l) || 0;
+    const r = calcularPotencia((draft && draft.cargas) || [], sistema, (draft && draft.factores) || {});
+    // La corriente de diseño del enlace es la del suministro que se solicita
+    // ante UTE, no la demanda instantánea. Además la general nunca puede quedar
+    // por debajo de la mayor térmica de circuito, o cortaría antes que ella.
+    const pW = (r.suministroSugerido || 0) * 1000;
+    const ig = sistema.fases === 1 ? pW / sistema.v : pW / (SQRT3 * sistema.v);
+    const maxCircuito = Math.max(0, ...(((draft && draft.circuitos) || []).map((c) => calcularCircuito(c).breaker || 0)));
+    const ibDiseno = Math.max(ig, maxCircuito + 0.01);
+    const datos = {
+      ib: ibDiseno, v: sistema.v, fases: sistema.fases, l,
+      material: 'cobre', metodo: 'embutido', aislacion: 'pvc', tempAmb: TEMP_AMBIENTE_DEFECTO,
+      agrupados: 1, cosPhi: r.cosPhiEq || 1, caidaMax: 3, uso: 'fuerza',
+    };
+    const auto = calcularSeccion(datos);
+    const seccion = Number(acom.seccion) || auto.seccionAdoptada || null;
+    // Iz del enlace con la sección que finalmente se use, y la térmica que
+    // coordina con él: mismo criterio que cualquier circuito, Ib <= In <= Iz.
+    const comp = seccion ? comprobarCircuito(datos, { seccion }) : null;
+    const iz = comp ? comp.iz : 0;
+    const termicaIn = seccion ? (BREAKER_RATINGS.find((b) => b >= ibDiseno && b <= iz) ?? null) : null;
+    // La caída se mide con la corriente de demanda real de la instalación.
+    const dU = seccion ? caidaVolt(sistema.fases, l, r.corriente, r.cosPhiEq || 1, CONDUCTIVIDAD_UTE.cobre, seccion) : 0;
+    return {
+      l, ib: r.corriente, ig, maxCircuito, ibDiseno, seccion, iz, termicaIn,
+      automatica: !acom.seccion, dU, dUPct: sistema.v ? (dU / sistema.v) * 100 : 0, datos,
+    };
+  }
+  function caidaPreviaDe(draft) {
+    if (!draft || !draft.acometida || !(Number(draft.acometida.l) > 0)) return 0;
+    return calcularAcometida(draft).dUPct;
   }
 
   // Térmica y diferencial general de toda la instalación (no de un circuito). Solo aplica
@@ -612,18 +667,21 @@
   function calcularProteccionGeneral(draft) {
     if (!draft || draft.obra.naturaleza !== 'Instalación nueva') return { aplica: false };
     const sistema = SISTEMAS[draft.sistemaId] || SISTEMAS.tri_tt;
-    const r = calcularPotencia(draft.cargas, sistema, draft.factores);
-    // La térmica general se dimensiona con la potencia a solicitar en el trámite ante UTE
-    // (el suministro contratado), no con la demanda instantánea calculada.
-    const pW = r.suministroSugerido * 1000;
-    const ig = sistema.fases === 1 ? pW / sistema.v : pW / (SQRT3 * sistema.v);
-    const maxCircuito = Math.max(0, ...(draft.circuitos || []).map((c) => calcularCircuito(c).breaker || 0));
-    const termicaIn = BREAKER_RATINGS.find((b) => b >= ig && b > maxCircuito) ?? BREAKER_RATINGS[BREAKER_RATINGS.length - 1];
+    // La general se calcula como cualquier otra protección: Ib <= In <= Iz, con
+    // la corriente admisible del conductor de enlace entre el medidor y el
+    // tablero. La corriente de diseño es la del suministro a solicitar ante UTE
+    // (no la demanda instantánea), y nunca menor que la mayor térmica de
+    // circuito.
+    const enlace = calcularAcometida(draft);
+    const ig = enlace.ig;
+    const maxCircuito = enlace.maxCircuito;
+    const termicaIn = enlace.termicaIn ?? BREAKER_RATINGS[BREAKER_RATINGS.length - 1];
     // En Uruguay no suelen conseguirse diferenciales de menos de 25A: si la térmica general
     // da 16 o 20A, el diferencial general igual se sugiere en 25A.
     const diferencialIn = Math.max(termicaIn, 25);
     return {
       aplica: true, ig, termicaIn, termicaCurva: 'C', termicaPolos: sistema.fases === 1 ? 2 : 4,
+      enlace, coordina: enlace.termicaIn !== null,
       diferencialIn, diferencialSensibilidad: (draft.proteccionGeneral && draft.proteccionGeneral.diferencialSensibilidad) || 30,
       diferencialTipo: 'AC',
     };
@@ -864,6 +922,7 @@
 
   function generarMateriales(circuitos, draft) {
     const precios = DB.settings.precios;
+    const caidaPrevia = caidaPreviaDe(draft);
     const mapa = {};
     function add(nombre, unidad, cantidad, precioUnit) {
       const key = nombre;
@@ -871,7 +930,7 @@
       mapa[key].cantidad += cantidad;
     }
     circuitos.forEach((c) => {
-      const calc = calcularCircuito(c);
+      const calc = calcularCircuito(c, caidaPrevia);
       if (!calc.apto) return;
       const conductores = c.fases === 1 ? 2 : 4;
       // Al aire libre se tira cable bajo goma y en bandeja bajo plástico: son un
@@ -2210,6 +2269,7 @@
       id: null, codigo: null,
       cliente: { nombre: '', telefono: '', whatsapp: '', email: '', contacto: '', obs: '' },
       obra: { nombre: '', direccion: '', localidad: 'Salto', tipo: 'Residencial', naturaleza: 'Instalación nueva', obs: '' },
+      acometida: { ...ACOMETIDA_DEFECTO },
       sistemaId: 'tri_tt', factores: { iluminacion: 1.0, tomacorrientes: 0.66, cargaFija: 0.8 },
       proteccionGeneral: { diferencialSensibilidad: 30 },
       cargas: [], circuitos: [], materiales: [], estado: 'pendiente', observaciones: '',
@@ -2460,14 +2520,39 @@
       '<div class="light-stat-row"><span class="lbl">Diferencial general</span><span class="val strong">' + pg.diferencialIn + 'A · ' + pg.diferencialTipo + '</span></div>';
   }
 
+  // Ficha del alimentador: longitud, sección y la caída que arrastra.
+  function renderAcometida() {
+    if (!draft.acometida) draft.acometida = { ...ACOMETIDA_DEFECTO };
+    const a = calcularAcometida(draft);
+    $('#f-acom-l').value = draft.acometida.l;
+    const sel = $('#f-acom-seccion');
+    const secciones = tablaAmpacidad('conducto', 'cobre', 'pvc').map((x) => x.s);
+    sel.innerHTML = '<option value="">La que calcula la app' + (a.seccion ? ' (' + fmt(a.seccion, a.seccion < 10 ? 1 : 0).replace(/,0$/, '') + ' mm²)' : '') + '</option>' +
+      secciones.map((x) => '<option value="' + x + '"' + (Number(draft.acometida.seccion) === x ? ' selected' : '') + '>' +
+        fmt(x, x < 10 ? 1 : 0).replace(/,0$/, '') + ' mm²</option>').join('');
+    const limite = 3;
+    $('#acom-resultado').innerHTML =
+      '<div class="light-stat-row"><span class="lbl">Corriente de demanda / de diseño</span><span class="val strong">' + fmt(a.ib) + ' A · ' + fmt(a.ibDiseno) + ' A</span></div>' +
+      '<div class="light-stat-row"><span class="lbl">Sección del alimentador</span><span class="val strong">' + (a.seccion ? a.seccion + ' mm² Cu' : '—') + (a.automatica ? ' (calculada)' : ' (fijada)') + '</span></div>' +
+      '<div class="light-stat-row"><span class="lbl">Corriente admisible del enlace</span><span class="val strong">' + fmt(a.iz) + ' A</span></div>' +
+      '<div class="light-stat-row"><span class="lbl">Térmica general que coordina</span><span class="val strong" style="color:' + (a.termicaIn ? 'inherit' : 'var(--error)') + '">' +
+        (a.termicaIn ? a.termicaIn + ' A (Ib ' + fmt(a.ibDiseno) + ' ≤ In ≤ Iz ' + fmt(a.iz) + ')' : 'ninguna coordina: subí la sección') + '</span></div>' +
+      '<div class="light-stat-row"><span class="lbl">Caída del alimentador</span><span class="val strong" style="color:' + (a.dUPct > limite ? 'var(--error)' : 'inherit') + '">' +
+        fmt(a.dU) + ' V · ' + fmt(a.dUPct) + ' %</span></div>' +
+      '<div class="light-stat-row"><span class="lbl">Margen que queda para los circuitos</span><span class="val">' +
+        fmt(Math.max(0, 3 - a.dUPct)) + ' % en iluminación · ' + fmt(Math.max(0, 5 - a.dUPct)) + ' % en el resto</span></div>';
+  }
+
   function renderCircuitosList() {
+    renderAcometida();
+    const caidaPrevia = caidaPreviaDe(draft);
     const wrap = $('#circuitos-list');
     wrap.innerHTML = '';
     if (draft.circuitos.length === 0) {
       wrap.appendChild(el('div', { class: 'card card-pad empty-state', html: 'No hay circuitos todavía. Volvé a <b>Cargas</b> y continuá, o agregalos acá manualmente.' }));
     }
     draft.circuitos.forEach((c) => {
-      const calc = calcularCircuito(c);
+      const calc = calcularCircuito(c, caidaPrevia);
       const card = el('div', { class: 'card card-pad item-card', style: 'position:relative' });
       card.innerHTML =
         '<button class="remove-btn" type="button">' + icon('ic-trash') + '</button>' +
@@ -2499,7 +2584,9 @@
         '<div style="margin-top:16px">' + (calc.apto
           ? '<div class="panel-dark card-pad" style="display:flex;flex-wrap:wrap;gap:20px">' +
             statBox('Sección', calc.seccionAdoptada + ' mm²', true) + statBox('Iz corregida', fmt(calc.iz) + ' A') +
-            statBox('Caída de tensión', fmt(calc.dUPct) + ' %') + statBox('Protección', calc.breaker + ' A', true) + statBox('Curva sugerida', calc.curva) + '</div>'
+            statBox('Caída del circuito', fmt(calc.dUPct) + ' %') +
+            statBox('Caída desde el medidor', fmt(calc.dUPct + caidaPrevia) + ' %', true) +
+            statBox('Protección', calc.breaker + ' A', true) + statBox('Curva sugerida', calc.curva) + '</div>'
           : '<div class="alert-error">Ninguna sección de la tabla cumple corriente admisible y caída de tensión. Revisá longitud, método o caída máxima.</div>') + '</div>';
       card.querySelector('.remove-btn').addEventListener('click', () => { draft.circuitos = draft.circuitos.filter((x) => x.id !== c.id); renderCircuitosList(); });
       card.querySelectorAll('[data-f]').forEach((input) => {
@@ -2526,7 +2613,7 @@
     tablaWrap.hidden = draft.circuitos.length === 0;
     const tbody = $('#circuitos-tabla tbody');
     tbody.innerHTML = draft.circuitos.map((c) => {
-      const calc = calcularCircuito(c);
+      const calc = calcularCircuito(c, caidaPrevia);
       return '<tr><td>' + escapeHtml(c.nombre || '—') + '</td><td>' + fmt(c.ib) + '</td><td>' + (calc.apto ? calc.seccionAdoptada + ' mm²' : '—') + '</td>' +
         '<td>' + (calc.apto ? calc.breaker + 'A · ' + calc.curva : '—') + '</td>' +
         '<td style="color:' + (calc.apto && calc.dUPct > c.caidaMax ? 'var(--error)' : 'inherit') + '">' + (calc.apto ? fmt(calc.dUPct) : '—') + '</td></tr>';
@@ -3340,6 +3427,16 @@
       renderCargasList(); renderPotenciaResultado();
     });
     $('#f-sistema').addEventListener('change', renderPotenciaResultado);
+    $('#f-acom-l').addEventListener('change', () => {
+      if (!draft.acometida) draft.acometida = { ...ACOMETIDA_DEFECTO };
+      draft.acometida.l = Number($('#f-acom-l').value) || 0;
+      renderCircuitosList();
+    });
+    $('#f-acom-seccion').addEventListener('change', () => {
+      if (!draft.acometida) draft.acometida = { ...ACOMETIDA_DEFECTO };
+      draft.acometida.seccion = Number($('#f-acom-seccion').value) || null;
+      renderCircuitosList();
+    });
     $('#btn-add-circuito').addEventListener('click', () => {
       const sistema = SISTEMAS[draft.sistemaId];
       draft.circuitos.push({ id: uid('m2'), nombre: '', ib: 10, v: sistema.v, fases: sistema.fases, l: 15,
