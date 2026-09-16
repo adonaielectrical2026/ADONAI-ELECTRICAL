@@ -91,20 +91,21 @@
     // --- Otros ---
     { cat: 'cargaFija', grupo: 'Otros', nombre: 'Televisor LED', w: 120, cosPhi: 0.95 },
     { cat: 'cargaFija', grupo: 'Otros', nombre: 'Computadora de escritorio', w: 300, cosPhi: 0.95 },
-    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Bomba de agua 1/2 HP', w: 550, cosPhi: 0.8 },
-    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Bomba de agua 1 HP', w: 1100, cosPhi: 0.8 },
-    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Bomba de piscina', w: 750, cosPhi: 0.8 },
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Bomba de agua 1/2 HP', w: 550, cosPhi: 0.8 , uso: 'motor'},
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Bomba de agua 1 HP', w: 1100, cosPhi: 0.8 , uso: 'motor'},
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Bomba de piscina', w: 750, cosPhi: 0.8 , uso: 'motor'},
     { cat: 'cargaFija', grupo: 'Otros', nombre: 'Portón eléctrico', w: 400, cosPhi: 0.8 },
     { cat: 'cargaFija', grupo: 'Otros', nombre: 'Cargador de auto eléctrico', w: 7400, cosPhi: 1 },
-    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Motor / otro', w: 750, cosPhi: 0.8 },
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Motor / otro', w: 750, cosPhi: 0.8 , uso: 'motor'},
   ];
   // Uso del circuito. Define la sección mínima reglamentaria, la curva de la
   // térmica y la caída de tensión admisible, así que tiene que poder elegirse:
   // una térmica de iluminación va en curva B y una de fuerza en C.
   const USOS = [
     { id: 'iluminacion', label: 'Iluminación' },
-    { id: 'tomacorrientes', label: 'Tomacorrientes' },
-    { id: 'fuerza', label: 'Fuerza / carga fija' },
+    { id: 'tomacorrientes', label: 'Tomacorrientes de uso general' },
+    { id: 'fuerza', label: 'Electrodomésticos / carga fija' },
+    { id: 'motor', label: 'Motor o bomba (arranque fuerte)' },
   ];
   // Polos de la llave de un circuito.
   //
@@ -116,6 +117,8 @@
   //
   // Alcanza con que UNA llave sea unipolar para que el tablero necesite bornera
   // de neutro. La de tierra va siempre, sea cual sea el caso.
+  // En monofásica todo va bipolar menos iluminación, que va unipolar con el
+  // neutro a bornera. En trifásica, tetrapolar.
   function polosPorDefecto(circuito) {
     if (circuito.fases !== 1) return 4;
     return circuito.uso === 'iluminacion' ? 1 : 2;
@@ -276,24 +279,10 @@
       { t: 70, f: 0.56 }, { t: 75, f: 0.48 }, { t: 80, f: 0.39 },
     ],
   };
-  // Temperatura ambiente de cálculo según dónde va el circuito, medida en Salto:
-  // en interiores no pasa de 30 °C y en el exterior, las tardes de verano llegan
-  // a 45 °C. Es lo que decide el factor de corrección de la Tabla XIV, así que
-  // un circuito exterior calculado como interior queda corto.
-  const AMBIENTES = [
-    { id: 'interior', label: 'Interior — hasta 30 °C', t: 30 },
-    { id: 'exterior', label: 'Exterior, verano — hasta 45 °C', t: 45 },
-  ];
-  function ambienteDe(temp) {
-    const a = AMBIENTES.find((x) => x.t === Number(temp));
-    return a ? a.id : 'otra';
-  }
-  function ambienteSelectHtml(temp, attrs) {
-    const actual = ambienteDe(temp);
-    return '<select class="select" ' + (attrs || '') + '>' +
-      AMBIENTES.map((a) => '<option value="' + a.id + '"' + (actual === a.id ? ' selected' : '') + '>' + a.label + '</option>').join('') +
-      '<option value="otra"' + (actual === 'otra' ? ' selected' : '') + '>Otra temperatura</option></select>';
-  }
+  // Temperatura ambiente de cálculo: siempre 30 °C, que es el criterio de la
+  // empresa para toda la obra. Queda editable circuito por circuito para un caso
+  // que lo justifique, pero no se sugiere ninguna otra.
+  const TEMP_AMBIENTE_DEFECTO = 30;
 
   const METODO_LABEL = {
     embutido: 'Embutido en pared',
@@ -304,17 +293,28 @@
     enterrado: 'Enterrado bajo tierra',
   };
   const BREAKER_RATINGS = [6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125];
-  const CURVA_SUGERIDA = { iluminacion: 'B', tomacorrientes: 'C', fuerza: 'C' };
+  // Curva de la térmica según lo que alimenta el circuito:
+  //   B: cargas resistivas, de arranque suave — iluminación residencial y
+  //      tomacorrientes comunes de casa u oficina chica.
+  //   C: cargas inductivas moderadas, la más común — lavarropas, heladera,
+  //      aire acondicionado, en obra domiciliaria y comercial.
+  //   D: cargas inductivas con picos fuertes de arranque — motores y bombas.
+  const CURVA_SUGERIDA = { iluminacion: 'B', tomacorrientes: 'B', fuerza: 'C', motor: 'D' };
+  const CURVA_DESCRIPCION = {
+    B: 'Cargas resistivas, arranque suave: iluminación y tomacorrientes comunes.',
+    C: 'Cargas inductivas moderadas: lavarropas, heladera, aire acondicionado.',
+    D: 'Cargas inductivas con pico fuerte de arranque: motores y bombas.',
+  };
   // Secciones minimas por resistencia mecanica, RBT-UTE Anexo S9: derivacion para
   // alumbrado 0,75mm2; derivacion para tomacorrientes "en salto" 1,5mm2 (mas conservador
   // que 1mm2 para un solo tomacorriente); derivacion para otros usos 1mm2.
-  const MINIMOS_REGLAMENTARIOS = { iluminacion: 0.75, tomacorrientes: 1.5, fuerza: 1 };
-  // El reglamento admite 0,75 mm² en iluminación, pero en plaza no se consigue:
-  // se arranca en 1 mm². Va aparte del mínimo reglamentario a propósito — la
-  // tabla de arriba dice lo que dice la norma y no se toca; manda el mayor de
-  // los dos.
-  const SECCION_MINIMA_COMERCIAL = 1;
-  const CAIDA_MAX_DEFAULT = { iluminacion: 3, tomacorrientes: 5, fuerza: 5 };
+  const MINIMOS_REGLAMENTARIOS = { iluminacion: 0.75, tomacorrientes: 1.5, fuerza: 1, motor: 1 };
+  // Mínimos de la casa, más exigentes que la norma: en iluminación 1 mm² porque
+  // 0,75 no se consigue en plaza, y 1,5 mm² en todo el resto. Van aparte del
+  // mínimo reglamentario a propósito — la tabla de arriba dice lo que dice la
+  // norma y no se toca; manda el mayor de los dos.
+  const MINIMOS_COMERCIALES = { iluminacion: 1, tomacorrientes: 1.5, fuerza: 1.5, motor: 1.5 };
+  const CAIDA_MAX_DEFAULT = { iluminacion: 3, tomacorrientes: 5, fuerza: 5, motor: 5 };
   const DIAMETRO_CANO = [{ s: 2.5, d: 16 }, { s: 6, d: 20 }, { s: 10, d: 25 }, { s: 16, d: 32 }, { s: 95, d: 40 }];
 
   /* ============================================================
@@ -465,7 +465,7 @@
     const k = CONDUCTIVIDAD_UTE[material] || CONDUCTIVIDAD_UTE.cobre;
     const caidaMax = Number(p.caidaMax) || 5;
     const uso = p.uso || 'fuerza';
-    const minimo = Math.max(MINIMOS_REGLAMENTARIOS[uso] ?? 1, SECCION_MINIMA_COMERCIAL);
+    const minimo = Math.max(MINIMOS_REGLAMENTARIOS[uso] ?? 1, MINIMOS_COMERCIALES[uso] ?? 1.5);
     const curva = CURVA_SUGERIDA[uso] || 'C';
 
     let seccionCapacidad = null, seccionCaida = null, elegido = null;
@@ -597,7 +597,7 @@
       const s = cosPhi > 0 ? pTotal / cosPhi : pTotal;
       const ib = sistema.fases === 1 ? s / sistema.v : s / (SQRT3 * sistema.v);
       const cat = CATEGORIAS.find((cat) => cat.id === c.categoria);
-      const uso = cat ? cat.uso : 'fuerza';
+      const uso = c.uso || (cat ? cat.uso : 'fuerza');
       return {
         id: 'imp-' + Date.now() + '-' + i,
         nombre: c.nombre || (cat ? cat.label : 'Circuito'),
@@ -2370,6 +2370,9 @@
               // el nombre se pisa sólo si el técnico no escribió uno propio
               if (!c.nombre || CARGAS_PRESETS.some((x) => x.nombre === c.nombre)) c.nombre = p.nombre;
               c.potenciaW = p.w; c.cosPhi = p.cosPhi;
+              // los presets de motor o bomba arrastran su uso: la térmica va
+              // con curva D por el pico de arranque
+              if (p.uso) c.uso = p.uso; else delete c.uso;
               renderCargasList(); renderPotenciaResultado();
             }
             return;
@@ -2435,7 +2438,6 @@
         '<div class="field"><label>Longitud (m)</label><input class="input" type="number" data-f="l" value="' + c.l + '"></div>' +
         '<div class="field"><label>Material</label><select class="select" data-f="material"><option value="cobre"' + (c.material === 'cobre' ? ' selected' : '') + '>Cobre</option><option value="aluminio"' + (c.material === 'aluminio' ? ' selected' : '') + '>Aluminio</option></select></div>' +
         '<div class="field"><label>Método</label><select class="select" data-f="metodo">' + Object.keys(METODO_LABEL).map((k) => '<option value="' + k + '"' + (c.metodo === k ? ' selected' : '') + '>' + METODO_LABEL[k] + '</option>').join('') + '</select></div>' +
-        '<div class="field"><label>Ambiente</label>' + ambienteSelectHtml(c.tempAmb, 'data-f="ambiente"') + '</div>' +
         '<div class="field"><label>Temp. amb. (°C)</label><input class="input" type="number" data-f="tempAmb" value="' + c.tempAmb + '"></div>' +
         '<div class="field"><label>Agrupados</label><input class="input" type="number" min="1" data-f="agrupados" value="' + c.agrupados + '"></div>' +
         '<div class="field"><label>Polos</label><select class="select" data-f="polos">' +
@@ -2459,13 +2461,6 @@
       card.querySelectorAll('[data-f]').forEach((input) => {
         input.addEventListener('change', () => {
           const f = input.dataset.f;
-          // El ambiente sólo carga la temperatura: lo que se guarda es el número.
-          if (f === 'ambiente') {
-            const a = AMBIENTES.find((x) => x.id === input.value);
-            if (a) c.tempAmb = a.t;
-            renderCircuitosList();
-            return;
-          }
           const esTexto = f === 'nombre' || f === 'material' || f === 'metodo' || f === 'uso' || f === 'aislacion';
           c[f] = esTexto ? input.value : Number(input.value);
           // Cada uso trae su propia caída máxima admisible: iluminación admite
@@ -2700,7 +2695,6 @@
       cosPhi, caidaMax: Number($('#cond-caidamax').value) || 5, uso: $('#cond-uso').value,
     };
     const r = calcularSeccion(datos);
-    $('#cond-ambiente').value = ambienteDe(datos.tempAmb);
     opcionesComprobacion(datos.material, datos.aislacion, datos.metodo);
     renderComprobacion(comprobarCircuito(datos, { seccion: $('#cond-seccion').value, in: $('#cond-in').value }));
     $('#cond-badge').innerHTML = r.apto
@@ -2715,6 +2709,7 @@
     if (r.apto) {
       rows.push(['ic-cable', 'Conductor adoptado', r.seccionAdoptada + ' mm² ' + ($('#cond-material').value === 'cobre' ? 'Cu' : 'Al') + ' ' + $('#cond-aislacion').value.toUpperCase()]);
       rows.push(['ic-calc', 'Protección sugerida', r.breaker + ' A curva ' + r.curva]);
+      rows.push(['ic-tool', 'Por qué esa curva', CURVA_DESCRIPCION[r.curva] || '—']);
       rows.push(['ic-thermo', 'Caída de tensión', fmt(r.dUPct) + ' % — ' + (r.dUPct <= Number($('#cond-caidamax').value) ? 'Cumple' : 'No cumple')]);
     }
     $('#cond-resultado').innerHTML = rows.map((row) =>
@@ -3345,13 +3340,10 @@
     ['#cond-seccion', '#cond-in', '#cond-rendimiento'].forEach((sel) => {
       $(sel).addEventListener('change', calcularConductorForm);
     });
-    $('#cond-ambiente').addEventListener('change', () => {
-      const a = AMBIENTES.find((x) => x.id === $('#cond-ambiente').value);
-      if (a) $('#cond-temp').value = a.t;
+    // cada uso trae su caída máxima: iluminación admite 3 % y el resto 5 %
+    $('#cond-uso').addEventListener('change', () => {
+      $('#cond-caidamax').value = CAIDA_MAX_DEFAULT[$('#cond-uso').value] || 5;
       calcularConductorForm();
-    });
-    $('#cond-temp').addEventListener('input', () => {
-      $('#cond-ambiente').value = ambienteDe($('#cond-temp').value);
     });
     $('#btn-cond-guardar').addEventListener('click', () => { calcularConductorForm(); toast('Cálculo guardado en el dispositivo'); });
     $('#btn-cond-a-relevamiento').addEventListener('click', () => {
