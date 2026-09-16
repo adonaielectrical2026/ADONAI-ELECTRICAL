@@ -663,6 +663,14 @@
     </div>
     <div class="stack" style="padding-top:14px">
       <p class="page-sub" style="margin:0">Precios de referencia de los materiales que la app genera sola en cada relevamiento. Tocá una categoría para abrirla y editar los valores.</p>
+      <div class="card card-pad stack-sm">
+        <div class="section-label" style="margin:0">Cotización del dólar</div>
+        <div class="light-stat-row"><span class="lbl">Dólar</span><span class="val">$ <input class="input" style="min-height:34px;width:100px;text-align:right" type="number" step="0.01" id="cat-dolar" value="40.23"></span></div>
+        <button class="btn btn-outline btn-block" id="btn-cat-dolar">Actualizar precios con esta cotización</button>
+        <p style="font-size:0.76rem;color:var(--steel);margin:0">Ajusta sólo los precios relevados en dólares (cable bajo goma y bajo plástico, caño y curva galvanizados, bandeja de 150 mm y caja de medidor trifásica). El resto está relevado en pesos y no se toca.</p>
+        <p id="cat-revision" style="font-size:0.76rem;color:var(--steel);margin:0"></p>
+        <button class="btn btn-ghost btn-block btn-sm" id="btn-cat-revisado">Marcar como revisado hoy</button>
+      </div>
       <div id="catalogo-precios-list" class="stack"></div>
       <button class="btn btn-outline btn-block" id="btn-restablecer-precios">Restablecer precios de fábrica</button>
     </div>

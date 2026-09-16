@@ -1015,6 +1015,14 @@
     </div>
     <div class="stack" style="padding-top:14px">
       <p class="page-sub" style="margin:0">Precios de referencia de los materiales que la app genera sola en cada relevamiento. Tocá una categoría para abrirla y editar los valores.</p>
+      <div class="card card-pad stack-sm">
+        <div class="section-label" style="margin:0">Cotización del dólar</div>
+        <div class="light-stat-row"><span class="lbl">Dólar</span><span class="val">$ <input class="input" style="min-height:34px;width:100px;text-align:right" type="number" step="0.01" id="cat-dolar" value="40.23"></span></div>
+        <button class="btn btn-outline btn-block" id="btn-cat-dolar">Actualizar precios con esta cotización</button>
+        <p style="font-size:0.76rem;color:var(--steel);margin:0">Ajusta sólo los precios relevados en dólares (cable bajo goma y bajo plástico, caño y curva galvanizados, bandeja de 150 mm y caja de medidor trifásica). El resto está relevado en pesos y no se toca.</p>
+        <p id="cat-revision" style="font-size:0.76rem;color:var(--steel);margin:0"></p>
+        <button class="btn btn-ghost btn-block btn-sm" id="btn-cat-revisado">Marcar como revisado hoy</button>
+      </div>
       <div id="catalogo-precios-list" class="stack"></div>
       <button class="btn btn-outline btn-block" id="btn-restablecer-precios">Restablecer precios de fábrica</button>
     </div>
@@ -2561,6 +2569,20 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     canoPvc1pulg3m: 197,
     codoPvc1pulg: 31,
   };
+  // Cotización con la que se pasaron a pesos los precios relevados en dólares.
+  const DOLAR_BASE = 40.23;
+  // Cuáles son esos precios: los proveedores que cotizan en dólares (MGI y,
+  // para el cable multipolar, Fivisa). Cuando cambia la cotización, sólo estos
+  // se recalculan; el resto está relevado en pesos y no se toca.
+  const PRECIOS_EN_DOLARES = [
+    { clave: 'cableBajoGoma' }, { clave: 'cableBajoPlastico' },
+    { clave: 'canoGalvanizado' }, { clave: 'codoGalvanizado' },
+    { clave: 'bandeja', medida: 150 }, { clave: 'cajaMedidorTrifasica' },
+  ];
+  // Un catálogo sin revisar envejece mal: con la inflación y el dólar moviéndose,
+  // presupuestar con precios viejos se come el margen sin que se note.
+  const DIAS_PRECIOS_VIEJOS = 30;
+
   // Los que pasaron de "sin relevar" a relevado. Al agregar uno nuevo acá, se
   // actualiza solo en los celulares que ya tienen la app.
   const PRECIOS_RELEVADOS = [
@@ -2581,9 +2603,34 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   //   de ninguno: Electro Uruguay las publica en MercadoLibre.
   // Rendimiento para estimar el plazo de una obra (ver estimarPlazo). Se
   // ajustan en Perfil, junto con la tarifa.
+  const DEFAULT_DOLAR = { cotizacion: DOLAR_BASE, actualizado: null };
   const DEFAULT_MANO_OBRA = { tarifaHora: 500, horasJornada: 8, bocasPorJornada: 6, jornadasCargaFija: 0.5, jornadasTablero: 1 };
   const BASE_POR_TIPO = { unipolar: 'termicaUnipolarBase', bipolar: 'termicaBipolarBase',
                           tripolar: 'termicaTetrapolarBase', tetrapolar: 'termicaTetrapolarBase' };
+  // Pasa a la cotización nueva los precios que se relevaron en dólares.
+  function ajustarPreciosPorDolar(precios, cotizacionVieja, cotizacionNueva) {
+    if (!(cotizacionVieja > 0) || !(cotizacionNueva > 0) || cotizacionVieja === cotizacionNueva) return 0;
+    const factor = cotizacionNueva / cotizacionVieja;
+    let tocados = 0;
+    PRECIOS_EN_DOLARES.forEach((r) => {
+      const destino = r.medida === undefined ? precios : precios[r.clave];
+      const clave = r.medida === undefined ? r.clave : r.medida;
+      if (!destino) return;
+      if (r.medida === undefined && typeof destino[clave] === 'object' && destino[clave]) {
+        Object.keys(destino[clave]).forEach((k) => {
+          if (destino[clave][k] > 0) { destino[clave][k] = Math.round(destino[clave][k] * factor); tocados++; }
+        });
+        return;
+      }
+      if (destino[clave] > 0) { destino[clave] = Math.round(destino[clave] * factor); tocados++; }
+    });
+    return tocados;
+  }
+  function diasDesde(ts) {
+    if (!ts) return null;
+    return Math.floor((Date.now() - ts) / (24 * 3600e3));
+  }
+
   function precioTermica(tipo, amp, precios) {
     const base = Number(precios[BASE_POR_TIPO[tipo] || 'termicaBipolarBase']) || 0;
     if (amp <= 40) return base;
@@ -3635,7 +3682,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   function defaultDB() {
     return {
       trabajos: [], presupuestos: [],
-      settings: { margen: 30, iva: 22, precios: clonePrecios(DEFAULT_PRECIOS), manoObra: { ...DEFAULT_MANO_OBRA } },
+      settings: { margen: 30, iva: 22, precios: clonePrecios(DEFAULT_PRECIOS),
+                  manoObra: { ...DEFAULT_MANO_OBRA }, dolar: { ...DEFAULT_DOLAR },
+                  preciosRevisados: Date.now() },
       seq: { trabajo: 0, presupuesto: 0 }, _seeded: false,
     };
   }
@@ -3698,6 +3747,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       if (!(medida in def)) { delete guardado[medida]; clavesAgregadas = true; }
     });
   });
+  if (!DB.settings.dolar) { DB.settings.dolar = { ...DEFAULT_DOLAR }; clavesAgregadas = true; }
+  if (!DB.settings.preciosRevisados) { DB.settings.preciosRevisados = Date.now(); clavesAgregadas = true; }
   if (!DB.settings.manoObra) DB.settings.manoObra = { ...DEFAULT_MANO_OBRA };
   Object.keys(DEFAULT_MANO_OBRA).forEach((k) => {
     if (DB.settings.manoObra[k] === undefined) { DB.settings.manoObra[k] = DEFAULT_MANO_OBRA[k]; clavesAgregadas = true; }
@@ -3914,6 +3965,16 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         row.addEventListener('click', () => openPresupuesto(p.id));
         card.appendChild(row);
       });
+      avisos.appendChild(card);
+    }
+
+    const dias = diasDesde(DB.settings.preciosRevisados);
+    if (dias !== null && dias >= DIAS_PRECIOS_VIEJOS) {
+      const card = el('div', { class: 'card card-pad', style: 'cursor:pointer' });
+      card.innerHTML = '<div class="activity-row"><span class="ic">' + icon('ic-cable') + '</span>' +
+        '<div class="body"><div class="title">Precios sin revisar</div>' +
+        '<div class="meta">Hace ' + dias + ' días que no se tocan. Revisalos antes de presupuestar.</div></div></div>';
+      card.addEventListener('click', () => { showView('catalogo-precios'); renderCatalogoPrecios(); });
       avisos.appendChild(card);
     }
 
@@ -4618,7 +4679,37 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     const inputId = 'pc-' + Math.random().toString(36).slice(2, 9);
     return { id: inputId, html: '<div class="light-stat-row"><span class="lbl">' + labelHtml + '</span><span class="val"><input class="input" style="min-height:34px;width:100px;text-align:right" type="number" id="' + inputId + '" value="' + value + '"></span></div>', onSet };
   }
+  function renderCatalogoDolar() {
+    const d = DB.settings.dolar;
+    $('#cat-dolar').value = d.cotizacion;
+    const dias = diasDesde(DB.settings.preciosRevisados);
+    const nota = $('#cat-revision');
+    nota.textContent = dias === null ? 'Sin revisar todavía.'
+      : dias === 0 ? 'Revisados hoy.'
+      : 'Revisados hace ' + dias + (dias === 1 ? ' día.' : ' días.') + (dias >= DIAS_PRECIOS_VIEJOS ? ' Conviene actualizarlos.' : '');
+    nota.style.color = dias !== null && dias >= DIAS_PRECIOS_VIEJOS ? 'var(--error)' : 'var(--steel)';
+  }
+  function marcarPreciosRevisados() {
+    DB.settings.preciosRevisados = Date.now();
+    saveDB();
+    renderCatalogoDolar();
+    toast('Catálogo marcado como revisado hoy');
+  }
+  function aplicarCotizacionDolar() {
+    const nueva = Number($('#cat-dolar').value) || 0;
+    const vieja = Number(DB.settings.dolar.cotizacion) || DOLAR_BASE;
+    if (!(nueva > 0)) { toast('Poné una cotización válida'); return; }
+    if (nueva === vieja) { toast('La cotización es la misma'); return; }
+    const tocados = ajustarPreciosPorDolar(DB.settings.precios, vieja, nueva);
+    DB.settings.dolar = { cotizacion: nueva, actualizado: Date.now() };
+    DB.settings.preciosRevisados = Date.now();
+    saveDB();
+    renderCatalogoPrecios();
+    toast(tocados + ' precio(s) actualizados con el dólar a $' + nueva);
+  }
+
   function renderCatalogoPrecios() {
+    renderCatalogoDolar();
     const wrap = $('#catalogo-precios-list');
     wrap.innerHTML = '';
     const precios = DB.settings.precios;
@@ -4651,7 +4742,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     setters.forEach((r) => {
       $('#' + r.id).addEventListener('change', (e) => {
         r.onSet(Number(e.target.value) || 0);
+        DB.settings.preciosRevisados = Date.now();
         saveDB();
+        renderCatalogoDolar();
       });
     });
   }
@@ -4829,6 +4922,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       if (g === 'conductor') { showView('conductor'); calcularConductorForm(); }
       if (g === 'potencia-libre') { startRelevamiento(); wizardStep = 2; renderWizardStep(); }
     }));
+    $('#btn-cat-dolar').addEventListener('click', aplicarCotizacionDolar);
+    $('#btn-cat-revisado').addEventListener('click', marcarPreciosRevisados);
     $('#trabajos-buscar').addEventListener('input', renderTrabajos);
     $('#presupuestos-buscar').addEventListener('input', renderPresupuestos);
     $('#btn-trabajos-nuevo').addEventListener('click', startRelevamiento);
