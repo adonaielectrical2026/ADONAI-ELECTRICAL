@@ -1862,6 +1862,25 @@
   }
   function uid(prefix) { return prefix + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
 
+  // Un presupuesto vale mientras corre su validez. Se cuenta desde que se creó,
+  // que es cuando se le pasa al cliente. Los aprobados ya se cerraron y los
+  // borradores todavía no salieron: no vencen.
+  const DIA_MS = 24 * 3600e3;
+  function vencimientoDe(p) {
+    if (!p || p.estado === 'aprobado' || p.estado === 'borrador') return null;
+    const validez = Number(p.validez) || 0;
+    if (!validez) return null;
+    const vence = (p.createdAt || Date.now()) + validez * DIA_MS;
+    const dias = Math.ceil((vence - Date.now()) / DIA_MS);
+    return { vence, dias, vencido: dias < 0 };
+  }
+  function textoVencimiento(v) {
+    if (!v) return '';
+    if (v.vencido) return 'Venció hace ' + Math.abs(v.dias) + (Math.abs(v.dias) === 1 ? ' día' : ' días');
+    if (v.dias === 0) return 'Vence hoy';
+    return 'Vence en ' + v.dias + (v.dias === 1 ? ' día' : ' días');
+  }
+
   const ESTADO_LABEL = { pendiente: 'Pendiente', revision: 'En revisión', aprobado: 'Aprobado', borrador: 'Borrador' };
   const ESTADO_CLASS = { pendiente: 'status-pending', revision: 'status-review', aprobado: 'status-approved', borrador: 'status-draft' };
   function statusPill(estado) {
@@ -1911,6 +1930,27 @@
     $('#home-stats').innerHTML =
       '<div class="stat-pill"><span class="ic">' + icon('ic-clock') + '</span><div><div class="num">' + pendientes + '</div><div class="lbl">pendientes</div></div></div>' +
       '<div class="stat-pill"><span class="ic">' + icon('ic-check-list') + '</span><div><div class="num">' + revision + '</div><div class="lbl">en revisión</div></div></div>';
+
+    // Ofertas que se están por caer: si nadie las mira, se vencen solas.
+    const avisos = $('#home-avisos');
+    avisos.innerHTML = '';
+    const porVencer = DB.presupuestos
+      .map((p) => ({ p, v: vencimientoDe(p) }))
+      .filter((x) => x.v && x.v.dias <= 3)
+      .sort((a, b) => a.v.dias - b.v.dias);
+    if (porVencer.length) {
+      const card = el('div', { class: 'card card-pad stack-sm' });
+      card.innerHTML = '<div class="section-label" style="margin:0">Ofertas por vencer</div>';
+      porVencer.slice(0, 4).forEach(({ p, v }) => {
+        const row = el('div', { class: 'activity-row', style: 'cursor:pointer' });
+        row.innerHTML = '<span class="ic">' + icon('ic-clock') + '</span>' +
+          '<div class="body"><div class="title">' + escapeHtml(p.codigo + ' · ' + (p.clienteNombre || 'Sin cliente')) + '</div>' +
+          '<div class="meta" style="color:' + (v.vencido ? 'var(--error)' : 'inherit') + '">' + textoVencimiento(v) + '</div></div>';
+        row.addEventListener('click', () => openPresupuesto(p.id));
+        card.appendChild(row);
+      });
+      avisos.appendChild(card);
+    }
 
     const items = []
       .concat(DB.trabajos.map((t) => ({ type: 'trabajo', ref: t, ts: t.updatedAt })))
@@ -2428,11 +2468,63 @@
   /* ============================================================
      TRABAJOS Y PRESUPUESTOS — listados
      ============================================================ */
+  // Duplicar: la mayoría de las obras se parecen a otra ya hecha. Se copia todo
+  // menos la identidad —código, estado y fechas— para no pisar el original.
+  function duplicarTrabajo(id) {
+    const t = DB.trabajos.find((x) => x.id === id);
+    if (!t) return null;
+    const copia = JSON.parse(JSON.stringify(t));
+    copia.id = uid('T');
+    copia.codigo = 'REL-' + new Date().getFullYear() + '-' + String(DB.trabajos.length + 1).padStart(4, '0');
+    copia.obra = { ...copia.obra, nombre: (copia.obra.nombre || 'Obra') + ' (copia)' };
+    copia.estado = 'pendiente';
+    copia.createdAt = Date.now();
+    copia.updatedAt = Date.now();
+    DB.trabajos.push(copia);
+    saveDB();
+    return copia;
+  }
+  function duplicarPresupuesto(id) {
+    const p = DB.presupuestos.find((x) => x.id === id);
+    if (!p) return null;
+    const copia = JSON.parse(JSON.stringify(p));
+    copia.id = uid('P');
+    copia.codigo = 'AE-' + new Date().getFullYear() + '-' + String(DB.presupuestos.length + 1).padStart(4, '0');
+    copia.estado = 'borrador';
+    copia.createdAt = Date.now();
+    copia.updatedAt = Date.now();
+    DB.presupuestos.push(copia);
+    saveDB();
+    return copia;
+  }
+  // Botón de duplicar dentro de una tarjeta que ya se abre al tocarla.
+  function botonDuplicar(alDuplicar) {
+    const b = el('button', { class: 'icon-btn', style: 'flex:none', title: 'Duplicar' });
+    b.innerHTML = icon('ic-copy');
+    b.addEventListener('click', (e) => { e.stopPropagation(); alDuplicar(); });
+    return b;
+  }
+  // Busca en cualquiera de los textos de la ficha, sin acentos ni mayúsculas.
+  function sinAcentos(s) {
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+  function coincide(texto, busqueda) {
+    const q = sinAcentos(busqueda).trim();
+    if (!q) return true;
+    const t = sinAcentos(texto);
+    return q.split(/\s+/).every((palabra) => t.includes(palabra));
+  }
+
   function renderTrabajos() {
     const wrap = $('#trabajos-list');
     wrap.innerHTML = '';
-    const items = DB.trabajos.slice().sort((a, b) => b.updatedAt - a.updatedAt);
-    if (items.length === 0) { wrap.appendChild(el('div', { class: 'empty-state', html: 'Todavía no guardaste ningún relevamiento.' })); return; }
+    const busqueda = ($('#trabajos-buscar') && $('#trabajos-buscar').value) || '';
+    const todos = DB.trabajos.slice().sort((a, b) => b.updatedAt - a.updatedAt);
+    const items = todos.filter((t) => coincide([t.obra.nombre, t.obra.direccion, t.obra.localidad, t.cliente.nombre, t.codigo].join(' '), busqueda));
+    if (items.length === 0) {
+      wrap.appendChild(el('div', { class: 'empty-state', html: todos.length ? 'Ningún relevamiento coincide con la búsqueda.' : 'Todavía no guardaste ningún relevamiento.' }));
+      return;
+    }
     items.forEach((t) => {
       const card = el('div', { class: 'card card-pad', style: 'cursor:pointer;display:flex;align-items:center;gap:14px' });
       card.innerHTML =
@@ -2440,6 +2532,10 @@
         '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:0.9rem">' + escapeHtml(t.obra.nombre || 'Obra sin nombre') + '</div>' +
         '<div style="font-size:0.78rem;color:var(--steel)">' + escapeHtml(t.cliente.nombre || 'Sin cliente') + ' · ' + timeAgo(t.updatedAt) + '</div></div>' +
         statusPill(t.estado);
+      card.appendChild(botonDuplicar(() => {
+        const copia = duplicarTrabajo(t.id);
+        if (copia) { toast('Relevamiento duplicado'); openTrabajo(copia.id); }
+      }));
       card.addEventListener('click', () => openTrabajo(t.id));
       wrap.appendChild(card);
     });
@@ -2448,16 +2544,27 @@
   function renderPresupuestos() {
     const wrap = $('#presupuestos-list');
     wrap.innerHTML = '';
-    const items = DB.presupuestos.slice().sort((a, b) => b.updatedAt - a.updatedAt);
-    if (items.length === 0) { wrap.appendChild(el('div', { class: 'empty-state', html: 'Todavía no creaste ningún presupuesto.' })); return; }
+    const busqueda = ($('#presupuestos-buscar') && $('#presupuestos-buscar').value) || '';
+    const todos = DB.presupuestos.slice().sort((a, b) => b.updatedAt - a.updatedAt);
+    const items = todos.filter((p) => coincide([p.codigo, p.clienteNombre].join(' '), busqueda));
+    if (items.length === 0) {
+      wrap.appendChild(el('div', { class: 'empty-state', html: todos.length ? 'Ningún presupuesto coincide con la búsqueda.' : 'Todavía no creaste ningún presupuesto.' }));
+      return;
+    }
     items.forEach((p) => {
       const totales = calcularTotalesPresupuesto(p);
+      const vence = vencimientoDe(p);
       const card = el('div', { class: 'card card-pad', style: 'cursor:pointer;display:flex;align-items:center;gap:14px' });
       card.innerHTML =
         '<span class="ic" style="width:40px;height:40px;border-radius:50%;background:var(--soft);display:flex;align-items:center;justify-content:center;flex:none">' + icon('ic-file-dollar') + '</span>' +
         '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:0.9rem">' + escapeHtml(p.codigo) + ' · ' + escapeHtml(p.clienteNombre || 'Sin cliente') + '</div>' +
-        '<div style="font-size:0.78rem;color:var(--steel)">' + money(totales.total) + ' · ' + timeAgo(p.updatedAt) + '</div></div>' +
-        statusPill(p.estado);
+        '<div style="font-size:0.78rem;color:var(--steel)">' + money(totales.total) + ' · ' + timeAgo(p.updatedAt) +
+        (vence ? ' · <span style="color:' + (vence.vencido ? 'var(--error)' : 'inherit') + '">' + textoVencimiento(vence) + '</span>' : '') +
+        '</div></div>' + statusPill(p.estado);
+      card.appendChild(botonDuplicar(() => {
+        const copia = duplicarPresupuesto(p.id);
+        if (copia) { toast('Presupuesto duplicado'); openPresupuesto(copia.id); }
+      }));
       card.addEventListener('click', () => openPresupuesto(p.id));
       wrap.appendChild(card);
     });
@@ -2674,6 +2781,13 @@
     $('#pi-margen').value = p.margen;
     $('#pi-iva').value = p.iva;
     $('#pi-validez').value = p.validez;
+    const vence = vencimientoDe(p);
+    const notaV = $('#pi-validez-nota');
+    if (notaV) {
+      notaV.textContent = vence ? textoVencimiento(vence) : '';
+      notaV.style.color = vence && vence.vencido ? 'var(--error)' : 'var(--steel)';
+      notaV.hidden = !vence;
+    }
     $('#pi-formapago').value = p.formaPago;
     $('#pi-plazo').value = p.plazo;
     const tr = p.trabajoId ? DB.trabajos.find((x) => x.id === p.trabajoId) : null;
@@ -2750,6 +2864,8 @@
       if (g === 'conductor') { showView('conductor'); calcularConductorForm(); }
       if (g === 'potencia-libre') { startRelevamiento(); wizardStep = 2; renderWizardStep(); }
     }));
+    $('#trabajos-buscar').addEventListener('input', renderTrabajos);
+    $('#presupuestos-buscar').addEventListener('input', renderPresupuestos);
     $('#btn-trabajos-nuevo').addEventListener('click', startRelevamiento);
     $('#btn-presupuestos-nuevo').addEventListener('click', () => { presActual = crearPresupuestoDesdeTrabajo(null); showView('presupuesto-detalle'); renderPresupuestoDetalle(); });
   }
