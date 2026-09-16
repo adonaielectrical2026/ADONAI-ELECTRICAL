@@ -1995,6 +1995,17 @@
       avisos.appendChild(card);
     }
 
+    const diasBackup = diasDesde(DB.settings.ultimoBackup);
+    if ((DB.trabajos.length || DB.presupuestos.length) && (diasBackup === null || diasBackup >= DIAS_SIN_RESPALDO)) {
+      const card = el('div', { class: 'card card-pad', style: 'cursor:pointer' });
+      card.innerHTML = '<div class="activity-row"><span class="ic">' + icon('ic-download') + '</span>' +
+        '<div class="body"><div class="title">Sin copia de seguridad</div>' +
+        '<div class="meta">' + (diasBackup === null ? 'Todavía no hiciste ninguna.' : 'La última fue hace ' + diasBackup + ' días.') +
+        ' Los datos viven sólo en este dispositivo.</div></div></div>';
+      card.addEventListener('click', () => { showView('perfil'); renderPerfil(); });
+      avisos.appendChild(card);
+    }
+
     const dias = diasDesde(DB.settings.preciosRevisados);
     if (dias !== null && dias >= DIAS_PRECIOS_VIEJOS) {
       const card = el('div', { class: 'card card-pad', style: 'cursor:pointer' });
@@ -2631,6 +2642,9 @@
     $('#perfil-tarifahora').value = DB.settings.manoObra.tarifaHora;
     $('#perfil-horasjornada').value = DB.settings.manoObra.horasJornada;
     $('#perfil-bocasjornada').value = DB.settings.manoObra.bocasPorJornada;
+    $('#drive-client-id').value = DB.settings.googleClientId || '';
+    $('#drive-origen').value = location.origin;
+    renderPerfilBackup();
     $('#perfil-jornadascargafija').value = DB.settings.manoObra.jornadasCargaFija;
     $('#perfil-jornadastablero').value = DB.settings.manoObra.jornadasTablero;
     renderPerfilNormativa();
@@ -2797,8 +2811,127 @@
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+    DB.settings.ultimoBackup = Date.now();
+    saveDB();
+    renderPerfilBackup();
     toast('Copia de seguridad descargada');
   }
+  /* ---------- copia en Google Drive ----------
+   *
+   * La copia es el mismo JSON que se baja a mano, subido al Drive del usuario.
+   * Se usa el permiso más chico que existe (drive.file): la app sólo ve los
+   * archivos que ella misma crea, nunca el resto del Drive. El ID de cliente lo
+   * saca el usuario de la consola de Google y queda guardado en el dispositivo;
+   * sin eso, Google no deja entrar desde una página.
+   */
+  const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
+  const DRIVE_PREFIJO = 'adonai-backup-';
+  const DIAS_SIN_RESPALDO = 7;
+  let driveToken = null;  // vive en memoria: vence en una hora y se vuelve a pedir
+
+  function cargarScript(src) {
+    return new Promise((resolve, reject) => {
+      if (document.querySelector('script[src="' + src + '"]')) return resolve();
+      const sc = document.createElement('script');
+      sc.src = src;
+      sc.onload = resolve;
+      sc.onerror = () => reject(new Error('sin conexión'));
+      document.head.appendChild(sc);
+    });
+  }
+
+  async function driveAcceso() {
+    const clientId = (DB.settings.googleClientId || '').trim();
+    if (!clientId) throw new Error('Falta el ID de cliente de Google (Perfil > Copia en Google Drive)');
+    if (driveToken && driveToken.vence > Date.now() + 60e3) return driveToken.token;
+    await cargarScript('https://accounts.google.com/gsi/client');
+    return new Promise((resolve, reject) => {
+      try {
+        const cliente = google.accounts.oauth2.initTokenClient({
+          client_id: clientId,
+          scope: DRIVE_SCOPE,
+          callback: (resp) => {
+            if (resp.error || !resp.access_token) { reject(new Error('No se pudo entrar con Google')); return; }
+            driveToken = { token: resp.access_token, vence: Date.now() + (Number(resp.expires_in) || 3600) * 1000 };
+            resolve(driveToken.token);
+          },
+        });
+        cliente.requestAccessToken({ prompt: driveToken ? '' : 'consent' });
+      } catch (e) { reject(new Error('No se pudo abrir el acceso de Google')); }
+    });
+  }
+
+  async function guardarEnDrive() {
+    try {
+      toast('Conectando con Google...');
+      const token = await driveAcceso();
+      const ahora = new Date();
+      const sello = ahora.toISOString().slice(0, 16).replace('T', '-').replace(':', '');
+      const nombre = DRIVE_PREFIJO + sello + '.json';
+      const cuerpo = JSON.stringify(DB);
+      const limite = 'adonai' + Date.now();
+      const multipart =
+        '--' + limite + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' +
+        JSON.stringify({ name: nombre, mimeType: 'application/json' }) +
+        '\r\n--' + limite + '\r\nContent-Type: application/json\r\n\r\n' + cuerpo +
+        '\r\n--' + limite + '--';
+      const r = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'multipart/related; boundary=' + limite },
+        body: multipart,
+      });
+      if (!r.ok) throw new Error('Drive respondió ' + r.status);
+      DB.settings.ultimoBackup = Date.now();
+      saveDB();
+      renderPerfilBackup();
+      toast('Copia guardada en tu Drive');
+    } catch (e) {
+      toast(e.message || 'No se pudo guardar en Drive');
+    }
+  }
+
+  async function restaurarDeDrive() {
+    try {
+      toast('Conectando con Google...');
+      const token = await driveAcceso();
+      const consulta = encodeURIComponent("name contains '" + DRIVE_PREFIJO + "' and trashed = false");
+      const r = await fetch('https://www.googleapis.com/drive/v3/files?q=' + consulta +
+        '&orderBy=modifiedTime desc&pageSize=5&fields=files(id,name,modifiedTime)',
+        { headers: { Authorization: 'Bearer ' + token } });
+      if (!r.ok) throw new Error('Drive respondió ' + r.status);
+      const lista = (await r.json()).files || [];
+      if (!lista.length) { toast('No hay copias guardadas en Drive'); return; }
+      const ultima = lista[0];
+      const fecha = new Date(ultima.modifiedTime).toLocaleString();
+      if (!confirm('Esto reemplaza TODOS los datos de este dispositivo por la copia "' + ultima.name + '" (' + fecha + '). ¿Continuar?')) return;
+      const rd = await fetch('https://www.googleapis.com/drive/v3/files/' + ultima.id + '?alt=media',
+        { headers: { Authorization: 'Bearer ' + token } });
+      if (!rd.ok) throw new Error('No se pudo bajar la copia');
+      const data = await rd.json();
+      if (!data || !Array.isArray(data.trabajos) || !Array.isArray(data.presupuestos) || !data.settings) {
+        toast('La copia no tiene el formato esperado'); return;
+      }
+      DB = data;
+      if (!DB.settings.precios) DB.settings.precios = clonePrecios(DEFAULT_PRECIOS);
+      if (!DB.settings.manoObra) DB.settings.manoObra = { ...DEFAULT_MANO_OBRA };
+      if (!DB.seq) DB.seq = { trabajo: 0, presupuesto: 0 };
+      saveDB();
+      location.reload();
+    } catch (e) {
+      toast(e.message || 'No se pudo restaurar de Drive');
+    }
+  }
+
+  function renderPerfilBackup() {
+    const p = $('#perfil-backup-estado');
+    if (!p) return;
+    const dias = diasDesde(DB.settings.ultimoBackup);
+    p.textContent = dias === null ? 'Todavía no hiciste ninguna copia de seguridad.'
+      : dias === 0 ? 'Última copia: hoy.'
+      : 'Última copia: hace ' + dias + (dias === 1 ? ' día.' : ' días.');
+    p.style.color = dias === null || dias >= DIAS_SIN_RESPALDO ? 'var(--error)' : 'var(--steel)';
+  }
+
   function importarBackup(file) {
     const reader = new FileReader();
     reader.onload = () => {
@@ -2949,6 +3082,15 @@
       if (g === 'conductor') { showView('conductor'); calcularConductorForm(); }
       if (g === 'potencia-libre') { startRelevamiento(); wizardStep = 2; renderWizardStep(); }
     }));
+    $('#drive-client-id').addEventListener('change', () => {
+      DB.settings.googleClientId = $('#drive-client-id').value.trim();
+      driveToken = null;
+      saveDB();
+      toast('ID de cliente guardado');
+    });
+    $('#btn-drive-guardar').addEventListener('click', guardarEnDrive);
+    $('#btn-drive-restaurar').addEventListener('click', restaurarDeDrive);
+    $('#btn-drive-desconectar').addEventListener('click', () => { driveToken = null; toast('Sesión de Google olvidada'); });
     $('#btn-cat-dolar').addEventListener('click', aplicarCotizacionDolar);
     $('#btn-cat-revisado').addEventListener('click', marcarPreciosRevisados);
     $('#trabajos-buscar').addEventListener('input', renderTrabajos);

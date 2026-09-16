@@ -74,6 +74,28 @@ la direccion web del CAMINO B: en Chrome/Edge aparece un icono de instalar
 a la derecha de la barra de direcciones.
 
 
+COPIA DE SEGURIDAD EN GOOGLE DRIVE
+----------------------------------
+La app puede guardar la copia de seguridad en tu Drive. Google exige registrar
+la app una sola vez para dejarla entrar con tu correo:
+
+  1. Entra a  https://console.cloud.google.com/  con tu cuenta de Google.
+  2. Crea un proyecto (boton de arriba a la izquierda, "Nuevo proyecto").
+     Nombre: ADONAI Herramientas.
+  3. Menu > APIs y servicios > Biblioteca. Busca "Google Drive API" y activala.
+  4. Menu > APIs y servicios > Pantalla de consentimiento de OAuth.
+     Tipo: Externo. Completa nombre de la app y tu correo. Guarda.
+     En "Usuarios de prueba" agrega tu propio correo.
+  5. Menu > APIs y servicios > Credenciales > Crear credenciales >
+     ID de cliente de OAuth > Tipo: Aplicacion web.
+     En "Origenes autorizados de JavaScript" pega la direccion que muestra la
+     app en Perfil > Copia en Google Drive > Configurar el acceso.
+  6. Copia el ID que te da (termina en .apps.googleusercontent.com) y pegalo en
+     ese mismo lugar de la app.
+
+Despues alcanza con tocar "Guardar en Drive". La app solo ve los archivos que
+ella misma crea, no el resto de tu Drive.
+
 DONDE SE GUARDAN LOS DATOS
 --------------------------
 Todo queda guardado SOLO en el dispositivo donde se usa la app (navegador),
