@@ -426,6 +426,12 @@
           <div class="field"><label>Circuitos agrupados</label><input class="input" type="number" min="1" id="cond-agrupados" value="1"></div>
           <div class="field"><label>Caída máx. (%)</label><input class="input" type="number" step="0.5" id="cond-caidamax" value="5"></div>
         </div>
+        <div class="field" id="cond-disposicion-wrap" hidden><label>Disposición al aire o en bandeja</label>
+          <select class="select" id="cond-disposicion">
+            <option value="juntos">Cables juntos, en contacto</option>
+            <option value="separados">Separados más de un diámetro</option>
+          </select>
+        </div>
       </div>
 
       <div class="card card-pad" id="cond-resultado-wrap">

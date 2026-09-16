@@ -342,7 +342,9 @@
     { rango: 'principal', tema: 'Dimensionado del conductor',
       cita: 'UTE, Reglamento de Baja Tensión, Capítulo II - Anexo: Cálculo de Secciones de los Conductores. El conductor se dimensiona evitando calentamiento inadmisible y caída de tensión excesiva, y considerando además resistencia mecánica y comportamiento ante cortocircuito.' },
     { rango: 'principal', tema: 'Corrientes máximas admisibles',
-      cita: 'UTE, RBT Capítulo II - Anexo, Tablas VI a IX (al aire bajo techo) y X a XIII (dentro de conductos: X cobre PVC, XI cobre XLPE, XII aluminio PVC, XIII aluminio XLPE), corregidas por temperatura ambiente (Tabla XIV) y por agrupamiento (§5.1: 4 a 7 conductores 0,90; más de 7, 0,70; no se computa el conductor de protección ni, en las condiciones que indica UTE, el neutro del suministro trifásico).' },
+      cita: 'UTE, RBT Capítulo II - Anexo, Tablas VI a IX (al aire bajo techo) y X a XIII (dentro de conductos: X cobre PVC, XI cobre XLPE, XII aluminio PVC, XIII aluminio XLPE), corregidas por temperatura ambiente (Tabla XIV) y por agrupamiento (§5.1: 4 a 7 conductores 0,90; más de 7, 0,70). La columna de la tabla es la de 2 conductores cargados en monofásico y 3 en trifásico, como indica el reglamento.' },
+    { rango: 'principal', tema: 'Conteo de conductores para el agrupamiento',
+      cita: 'Criterio de la casa, más exigente que el reglamento: para contar los conductores dentro del caño se suman todos los que van adentro —3 en monofásico y 5 en trifásico—, incluidos el neutro del trifásico y el conductor de protección, que el Anexo §5.1 no computa.' },
     { rango: 'principal', tema: 'Protección contra sobrecargas',
       cita: 'UTE, RBT Capítulo V - Agrupamiento de accesorios de protección - Tableros, numeral 1.a: el dispositivo de protección debe garantizar el límite de corriente admisible del conductor.' },
     { rango: 'principal', tema: 'Caída de tensión',
@@ -351,6 +353,8 @@
       cita: 'IEC 60364-4-43:2023, numeral 431.4.2 - Coordination between conductors and overload protective devices: Ib <= In <= Iz y, además, I2 <= 1,45·Iz. Es la formulación explícita de lo que el Capítulo V numeral 1.a de UTE exige.' },
     { rango: 'complementaria', tema: 'Corriente convencional de actuación (I2)',
       cita: 'Los interruptores termomagnéticos según IEC 60898-1 tienen corriente convencional de disparo I2 = 1,45·In, de modo que I2 <= 1,45·Iz queda garantizado cuando In <= Iz. Para fusibles u otros dispositivos hay que verificar I2 contra la curva del fabricante.' },
+    { rango: 'complementaria', tema: 'Agrupamiento al aire y en bandeja',
+      cita: 'El Anexo de UTE sólo da factores de agrupamiento para conductos (§5.1). Al aire y en bandeja se usan los valores de referencia de la práctica IEC 60364-5-52, por cantidad de circuitos en una misma capa y según estén en contacto o separados más de un diámetro. Pendiente de confirmar con electricista matriculado.' },
     { rango: 'complementaria', tema: 'Canalizaciones',
       cita: 'IEC 60364-5-52:2009 + AMD1:2024 - Wiring systems, criterios de selección de sistemas de cableado, incluido el numeral 525 sobre caída de tensión.' },
   ];
@@ -377,10 +381,40 @@
     for (const tf of tabla) if (Math.abs(tf.t - temp) < Math.abs(closest.t - temp)) closest = tf;
     return closest.f;
   }
-  // RBT-UTE Anexo §5.1: recién por encima de 3 conductores cargados en el mismo caño
-  // hay reducción (4 a 7 = 0.90, más de 7 = 0.70). Sin tabla equivalente para "al aire".
-  function getGroupFactorUTE(categoria, nConductores) {
-    if (categoria !== 'conducto') return 1;
+  // Agrupamiento al aire y en bandeja. El Anexo de UTE no trae una tabla para
+  // este montaje —sólo la del §5.1 para conductos—, así que se usan los valores
+  // de referencia de la práctica IEC (60364-5-52), que van por cantidad de
+  // CIRCUITOS en una misma capa, no por conductores:
+  //
+  //   - juntos: los cables se tocan entre sí, que es como quedan en una
+  //     bandeja cargada. Es el caso más exigente.
+  //   - separados: entre cable y cable hay al menos un diámetro de aire, así
+  //     que disipan mejor y casi no hay reducción.
+  //
+  // PENDIENTE DE CONFIRMAR con electricista matriculado: son valores de
+  // referencia, no una tabla del reglamento uruguayo.
+  const GRUPO_AIRE = {
+    juntos:    [{ n: 1, f: 1.00 }, { n: 2, f: 0.88 }, { n: 3, f: 0.82 }, { n: 4, f: 0.79 },
+                { n: 6, f: 0.76 }, { n: 9, f: 0.73 }],
+    separados: [{ n: 1, f: 1.00 }, { n: 2, f: 1.00 }, { n: 3, f: 0.98 }, { n: 4, f: 0.95 },
+                { n: 6, f: 0.91 }, { n: 9, f: 0.90 }],
+  };
+  const DISPOSICIONES = [
+    { id: 'juntos', label: 'Cables juntos, en contacto' },
+    { id: 'separados', label: 'Separados más de un diámetro' },
+  ];
+
+  // RBT-UTE Anexo §5.1: dentro de un caño, recién por encima de 3 conductores
+  // cargados hay reducción (4 a 7 = 0,90; más de 7 = 0,70). Al aire y en
+  // bandeja manda la tabla de arriba, por cantidad de circuitos.
+  function getGroupFactorUTE(categoria, nConductores, circuitos, disposicion) {
+    if (categoria !== 'conducto') {
+      const tabla = GRUPO_AIRE[disposicion === 'separados' ? 'separados' : 'juntos'];
+      const n = Math.max(1, Number(circuitos) || 1);
+      let f = tabla[0].f;
+      for (const fila of tabla) if (n >= fila.n) f = fila.f;
+      return f;
+    }
     if (nConductores <= 3) return 1;
     if (nConductores <= 7) return 0.90;
     return 0.70;
@@ -457,11 +491,15 @@
     const categoria = CATEGORIA_METODO[p.metodo] || 'conducto';
     const tabla = tablaAmpacidad(categoria, material, aislacion);
     const tempF = getTempFactorUTE(aislacion, Number(p.tempAmb) || 30);
-    // Conductores activos cargados: 2 (fase+neutro monofásico) o 3 (trifásico, el
-    // neutro no se cuenta según RBT-UTE Anexo §5.1).
-    const conductoresPorCircuito = fases === 1 ? 2 : 3;
+    // Conductores que se cuentan para el agrupamiento dentro del caño: todos
+    // los que van adentro, incluidos el neutro del trifásico y el conductor de
+    // protección. Es criterio de la casa y es MÁS EXIGENTE que el Anexo §5.1,
+    // que no computa ninguno de esos dos. Ojo que es otra cosa que la columna
+    // de la tabla de ampacidad: ahí se usa la de 2 conductores cargados en
+    // monofásico y la de 3 en trifásico, que es lo que dice el reglamento.
+    const conductoresPorCircuito = fases === 1 ? 3 : 5;
     const nConductores = (Number(p.agrupados) || 1) * conductoresPorCircuito;
-    const groupF = getGroupFactorUTE(categoria, nConductores);
+    const groupF = getGroupFactorUTE(categoria, nConductores, p.agrupados, p.disposicion);
     const k = CONDUCTIVIDAD_UTE[material] || CONDUCTIVIDAD_UTE.cobre;
     const caidaMax = Number(p.caidaMax) || 5;
     const uso = p.uso || 'fuerza';
@@ -525,7 +563,7 @@
 
     const fila = tablaAmpacidad(categoria, material, aislacion).find((x) => x.s === seccion);
     r.ft = getTempFactorUTE(aislacion, Number(p.tempAmb) || 30);
-    r.fa = getGroupFactorUTE(categoria, (Number(p.agrupados) || 1) * (fases === 1 ? 2 : 3));
+    r.fa = getGroupFactorUTE(categoria, (Number(p.agrupados) || 1) * (fases === 1 ? 3 : 5), p.agrupados, p.disposicion);
     r.izTabla = fila ? (fases === 1 ? fila.c2 : fila.c3) : 0;
     r.iz = r.izTabla * r.ft * r.fa;
     r.dU = caidaVolt(fases, Number(p.l) || 0, ib, Number(p.cosPhi) || 1, CONDUCTIVIDAD_UTE[material], seccion);
@@ -563,7 +601,8 @@
   function calcularCircuito(c) {
     return calcularSeccion({
       ib: c.ib, v: c.v, fases: c.fases, l: c.l, material: c.material, metodo: c.metodo, aislacion: c.aislacion,
-      tempAmb: c.tempAmb, agrupados: c.agrupados, cosPhi: c.cosPhi, caidaMax: c.caidaMax, uso: c.uso || 'fuerza',
+      tempAmb: c.tempAmb, agrupados: c.agrupados, disposicion: c.disposicion, cosPhi: c.cosPhi,
+      caidaMax: c.caidaMax, uso: c.uso || 'fuerza',
     });
   }
 
@@ -2439,7 +2478,12 @@
         '<div class="field"><label>Material</label><select class="select" data-f="material"><option value="cobre"' + (c.material === 'cobre' ? ' selected' : '') + '>Cobre</option><option value="aluminio"' + (c.material === 'aluminio' ? ' selected' : '') + '>Aluminio</option></select></div>' +
         '<div class="field"><label>Método</label><select class="select" data-f="metodo">' + Object.keys(METODO_LABEL).map((k) => '<option value="' + k + '"' + (c.metodo === k ? ' selected' : '') + '>' + METODO_LABEL[k] + '</option>').join('') + '</select></div>' +
         '<div class="field"><label>Temp. amb. (°C)</label><input class="input" type="number" data-f="tempAmb" value="' + c.tempAmb + '"></div>' +
-        '<div class="field"><label>Agrupados</label><input class="input" type="number" min="1" data-f="agrupados" value="' + c.agrupados + '"></div>' +
+        '<div class="field"><label>' + (CATEGORIA_METODO[c.metodo] === 'aire' ? 'Circuitos en la bandeja' : 'Circuitos agrupados') + '</label><input class="input" type="number" min="1" data-f="agrupados" value="' + c.agrupados + '"></div>' +
+        (CATEGORIA_METODO[c.metodo] === 'aire'
+          ? '<div class="field"><label>Disposición</label><select class="select" data-f="disposicion">' +
+            DISPOSICIONES.map((d) => '<option value="' + d.id + '"' + ((c.disposicion || 'juntos') === d.id ? ' selected' : '') + '>' + d.label + '</option>').join('') +
+            '</select></div>'
+          : '') +
         '<div class="field"><label>Polos</label><select class="select" data-f="polos">' +
         opcionesPolos(c).map((o) => '<option value="' + o.v + '"' + (polosDe(c) === o.v ? ' selected' : '') + '>' + o.label + '</option>').join('') +
         '</select></div>' +
@@ -2461,7 +2505,7 @@
       card.querySelectorAll('[data-f]').forEach((input) => {
         input.addEventListener('change', () => {
           const f = input.dataset.f;
-          const esTexto = f === 'nombre' || f === 'material' || f === 'metodo' || f === 'uso' || f === 'aislacion';
+          const esTexto = f === 'nombre' || f === 'material' || f === 'metodo' || f === 'uso' || f === 'aislacion' || f === 'disposicion';
           c[f] = esTexto ? input.value : Number(input.value);
           // Cada uso trae su propia caída máxima admisible: iluminación admite
           // menos que fuerza. Al cambiar el uso se acompaña el valor.
@@ -2692,8 +2736,11 @@
       ib, v, fases, l: Number($('#cond-longitud').value) || 0, material: $('#cond-material').value,
       metodo: $('#cond-metodo').value, aislacion: $('#cond-aislacion').value,
       tempAmb: Number($('#cond-temp').value) || 30, agrupados: Number($('#cond-agrupados').value) || 1,
+      disposicion: $('#cond-disposicion').value,
       cosPhi, caidaMax: Number($('#cond-caidamax').value) || 5, uso: $('#cond-uso').value,
     };
+    // la disposición sólo cuenta al aire o en bandeja
+    $('#cond-disposicion-wrap').hidden = CATEGORIA_METODO[datos.metodo] !== 'aire';
     const r = calcularSeccion(datos);
     opcionesComprobacion(datos.material, datos.aislacion, datos.metodo);
     renderComprobacion(comprobarCircuito(datos, { seccion: $('#cond-seccion').value, in: $('#cond-in').value }));
@@ -3341,6 +3388,7 @@
       $(sel).addEventListener('change', calcularConductorForm);
     });
     // cada uso trae su caída máxima: iluminación admite 3 % y el resto 5 %
+    $('#cond-disposicion').addEventListener('change', calcularConductorForm);
     $('#cond-uso').addEventListener('change', () => {
       $('#cond-caidamax').value = CAIDA_MAX_DEFAULT[$('#cond-uso').value] || 5;
       calcularConductorForm();
