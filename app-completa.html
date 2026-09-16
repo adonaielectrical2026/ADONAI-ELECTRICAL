@@ -2299,15 +2299,15 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   };
   const BREAKER_RATINGS = [6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125];
   // Curva de la térmica según lo que alimenta el circuito:
-  //   B: cargas resistivas, de arranque suave — iluminación residencial y
-  //      tomacorrientes comunes de casa u oficina chica.
-  //   C: cargas inductivas moderadas, la más común — lavarropas, heladera,
-  //      aire acondicionado, en obra domiciliaria y comercial.
+  //   B: cargas resistivas, de arranque suave — iluminación.
+  //   C: cargas inductivas moderadas, la más común y la más versátil — los
+  //      tomacorrientes de uso general, que terminan alimentando cualquier
+  //      electrodoméstico, y las cargas fijas tipo lavarropas, heladera o aire.
   //   D: cargas inductivas con picos fuertes de arranque — motores y bombas.
-  const CURVA_SUGERIDA = { iluminacion: 'B', tomacorrientes: 'B', fuerza: 'C', motor: 'D' };
+  const CURVA_SUGERIDA = { iluminacion: 'B', tomacorrientes: 'C', fuerza: 'C', motor: 'D' };
   const CURVA_DESCRIPCION = {
-    B: 'Cargas resistivas, arranque suave: iluminación y tomacorrientes comunes.',
-    C: 'Cargas inductivas moderadas: lavarropas, heladera, aire acondicionado.',
+    B: 'Cargas resistivas, de arranque suave: iluminación.',
+    C: 'Cargas inductivas moderadas: tomacorrientes de uso general, lavarropas, heladera, aire acondicionado.',
     D: 'Cargas inductivas con pico fuerte de arranque: motores y bombas.',
   };
   // Secciones minimas por resistencia mecanica, RBT-UTE Anexo S9: derivacion para
