@@ -276,6 +276,25 @@
       { t: 70, f: 0.56 }, { t: 75, f: 0.48 }, { t: 80, f: 0.39 },
     ],
   };
+  // Temperatura ambiente de cálculo según dónde va el circuito, medida en Salto:
+  // en interiores no pasa de 30 °C y en el exterior, las tardes de verano llegan
+  // a 45 °C. Es lo que decide el factor de corrección de la Tabla XIV, así que
+  // un circuito exterior calculado como interior queda corto.
+  const AMBIENTES = [
+    { id: 'interior', label: 'Interior — hasta 30 °C', t: 30 },
+    { id: 'exterior', label: 'Exterior, verano — hasta 45 °C', t: 45 },
+  ];
+  function ambienteDe(temp) {
+    const a = AMBIENTES.find((x) => x.t === Number(temp));
+    return a ? a.id : 'otra';
+  }
+  function ambienteSelectHtml(temp, attrs) {
+    const actual = ambienteDe(temp);
+    return '<select class="select" ' + (attrs || '') + '>' +
+      AMBIENTES.map((a) => '<option value="' + a.id + '"' + (actual === a.id ? ' selected' : '') + '>' + a.label + '</option>').join('') +
+      '<option value="otra"' + (actual === 'otra' ? ' selected' : '') + '>Otra temperatura</option></select>';
+  }
+
   const METODO_LABEL = {
     embutido: 'Embutido en pared',
     amurado_pvc: 'Amurado — caño PVC rígido',
@@ -2416,6 +2435,7 @@
         '<div class="field"><label>Longitud (m)</label><input class="input" type="number" data-f="l" value="' + c.l + '"></div>' +
         '<div class="field"><label>Material</label><select class="select" data-f="material"><option value="cobre"' + (c.material === 'cobre' ? ' selected' : '') + '>Cobre</option><option value="aluminio"' + (c.material === 'aluminio' ? ' selected' : '') + '>Aluminio</option></select></div>' +
         '<div class="field"><label>Método</label><select class="select" data-f="metodo">' + Object.keys(METODO_LABEL).map((k) => '<option value="' + k + '"' + (c.metodo === k ? ' selected' : '') + '>' + METODO_LABEL[k] + '</option>').join('') + '</select></div>' +
+        '<div class="field"><label>Ambiente</label>' + ambienteSelectHtml(c.tempAmb, 'data-f="ambiente"') + '</div>' +
         '<div class="field"><label>Temp. amb. (°C)</label><input class="input" type="number" data-f="tempAmb" value="' + c.tempAmb + '"></div>' +
         '<div class="field"><label>Agrupados</label><input class="input" type="number" min="1" data-f="agrupados" value="' + c.agrupados + '"></div>' +
         '<div class="field"><label>Polos</label><select class="select" data-f="polos">' +
@@ -2439,6 +2459,13 @@
       card.querySelectorAll('[data-f]').forEach((input) => {
         input.addEventListener('change', () => {
           const f = input.dataset.f;
+          // El ambiente sólo carga la temperatura: lo que se guarda es el número.
+          if (f === 'ambiente') {
+            const a = AMBIENTES.find((x) => x.id === input.value);
+            if (a) c.tempAmb = a.t;
+            renderCircuitosList();
+            return;
+          }
           const esTexto = f === 'nombre' || f === 'material' || f === 'metodo' || f === 'uso' || f === 'aislacion';
           c[f] = esTexto ? input.value : Number(input.value);
           // Cada uso trae su propia caída máxima admisible: iluminación admite
@@ -2673,6 +2700,7 @@
       cosPhi, caidaMax: Number($('#cond-caidamax').value) || 5, uso: $('#cond-uso').value,
     };
     const r = calcularSeccion(datos);
+    $('#cond-ambiente').value = ambienteDe(datos.tempAmb);
     opcionesComprobacion(datos.material, datos.aislacion, datos.metodo);
     renderComprobacion(comprobarCircuito(datos, { seccion: $('#cond-seccion').value, in: $('#cond-in').value }));
     $('#cond-badge').innerHTML = r.apto
@@ -3316,6 +3344,14 @@
       .forEach((sel) => $(sel).addEventListener('input', calcularConductorForm));
     ['#cond-seccion', '#cond-in', '#cond-rendimiento'].forEach((sel) => {
       $(sel).addEventListener('change', calcularConductorForm);
+    });
+    $('#cond-ambiente').addEventListener('change', () => {
+      const a = AMBIENTES.find((x) => x.id === $('#cond-ambiente').value);
+      if (a) $('#cond-temp').value = a.t;
+      calcularConductorForm();
+    });
+    $('#cond-temp').addEventListener('input', () => {
+      $('#cond-ambiente').value = ambienteDe($('#cond-temp').value);
     });
     $('#btn-cond-guardar').addEventListener('click', () => { calcularConductorForm(); toast('Cálculo guardado en el dispositivo'); });
     $('#btn-cond-a-relevamiento').addEventListener('click', () => {
