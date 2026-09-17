@@ -445,10 +445,32 @@
           <div class="field"><label>Circuitos agrupados</label><input class="input" type="number" min="1" id="cond-agrupados" value="1"></div>
           <div class="field"><label>Criterio de proyecto (%)</label><input class="input" type="number" step="0.5" min="0.1" id="cond-caidamax" value="5"></div>
         </div>
-        <div class="field" id="cond-disposicion-wrap" hidden><label>Disposición al aire o en bandeja</label>
+        <div id="cond-montaje-wrap" hidden>
+          <div class="grid-2">
+            <div class="field"><label>Montaje</label>
+              <select class="select" id="cond-montaje">
+                <option value="manojo">En manojo o haz (atados, amontonados o en envolvente)</option>
+                <option value="capa_pared">Capa única sobre pared, piso o bandeja no perforada</option>
+                <option value="capa_bandeja_perforada">Capa única sobre bandeja perforada</option>
+              </select>
+            </div>
+            <div class="field"><label>Separación con el circuito vecino</label>
+              <select class="select" id="cond-separados">
+                <option value="0">En contacto o a menos de 2·De</option>
+                <option value="1">A más de 2·De (sin reducción)</option>
+              </select>
+            </div>
+          </div>
+          <p class="hint">Se mide entre las superficies de un circuito y el vecino; los conductores de un mismo circuito pueden ir juntos. 2·De orientativo (unipolar PVC): 1,5 mm² 6 mm · 2,5 mm² 7 mm · 4 mm² 9 mm · 6 mm² 10 mm · 10 mm² 13 mm · 16 mm² 16 mm · 25 mm² 19 mm; confirmar con el catálogo. Si van atados con precintos o amontonados, es manojo. La separación entre potencia y datos (EN 50174-2) es un criterio electromagnético y no cambia este cálculo.</p>
+        </div>
+        <div class="field" id="cond-disposicion-wrap" hidden><label>Caños enterrados y separación</label>
           <select class="select" id="cond-disposicion">
-            <option value="juntos">Cables juntos, en contacto</option>
-            <option value="separados">Separados más de un diámetro</option>
+            <option value="mismo">Todos en el mismo caño (§5.1)</option>
+            <option value="contacto">Un caño por circuito, caños en contacto</option>
+            <option value="m025">Un caño por circuito, a 0,25 m</option>
+            <option value="m05">Un caño por circuito, a 0,5 m</option>
+            <option value="m1">Un caño por circuito, a 1 m</option>
+            <option value="libres">Un caño por circuito, a más de 1 m (sin reducción)</option>
           </select>
         </div>
       </div>

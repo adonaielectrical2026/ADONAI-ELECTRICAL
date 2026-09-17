@@ -398,16 +398,16 @@
      explícito. No se edita a mano: reemplazar este objeto entero
      es "instalar" un paquete nuevo.
      ============================================================ */
-  const MOTOR_VERSION = '1.1.0';
+  const MOTOR_VERSION = '1.2.0';
   const NORMATIVE_PACK = {
     id: 'rbt-ute-interiores-2001-rev-2026',
     nombre: 'Reglamento de Baja Tensión UTE — instalaciones interiores (Caps. II, IV y V)',
     fuente: 'RBT-UTE: Capítulo II "Instalaciones Interiores o Receptoras" y su Anexo (Tablas I a XVI), Capítulo IV (conductos protectores) y Capítulo V (protecciones), edición N.5 / Junio 2001, ute.com.uy',
-    version: '0.3-revision-tecnica',
+    version: '0.4-separaciones',
     estado: 'pendiente', // 'pendiente' | 'verificado' | 'personalizado'
     vigenteDesde: null,
     actualizadoEl: '2026-09-17',
-    notas: 'Ampacidades (Tablas VI-XIII), temperatura (Tabla XIV, escalón inmediato superior), sol (§3.3.2), caída de tensión con conductividad de servicio (§8) medida desde el medidor, caños por Tablas II y III del Capítulo IV, protección contra sobrecargas y cortocircuitos (Cap. V §1.a y §1.b; Anexo §7). Criterios de la casa, más exigentes que el reglamento: agrupamiento contando neutro y tierra, reducción al aire y en bandeja con factores de referencia IEC, 30 °C y mínimos de 1 / 1,5 mm². Pendientes de confirmar con electricista matriculado: los factores de bandeja, la separación que cuenta como "separados" y la corrección por terreno del caño enterrado.',
+    notas: 'Ampacidades (Tablas VI-XIII), temperatura (Tabla XIV, escalón inmediato superior), sol (§3.3.2), caída de tensión con conductividad de servicio (§8) medida desde el medidor, caños por Tablas II y III del Capítulo IV, protección contra sobrecargas y cortocircuitos (Cap. V §1.a y §1.b; Anexo §7). Criterios de la casa, más exigentes que el reglamento: agrupamiento contando neutro y tierra, reducción al aire y en bandeja con factores de referencia IEC, 30 °C y mínimos de 1 / 1,5 mm². Agrupamiento al aire y en bandeja por IEC 60364-5-52 Tabla B.52.17 según el montaje (manojo, capa sobre pared, capa sobre bandeja perforada), sin reducción si entre circuitos hay más de 2·De; enterrados por separación entre caños (Tabla B.52.19: en contacto, 0,25, 0,5 y 1 m; más de 1 m sin reducción). Pendientes de confirmar con electricista matriculado: esos factores IEC, la disposición de referencia de las Tablas VI a IX de UTE y la corrección por terreno del caño enterrado.',
   };
   // Referencias que respaldan cada paso del motor. El reglamento que rige en
   // Uruguay es el de UTE: es la referencia principal y es la que manda. La IEC
@@ -437,7 +437,11 @@
     { rango: 'complementaria', tema: 'Energía pasante en cortocircuito',
       cita: 'Un termomagnético limita la corriente de cortocircuito: para verificar térmicamente el conductor se compara la energía que deja pasar (I²t, dato del fabricante) con la que el conductor admite, (k·S)². Calcular con la corriente plena durante todo el tiempo de despeje sobrestima esa energía y rechaza circuitos que cumplen.' },
     { rango: 'complementaria', tema: 'Agrupamiento al aire y en bandeja',
-      cita: 'El Anexo de UTE sólo da factores de agrupamiento para conductos (§5.1). Al aire y en bandeja se usan los valores de referencia de la práctica IEC 60364-5-52, por cantidad de circuitos en una misma capa y según estén en contacto o separados más de un diámetro. Pendiente de confirmar con electricista matriculado.' },
+      cita: 'El Anexo de UTE sólo da factores de agrupamiento para conductos (§5.1). Al aire y en bandeja se usa IEC 60364-5-52, Tabla B.52.17, por cantidad de circuitos y con una fila por montaje: en manojo o haz (1,00 · 0,80 · 0,70 · 0,65 · 0,60 · 0,57 · 0,54 · 0,52 · 0,50; 12 circuitos 0,45, 16 → 0,41, 20 → 0,38), capa única sobre pared, piso o bandeja no perforada (1,00 · 0,85 · 0,79 · 0,75 · 0,73 · 0,72 · 0,72 · 0,71 · 0,70) y capa única sobre bandeja perforada (1,00 · 0,88 · 0,82 · 0,77 · 0,75 · 0,73 · 0,73 · 0,72 · 0,72). Con una cantidad intermedia se toma la columna inmediata superior. El criterio de separación es un umbral (IEC 60364-5-52 y REBT ITC-BT-19): si la distancia entre las superficies de un circuito y el vecino supera 2·De no se corrige (factor 1,00); en contacto o más cerca, el factor de la fila. Se mide entre superficies y entre circuitos. Por defecto se toma en contacto. Pendiente de confirmar con electricista matriculado, junto con la disposición de referencia de las Tablas VI a IX de UTE: si ya suponen conductores separados, aplicar encima el factor de contacto es un criterio conservador.' },
+    { rango: 'complementaria', tema: 'Agrupamiento de caños enterrados',
+      cita: 'Si los circuitos enterrados comparten caño, rige el §5.1 del Anexo de UTE. Si cada circuito va en su propio caño, se aplica además el factor por separación entre caños de IEC 60364-5-52, Tabla B.52.19 (en contacto, 0,25 m, 0,5 m y 1 m); a partir de 1 m la influencia térmica mutua es despreciable y el factor se toma 1. Pendiente de confirmar con electricista matriculado.' },
+    { rango: 'complementaria', tema: 'Separación entre potencia y datos',
+      cita: 'EN 50174-2 fija distancias entre cables de potencia y de datos (del orden de 30 a 200 mm según la potencia y si hay tabique metálico). Es un criterio de compatibilidad electromagnética, no térmico: no modifica la corriente admisible ni el factor de agrupamiento.' },
     { rango: 'complementaria', tema: 'Sistemas de cableado',
       cita: 'IEC 60364-5-52:2009 + AMD1:2024 - Wiring systems, criterios generales de selección de sistemas de cableado, incluido el numeral 525 sobre caída de tensión.' },
   ];
@@ -469,43 +473,116 @@
     for (const tf of tabla) if (tf.t >= t) return tf.f;
     return null;
   }
-  // Agrupamiento al aire y en bandeja. El Anexo de UTE no trae una tabla para
-  // este montaje —sólo la del §5.1 para conductos—, así que se usan los valores
-  // de referencia de la práctica IEC (60364-5-52), que van por cantidad de
-  // CIRCUITOS en una misma capa, no por conductores:
+  // Agrupamiento al aire, en bandeja y enterrado. El Anexo de UTE sólo trae la
+  // tabla del §5.1 para conductos, así que en los demás montajes se usan los
+  // valores de referencia de la IEC 60364-5-52 (y REBT ITC-BT-19), que van por
+  // cantidad de CIRCUITOS, no por conductores.
   //
-  //   - juntos: los cables se tocan entre sí, que es como quedan en una
-  //     bandeja cargada. Es el caso más exigente.
-  //   - separados: entre cable y cable hay al menos un diámetro de aire, así
-  //     que disipan mejor y casi no hay reducción.
+  // Al aire y en bandeja el criterio es un umbral, sin factores intermedios:
+  // si la distancia entre las SUPERFICIES del circuito y la del circuito vecino
+  // es mayor a 2·De (De = diámetro exterior del cable), no hay agrupamiento y
+  // el factor es 1,00; si se tocan o están más cerca, se usa la fila de la
+  // Tabla B.52.17 que corresponde al montaje. El umbral se mira entre
+  // circuitos: los conductores de un mismo circuito pueden ir juntos. Por
+  // defecto se toma "en contacto"; "separados" sólo si el instalador lo
+  // declara. Ojo: manojo no es capa única. Si los circuitos van atados con
+  // precintos o amontonados en el fondo de la bandeja, corresponde la fila de
+  // manojo (0,80 con dos circuitos, no 0,88).
+  //
+  // Enterrado: si los circuitos comparten caño, manda el §5.1. Si cada uno va
+  // en su caño, factor por separación entre caños (IEC 60364-5-52 Tabla
+  // B.52.19): en contacto, 0,25 m, 0,5 m y 1 m; pasado 1 m la influencia
+  // mutua es despreciable (1,00).
+  //
+  // La separación entre potencia y datos (EN 50174-2, 30 a 200 mm) es un
+  // criterio de compatibilidad electromagnética, no térmico: no entra acá.
   //
   // PENDIENTE DE CONFIRMAR con electricista matriculado: son valores de
-  // referencia, no una tabla del reglamento uruguayo.
-  const GRUPO_AIRE = {
-    juntos:    [{ n: 1, f: 1.00 }, { n: 2, f: 0.88 }, { n: 3, f: 0.82 }, { n: 4, f: 0.79 },
-                { n: 6, f: 0.76 }, { n: 9, f: 0.73 }],
-    separados: [{ n: 1, f: 1.00 }, { n: 2, f: 1.00 }, { n: 3, f: 0.98 }, { n: 4, f: 0.95 },
-                { n: 6, f: 0.91 }, { n: 9, f: 0.90 }],
+  // referencia, no tablas del reglamento uruguayo, y no consta con qué
+  // disposición de referencia están hechas las Tablas VI a IX de UTE.
+  const GRUPO_B5217 = {
+    manojo: [{ n: 1, f: 1.00 }, { n: 2, f: 0.80 }, { n: 3, f: 0.70 }, { n: 4, f: 0.65 }, { n: 5, f: 0.60 },
+             { n: 6, f: 0.57 }, { n: 7, f: 0.54 }, { n: 8, f: 0.52 }, { n: 9, f: 0.50 }, { n: 12, f: 0.45 },
+             { n: 16, f: 0.41 }, { n: 20, f: 0.38 }],
+    capa_pared: [{ n: 1, f: 1.00 }, { n: 2, f: 0.85 }, { n: 3, f: 0.79 }, { n: 4, f: 0.75 }, { n: 5, f: 0.73 },
+                 { n: 6, f: 0.72 }, { n: 7, f: 0.72 }, { n: 8, f: 0.71 }, { n: 9, f: 0.70 }],
+    capa_bandeja_perforada: [{ n: 1, f: 1.00 }, { n: 2, f: 0.88 }, { n: 3, f: 0.82 }, { n: 4, f: 0.77 }, { n: 5, f: 0.75 },
+                             { n: 6, f: 0.73 }, { n: 7, f: 0.73 }, { n: 8, f: 0.72 }, { n: 9, f: 0.72 }],
   };
-  const DISPOSICIONES = [
-    { id: 'juntos', label: 'Cables juntos, en contacto' },
-    { id: 'separados', label: 'Separados más de un diámetro' },
+  const MONTAJES_AIRE = [
+    { id: 'manojo', label: 'En manojo o haz (atados, amontonados o en envolvente)' },
+    { id: 'capa_pared', label: 'Capa única sobre pared, piso o bandeja no perforada' },
+    { id: 'capa_bandeja_perforada', label: 'Capa única sobre bandeja perforada' },
   ];
+  const MONTAJE_DEFECTO = { aire: 'capa_pared', bandeja: 'capa_bandeja_perforada' };
+  function montajeDe(metodo, montaje) {
+    if (!MONTAJE_DEFECTO[metodo]) return null;
+    return GRUPO_B5217[montaje] ? montaje : MONTAJE_DEFECTO[metodo];
+  }
+  function textoMontaje(metodo, montaje) {
+    const m = MONTAJES_AIRE.find((x) => x.id === montajeDe(metodo, montaje));
+    return m ? m.label : '';
+  }
+  // Diámetro exterior orientativo del unipolar 750 V PVC, en mm. Sirve para
+  // mostrar el umbral de 2·De; el dato real sale del catálogo que se cotiza.
+  const DE_UNIPOLAR_PVC = { 1: 2.7, 1.5: 3.0, 2.5: 3.6, 4: 4.4, 6: 5.0, 10: 6.6, 16: 7.8, 25: 9.6 };
+  function umbralSeparacion(seccion) {
+    const de = DE_UNIPOLAR_PVC[seccion];
+    return de ? Math.ceil(2 * de) : null;
+  }
+
+  // IEC 60364-5-52 Tabla B.52.19: un circuito por caño, caños enterrados.
+  const GRUPO_ENTERRADO = {
+    contacto: [{ n: 1, f: 1.00 }, { n: 2, f: 0.85 }, { n: 3, f: 0.75 }, { n: 4, f: 0.70 }, { n: 5, f: 0.65 }, { n: 6, f: 0.60 }],
+    m025:     [{ n: 1, f: 1.00 }, { n: 2, f: 0.90 }, { n: 3, f: 0.85 }, { n: 4, f: 0.80 }, { n: 5, f: 0.80 }, { n: 6, f: 0.80 }],
+    m05:      [{ n: 1, f: 1.00 }, { n: 2, f: 0.95 }, { n: 3, f: 0.90 }, { n: 4, f: 0.85 }, { n: 5, f: 0.85 }, { n: 6, f: 0.80 }],
+    m1:       [{ n: 1, f: 1.00 }, { n: 2, f: 0.95 }, { n: 3, f: 0.95 }, { n: 4, f: 0.90 }, { n: 5, f: 0.90 }, { n: 6, f: 0.90 }],
+  };
+  const DISPOSICIONES_ENTERRADO = [
+    { id: 'mismo', label: 'Todos en el mismo caño (§5.1)' },
+    { id: 'contacto', label: 'Un caño por circuito, caños en contacto' },
+    { id: 'm025', label: 'Un caño por circuito, a 0,25 m' },
+    { id: 'm05', label: 'Un caño por circuito, a 0,5 m' },
+    { id: 'm1', label: 'Un caño por circuito, a 1 m' },
+    { id: 'libres', label: 'Un caño por circuito, a más de 1 m (sin reducción)' },
+  ];
+  function disposicionEnterrado(disposicion) {
+    return DISPOSICIONES_ENTERRADO.some((d) => d.id === disposicion) ? disposicion : 'mismo';
+  }
+  // Toma la columna de la tabla igual o inmediatamente superior a la cantidad
+  // de circuitos, que es la más desfavorable (10 circuitos en manojo → la de
+  // 12). Pasado el final de la tabla, su último valor.
+  function factorPorCircuitos(tabla, circuitos) {
+    const n = Math.max(1, Number(circuitos) || 1);
+    for (const fila of tabla) if (fila.n >= n) return fila.f;
+    return tabla[tabla.length - 1].f;
+  }
 
   // RBT-UTE Anexo §5.1: dentro de un caño, recién por encima de 3 conductores
-  // cargados hay reducción (4 a 7 = 0,90; más de 7 = 0,70). Al aire y en
-  // bandeja manda la tabla de arriba, por cantidad de circuitos.
-  function getGroupFactorUTE(categoria, nConductores, circuitos, disposicion) {
-    if (categoria !== 'conducto') {
-      const tabla = GRUPO_AIRE[disposicion === 'separados' ? 'separados' : 'juntos'];
-      const n = Math.max(1, Number(circuitos) || 1);
-      let f = tabla[0].f;
-      for (const fila of tabla) if (n >= fila.n) f = fila.f;
-      return f;
-    }
-    if (nConductores <= 3) return 1;
-    if (nConductores <= 7) return 0.90;
+  // cargados hay reducción (4 a 7 = 0,90; más de 7 = 0,70).
+  function factorConducto(n) {
+    if (n <= 3) return 1;
+    if (n <= 7) return 0.90;
     return 0.70;
+  }
+  // p: datos del circuito (metodo, agrupados, montaje, separados2De,
+  // disposicion). nConductores: los de todo el caño; porCircuito: los de uno.
+  function getGroupFactorUTE(p, nConductores, porCircuito) {
+    const metodo = p.metodo;
+    const circuitos = p.agrupados;
+    if (MONTAJE_DEFECTO[metodo]) {
+      if (p.separados2De) return 1;
+      return factorPorCircuitos(GRUPO_B5217[montajeDe(metodo, p.montaje)], circuitos);
+    }
+    if (metodo === 'enterrado') {
+      const disp = disposicionEnterrado(p.disposicion);
+      if (disp !== 'mismo') {
+        // cada caño lleva un solo circuito: §5.1 adentro y separación afuera
+        const dentro = factorConducto(porCircuito);
+        return disp === 'libres' ? dentro : dentro * factorPorCircuitos(GRUPO_ENTERRADO[disp], circuitos);
+      }
+    }
+    return factorConducto(nConductores);
   }
   function tablaAmpacidad(categoria, material, aislacion) {
     const cat = TABLAS_UTE[categoria] || TABLAS_UTE.conducto;
@@ -612,7 +689,7 @@
     // monofásico y la de 3 en trifásico, que es lo que dice el reglamento.
     const conductoresPorCircuito = fases === 1 ? 3 : 5;
     const nConductores = (Number(p.agrupados) || 1) * conductoresPorCircuito;
-    const groupF = getGroupFactorUTE(categoria, nConductores, p.agrupados, p.disposicion);
+    const groupF = getGroupFactorUTE(p, nConductores, conductoresPorCircuito);
     const solarF = getSolarFactorUTE(Boolean(p.expuestoSol));
     const k = getConductividadUTE(material, aislacion);
     // Límite: el de UTE para el uso, o el de proyecto si es más exigente.
@@ -712,7 +789,7 @@
       r.estado = 'no_cumple';
       return r;
     }
-    r.fa = getGroupFactorUTE(categoria, (Number(p.agrupados) || 1) * (fases === 1 ? 3 : 5), p.agrupados, p.disposicion);
+    r.fa = getGroupFactorUTE(p, (Number(p.agrupados) || 1) * (fases === 1 ? 3 : 5), fases === 1 ? 3 : 5);
     r.fs = getSolarFactorUTE(Boolean(p.expuestoSol));
     r.izTabla = fila ? (fases === 1 ? fila.c2 : fila.c3) : 0;
     r.iz = r.izTabla * r.ft * r.fa * r.fs;
@@ -791,7 +868,7 @@
   function datosCircuito(c, caidaPrevia) {
     return {
       ib: c.ib, v: c.v, fases: c.fases, l: c.l, material: c.material, metodo: c.metodo, aislacion: c.aislacion,
-      tempAmb: c.tempAmb, agrupados: c.agrupados, disposicion: c.disposicion, cosPhi: c.cosPhi,
+      tempAmb: c.tempAmb, agrupados: c.agrupados, disposicion: c.disposicion, montaje: c.montaje, separados2De: c.separados2De, cosPhi: c.cosPhi,
       caidaMax: c.caidaMax, caidaPrevia, uso: c.uso || 'fuerza', expuestoSol: c.expuestoSol,
       inProteccion: c.inProteccion, tipoProteccion: c.tipoProteccion || 'mcb', i2: c.i2,
       iccKa: c.iccKa, poderCorteKa: c.poderCorteKa, i2tPasante: c.i2tPasante, tiempoDespejeS: c.tiempoDespejeS,
@@ -2813,10 +2890,18 @@
         '<div class="field"><label>Material</label><select class="select" data-f="material"><option value="cobre"' + (c.material === 'cobre' ? ' selected' : '') + '>Cobre</option><option value="aluminio"' + (c.material === 'aluminio' ? ' selected' : '') + '>Aluminio</option></select></div>' +
         '<div class="field"><label>Método</label><select class="select" data-f="metodo">' + Object.keys(METODO_LABEL).map((k) => '<option value="' + k + '"' + (c.metodo === k ? ' selected' : '') + '>' + METODO_LABEL[k] + '</option>').join('') + '</select></div>' +
         '<div class="field"><label>Temp. amb. (°C)</label><input class="input" type="number" data-f="tempAmb" value="' + c.tempAmb + '"></div>' +
-        '<div class="field"><label>' + (CATEGORIA_METODO[c.metodo] === 'aire' ? 'Circuitos en la bandeja' : 'Circuitos agrupados') + '</label><input class="input" type="number" min="1" data-f="agrupados" value="' + c.agrupados + '"></div>' +
-        (CATEGORIA_METODO[c.metodo] === 'aire'
-          ? '<div class="field"><label>Disposición</label><select class="select" data-f="disposicion">' +
-            DISPOSICIONES.map((d) => '<option value="' + d.id + '"' + ((c.disposicion || 'juntos') === d.id ? ' selected' : '') + '>' + d.label + '</option>').join('') +
+        '<div class="field"><label>' + (c.metodo === 'bandeja' ? 'Circuitos en la bandeja' : 'Circuitos agrupados') + '</label><input class="input" type="number" min="1" data-f="agrupados" value="' + c.agrupados + '"></div>' +
+        (MONTAJE_DEFECTO[c.metodo]
+          ? '<div class="field"><label>Montaje</label><select class="select" data-f="montaje">' +
+            MONTAJES_AIRE.map((m) => '<option value="' + m.id + '"' + (montajeDe(c.metodo, c.montaje) === m.id ? ' selected' : '') + '>' + m.label + '</option>').join('') +
+            '</select></div>' +
+            '<div class="field"><label>Separación con el circuito vecino' + (calc.apto && umbralSeparacion(calc.seccionAdoptada) ? ' (2·De ≈ ' + umbralSeparacion(calc.seccionAdoptada) + ' mm)' : '') + '</label><select class="select" data-f="separados2De">' +
+            '<option value="0"' + (!c.separados2De ? ' selected' : '') + '>En contacto o a menos de 2·De</option>' +
+            '<option value="1"' + (c.separados2De ? ' selected' : '') + '>A más de 2·De (sin reducción)</option></select></div>'
+          : '') +
+        (c.metodo === 'enterrado'
+          ? '<div class="field"><label>Caños y separación</label><select class="select" data-f="disposicion">' +
+            DISPOSICIONES_ENTERRADO.map((d) => '<option value="' + d.id + '"' + (disposicionEnterrado(c.disposicion) === d.id ? ' selected' : '') + '>' + d.label + '</option>').join('') +
             '</select></div>'
           : '') +
         '<div class="field"><label>Polos</label><select class="select" data-f="polos">' +
@@ -2875,8 +2960,8 @@
         input.addEventListener('change', () => {
           const f = input.dataset.f;
           const esTexto = f === 'nombre' || f === 'material' || f === 'metodo' || f === 'uso' || f === 'aislacion' ||
-            f === 'disposicion' || f === 'tipoProteccion';
-          if (f === 'expuestoSol') c[f] = input.value === '1';
+            f === 'disposicion' || f === 'montaje' || f === 'tipoProteccion';
+          if (f === 'expuestoSol' || f === 'separados2De') c[f] = input.value === '1';
           // vacío = que decida la app
           else if (f === 'inProteccion' || f === 'i2' || f === 'iccKa' || f === 'poderCorteKa' || f === 'i2tPasante' || f === 'tiempoDespejeS') {
             c[f] = Number(input.value) > 0 ? Number(input.value) : null;
@@ -3132,6 +3217,8 @@
       metodo: $('#cond-metodo').value, aislacion: $('#cond-aislacion').value,
       tempAmb: Number($('#cond-temp').value) || 30, agrupados: Number($('#cond-agrupados').value) || 1,
       disposicion: $('#cond-disposicion').value,
+      montaje: $('#cond-montaje').value,
+      separados2De: $('#cond-separados').value === '1',
       cosPhi, caidaMax: Number($('#cond-caidamax').value) || 5, uso: $('#cond-uso').value,
       expuestoSol: $('#cond-sol').value === '1',
       caidaAguasArribaPct: Number($('#cond-caida-arriba').value) || 0,
@@ -3146,8 +3233,16 @@
     $('#cond-i2-wrap').hidden = esMcb;
     $('#cond-i2t-wrap').hidden = !esMcb;
     $('#cond-tiempo-wrap').hidden = esMcb;
-    // la disposición sólo cuenta al aire o en bandeja
-    $('#cond-disposicion-wrap').hidden = CATEGORIA_METODO[datos.metodo] !== 'aire';
+    // montaje y separación cuentan al aire y en bandeja; los caños, enterrado
+    const alAire = Boolean(MONTAJE_DEFECTO[datos.metodo]);
+    $('#cond-montaje-wrap').hidden = !alAire;
+    $('#cond-disposicion-wrap').hidden = datos.metodo !== 'enterrado';
+    if (alAire && $('#cond-montaje').dataset.metodo !== datos.metodo) {
+      // al cambiar de método se propone el montaje típico de ese método
+      $('#cond-montaje').value = MONTAJE_DEFECTO[datos.metodo];
+      $('#cond-montaje').dataset.metodo = datos.metodo;
+      datos.montaje = MONTAJE_DEFECTO[datos.metodo];
+    }
     const r = calcularSeccion(datos);
     opcionesComprobacion(datos.material, datos.aislacion, datos.metodo);
     renderComprobacion(comprobarCircuito(datos, { seccion: $('#cond-seccion').value, in: $('#cond-in').value }));
@@ -3831,6 +3926,8 @@
     });
     // cada uso trae su caída máxima: iluminación admite 3 % y el resto 5 %
     $('#cond-disposicion').addEventListener('change', calcularConductorForm);
+    $('#cond-montaje').addEventListener('change', calcularConductorForm);
+    $('#cond-separados').addEventListener('change', calcularConductorForm);
     ['#cond-sol', '#cond-prot-tipo'].forEach((sel) => $(sel).addEventListener('change', calcularConductorForm));
     ['#cond-caida-arriba', '#cond-i2', '#cond-icc', '#cond-podercorte', '#cond-i2t', '#cond-tiempo'].forEach((sel) => {
       $(sel).addEventListener('input', calcularConductorForm);
@@ -4085,7 +4182,7 @@
       doc.setFont('helvetica', 'italic'); doc.setFontSize(7); doc.setTextColor(111, 114, 119);
       const refs = doc.splitTextToSize(pdfTexto(
         'Cómo se comprobó cada circuito. Capacidad de conducción: Iz = I de tabla x factor de temperatura (Tabla XIV, escalón superior) x factor de agrupamiento x factor solar (0,90 si está al sol), ' +
-        'y se verifica Iz >= Ib (Reglamento de Baja Tensión de UTE, Capítulo II - Anexo, Tablas VI a XIV, §3.3.2 y §5.1; para el agrupamiento se cuentan también el neutro y la tierra, criterio más exigente que el reglamento). ' +
+        'y se verifica Iz >= Ib (Reglamento de Baja Tensión de UTE, Capítulo II - Anexo, Tablas VI a XIV, §3.3.2 y §5.1; para el agrupamiento se cuentan también el neutro y la tierra, criterio más exigente que el reglamento; al aire y en bandeja, IEC 60364-5-52 Tabla B.52.17 según el montaje, sin reducción si entre circuitos hay más de 2 diámetros exteriores; en caños enterrados separados, Tabla B.52.19 según la distancia, sin reducción a más de 1 m). ' +
         'Coordinación con la protección: Ib <= In <= Iz (UTE, Capítulo V numeral 1.a; formulación explícita en IEC 60364-4-43:2023 §431.4.2, referencia técnica complementaria, ' +
         'que agrega I2 <= 1,45 Iz, cumplida porque en los termomagnéticos IEC 60898-1 es I2 = 1,45 In). ' +
         'Caída de tensión: e = 2LW/(KSV) en monofásico y LW/(KSV) en trifásico, con la conductividad de servicio (Cu/PVC 48,4; Cu/XLPE 45,5; Al/PVC 29,4; Al/XLPE 27,6), ' +

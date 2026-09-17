@@ -159,6 +159,7 @@
      ============================================================ */
   .page-title{ font-size:1.5rem; font-weight:800; letter-spacing:-0.01em; margin:2px 0 4px; }
   .page-sub{ color:var(--steel); font-size:0.88rem; margin:0 0 18px; line-height:1.5; }
+  .hint{ color:var(--steel); font-size:0.78rem; margin:6px 0 0; line-height:1.45; }
   .section-label{ font-size:0.78rem; font-weight:700; color:var(--steel); text-transform:uppercase; letter-spacing:0.06em; margin:0 0 10px; }
   .eyebrow{ font-size:0.72rem; font-weight:700; color:var(--steel); text-transform:uppercase; letter-spacing:0.08em; }
 
