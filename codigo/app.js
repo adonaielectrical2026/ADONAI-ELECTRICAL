@@ -2657,16 +2657,8 @@
       avisos.appendChild(card);
     }
 
-    const diasBackup = diasDesde(DB.settings.ultimoBackup);
-    if ((DB.trabajos.length || DB.presupuestos.length) && (diasBackup === null || diasBackup >= DIAS_SIN_RESPALDO)) {
-      const card = el('div', { class: 'card card-pad', style: 'cursor:pointer' });
-      card.innerHTML = '<div class="activity-row"><span class="ic">' + icon('ic-download') + '</span>' +
-        '<div class="body"><div class="title">Sin copia de seguridad</div>' +
-        '<div class="meta">' + (diasBackup === null ? 'Todavía no hiciste ninguna.' : 'La última fue hace ' + diasBackup + ' días.') +
-        ' Los datos viven sólo en este dispositivo.</div></div></div>';
-      card.addEventListener('click', () => { showView('perfil'); renderPerfil(); });
-      avisos.appendChild(card);
-    }
+    // El estado de copia de seguridad se muestra en Perfil, no en Inicio.
+    // Así el dashboard reserva este espacio para actividad reciente y avisos operativos.
 
     const dias = diasDesde(DB.settings.preciosRevisados);
     if (dias !== null && dias >= DIAS_PRECIOS_VIEJOS) {
@@ -3213,11 +3205,21 @@
     if (draft.circuitos.length === 0) cWrap.appendChild(el('div', { class: 'empty-state', html: 'Sin circuitos cargados.' }));
     draft.circuitos.forEach((c, i) => {
       const calc = calcularCircuito(c);
-      const row = el('div', { class: 'card card-pad', style: 'display:flex;align-items:center;gap:14px' });
-      row.innerHTML =
-        '<div style="width:34px;height:34px;border-radius:50%;background:var(--soft);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:0.8rem;flex:none">C' + (i + 1) + '</div>' +
-        '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:0.88rem">' + escapeHtml(c.nombre || 'Circuito') + '</div>' +
-        '<div style="font-size:0.76rem;color:var(--steel)">' + (calc.apto ? calc.seccionAdoptada + ' mm² · ' + calc.breaker + 'A · ΔU ' + fmt(calc.dUPct) + '%' : 'No apto con estos parámetros') + '</div></div>';
+      const row = el('div', { class: 'card card-pad summary-circuit-card' });
+      if (calc.apto) {
+        row.innerHTML =
+          '<div class="summary-circuit-id">C' + (i + 1) + '</div>' +
+          '<div class="summary-circuit-name">' + escapeHtml(c.nombre || 'Circuito') + '</div>' +
+          '<div class="summary-circuit-stat"><b>' + calc.seccionAdoptada + ' mm²</b><span>Sección</span></div>' +
+          '<div class="summary-circuit-stat"><b>' + calc.breaker + ' A</b><span>Protección</span></div>' +
+          '<div class="summary-circuit-stat"><b>' + fmt(calc.dUPct) + ' %</b><span>Caída</span></div>' +
+          '<svg class="summary-circuit-chevron"><use href="#ic-chevron-right"/></svg>';
+      } else {
+        row.innerHTML =
+          '<div class="summary-circuit-id">C' + (i + 1) + '</div>' +
+          '<div class="summary-circuit-name">' + escapeHtml(c.nombre || 'Circuito') + '<span class="summary-circuit-warning">No apto con estos parámetros</span></div>' +
+          '<svg class="summary-circuit-chevron"><use href="#ic-chevron-right"/></svg>';
+      }
       cWrap.appendChild(row);
     });
 
@@ -3442,6 +3444,26 @@
       rows.push(['ic-ruler', 'Conductividad K (servicio)', fmt(r.k, 1) + ' m/(Ω·mm²)']);
       rows.push(['ic-thermo', 'Caída del circuito', fmt(r.dUPct) + ' %']);
       rows.push(['ic-thermo', 'Caída total desde el origen', fmt(r.dUPctTotal) + ' % de ' + fmt(r.caidaMax) + ' % — ' + (r.dUPctTotal <= r.caidaMax ? 'Cumple' : 'No cumple')]);
+    }
+    const resultMain = $('#cond-result-main');
+    if (resultMain) {
+      if (r.apto) {
+        const materialTxt = $('#cond-material').value === 'cobre' ? 'Cu' : 'Al';
+        const aislacionTxt = $('#cond-aislacion').value.toUpperCase();
+        resultMain.innerHTML =
+          '<div class="result-adopted">' +
+            '<div class="kicker">Conductor seleccionado</div>' +
+            '<div class="main">' + r.seccionAdoptada + ' mm² ' + materialTxt + ' / ' + aislacionTxt + '</div>' +
+            '<div class="sub">Protección sugerida: <strong>' + r.breaker + ' A curva ' + r.curva + '</strong></div>' +
+          '</div>' +
+          '<div class="result-mini-grid">' +
+            '<div class="result-mini"><div class="v">' + fmt(r.ib) + ' A</div><div class="l">Corriente</div></div>' +
+            '<div class="result-mini"><div class="v">' + fmt(r.dUPctTotal) + ' %</div><div class="l">Caída total</div></div>' +
+            '<div class="result-mini"><div class="v">' + r.breaker + ' A</div><div class="l">Protección</div></div>' +
+          '</div>';
+      } else {
+        resultMain.innerHTML = '<div class="result-adopted"><div class="kicker">Resultado</div><div class="main">Revisar datos</div><div class="sub">No se encontró una combinación apta con los datos ingresados.</div></div>';
+      }
     }
     $('#cond-resultado').innerHTML = rows.map((row) =>
       '<div class="light-stat-row"><span class="lbl">' + icon(row[0]) + row[1] + '</span><span class="val strong">' + row[2] + '</span></div>').join('');
@@ -4728,6 +4750,21 @@
     elDate.textContent = txt;
   }
 
+  function mejorarAccesibilidad() {
+    // Une las etiquetas visibles con sus campos sin tener que repetir código en cada formulario.
+    document.querySelectorAll('.field label:not([for])').forEach((label) => {
+      const campo = label.parentElement && label.parentElement.querySelector('input[id], select[id], textarea[id]');
+      if (campo) label.setAttribute('for', campo.id);
+    });
+    document.querySelectorAll('.icon-btn[data-back]:not([aria-label])').forEach((btn) => btn.setAttribute('aria-label', 'Volver'));
+    document.querySelectorAll('button').forEach((btn) => {
+      if (btn.hasAttribute('aria-label')) return;
+      const texto = (btn.textContent || '').trim();
+      const titulo = btn.getAttribute('title');
+      if (!texto && titulo) btn.setAttribute('aria-label', titulo);
+    });
+  }
+
   /* ============================================================
      INIT
      ============================================================ */
@@ -4741,6 +4778,7 @@
 
   function init() {
     document.querySelectorAll('[data-logo]').forEach((img) => { img.src = LOGO_SRC; });
+    mejorarAccesibilidad();
     try { document.documentElement.style.setProperty('--watermark-src', 'url("' + LOGO_SRC + '")'); } catch (e) {}
     wireTheme();
     renderFecha();
