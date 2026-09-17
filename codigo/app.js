@@ -555,9 +555,10 @@
   // La separación entre potencia y datos (EN 50174-2, 30 a 200 mm) es un
   // criterio de compatibilidad electromagnética, no térmico: no entra acá.
   //
-  // PENDIENTE DE CONFIRMAR con electricista matriculado: son valores de
-  // referencia, no tablas del reglamento uruguayo, y no consta con qué
-  // disposición de referencia están hechas las Tablas VI a IX de UTE.
+  // Son valores de referencia, no tablas del reglamento uruguayo. Aprobados
+  // como supuesto 2 por el técnico instalador el 17/9/2026 (ver
+  // NORMATIVE_PACK.parametros.aprobacionSupuesto2), con respaldo en el
+  // contraste de las Tablas VI a IX con los métodos E y F de la IEC.
   const GRUPO_B5217 = {
     manojo: [{ n: 1, f: 1.00 }, { n: 2, f: 0.80 }, { n: 3, f: 0.70 }, { n: 4, f: 0.65 }, { n: 5, f: 0.60 },
              { n: 6, f: 0.57 }, { n: 7, f: 0.54 }, { n: 8, f: 0.52 }, { n: 9, f: 0.50 }, { n: 12, f: 0.45 },
