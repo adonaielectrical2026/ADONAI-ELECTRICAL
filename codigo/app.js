@@ -1416,13 +1416,32 @@
     // Relevado en Fivisa, línea Hyundai HGD63S, la misma con la que coincide la
     // bipolar: 1P 16A 4,5kA (HY1116S) $80 de lista. La proporción que se usaba
     // antes daba más del doble.
-    termicaUnipolarBase: 80,
-    termicaBipolarBase: 277,
-    termicaTetrapolarBase: 294,
+    // Termomagnéticos Schneider Acti9 iC60N (6 kA según IEC 60898-1), que es
+    // la gama que se cotiza. Relevado en fivisa.com.uy el 17/09/2026, precio
+    // de lista en USD y pasado a pesos con el dólar del catálogo:
+    //   1P  40A MG2418N  USD 11,95     1P  63A MG2421N  USD 13,70
+    //   2P  25A MG2438N  USD 21,23     2P  63A MG2446N  USD 29,65
+    //   4P  25A MG2478N  USD 44,37     4P  63A MG2486N  USD 67,35
+    // Por encima de 63 A la iC60 no llega: el tetrapolar sale de un C120N 4P
+    // 100A de 10 kA (MG2874, USD 200,46), que además cumple el mínimo de
+    // 10 kA desde 100 A. El bipolar de más de 63 A no está relevado: queda en
+    // 0 y el material sale sin precio, para cotizarlo a mano.
+    termicaUnipolarBase: 481,
+    termicaUnipolar63: 551,
+    termicaUnipolar125: 0,
+    termicaBipolarBase: 854,
+    termicaBipolar63: 1193,
+    termicaBipolar125: 0,
+    termicaTetrapolarBase: 1785,
+    termicaTetrapolar63: 2710,
+    termicaTetrapolar125: 8065,
+    // Diferencial tipo A, 30 mA: Acti9 iID superinmunizado (A-SI) 2P 25A,
+    // MG1302, USD 143,77. En Fivisa no hay tetrapolar de 30 mA tipo A ni
+    // bipolares de más de 25 A tipo A: esos quedan sin precio.
+    diferencialBipolar25: 5784,
+    diferencialTetrapolarBase: 0,
     // Diferencial tipo A, 30 mA, hasta 40 A. Sin relevar: se carga en el
     // catálogo. Los tipos F, B y AC se cotizan a mano en cada presupuesto.
-    diferencialBipolarBase: 0,
-    diferencialTetrapolarBase: 0,
     cajaOctogonal: 72,
     portalamparas: 45,
     llaveLuzSimple: 140,
@@ -1452,6 +1471,10 @@
   // para el cable multipolar, Fivisa). Cuando cambia la cotización, sólo estos
   // se recalculan; el resto está relevado en pesos y no se toca.
   const PRECIOS_EN_DOLARES = [
+    { clave: 'termicaUnipolarBase' }, { clave: 'termicaUnipolar63' },
+    { clave: 'termicaBipolarBase' }, { clave: 'termicaBipolar63' },
+    { clave: 'termicaTetrapolarBase' }, { clave: 'termicaTetrapolar63' }, { clave: 'termicaTetrapolar125' },
+    { clave: 'diferencialBipolar25' },
     { clave: 'cableBajoGoma' }, { clave: 'cableBajoPlastico' },
     { clave: 'canoGalvanizado' }, { clave: 'codoGalvanizado' },
     { clave: 'bandeja', medida: 150 }, { clave: 'cajaMedidorTrifasica' },
@@ -1464,6 +1487,11 @@
   // actualiza solo en los celulares que ya tienen la app.
   const PRECIOS_RELEVADOS = [
     { clave: 'termicaUnipolarBase', viejo: 166, nuevo: 80 },
+    // 17/09/2026: se pasa de la línea Hyundai de 4,5 kA a la Schneider iC60N
+    // de 6 kA, que es la que exige el criterio de poder de corte de plaza.
+    { clave: 'termicaUnipolarBase', viejo: 80, nuevo: 481 },
+    { clave: 'termicaBipolarBase', viejo: 277, nuevo: 854 },
+    { clave: 'termicaTetrapolarBase', viejo: 294, nuevo: 1785 },
     { clave: 'borneraTierra', viejo: 0, nuevo: 55 },
     { clave: 'borneraNeutro', viejo: 0, nuevo: 55 },
     { clave: 'codoGalvanizado', viejo: 0, nuevo: 16 },
@@ -1508,20 +1536,21 @@
     return Math.floor((Date.now() - ts) / (24 * 3600e3));
   }
 
-  // Escalón por corriente nominal, igual para térmicas y diferenciales: hasta
-  // 40 A el precio base, hasta 63 A 1,5 veces y por encima 2,5 veces.
-  function escalonPorCorriente(base, amp) {
-    if (amp <= 40) return base;
-    if (amp <= 63) return Math.round(base * 1.5);
-    return Math.round(base * 2.5);
-  }
+  // Precio por tramo de corriente nominal, con los tres escalones relevados:
+  // hasta 40 A, de 50 a 63 A y de 80 a 125 A. El que no está relevado queda
+  // en 0 y el material sale sin precio, para cargarlo a mano.
   function precioTermica(tipo, amp, precios) {
-    return escalonPorCorriente(Number(precios[BASE_POR_TIPO[tipo] || 'termicaBipolarBase']) || 0, amp);
+    const familia = (BASE_POR_TIPO[tipo] || 'termicaBipolarBase').replace('Base', '');
+    const tramo = amp <= 40 ? 'Base' : (amp <= 63 ? '63' : '125');
+    return Number(precios[familia + tramo]) || 0;
   }
+  // Diferencial: sólo hay precio del tipo A bipolar de hasta 25 A (Acti9 iID
+  // A-SI). Los demás —tetrapolares, más de 25 A, y los tipos F, B y AC— se
+  // cotizan a mano.
   function precioDiferencial(tipoRcd, polos, amp, precios) {
     if (tipoRcd !== 'A') return 0;
-    const base = Number(precios[polos <= 2 ? 'diferencialBipolarBase' : 'diferencialTetrapolarBase']) || 0;
-    return escalonPorCorriente(base, amp);
+    if (polos <= 2 && amp <= 25) return Number(precios.diferencialBipolar25) || 0;
+    return Number(precios.diferencialTetrapolarBase) || 0;
   }
   // Medida de gabinete que hay que comprar para una cantidad de módulos: la
   // siguiente de la lista. No existe un gabinete de 20 módulos — se compra el de
@@ -3979,18 +4008,24 @@
       titulo: 'Térmicas ($/un.)',
       campos: [
         { key: 'termicaUnipolarBase', tipo: 'plano', etiqueta: 'Térmica unipolar (hasta 40A)' },
+        { key: 'termicaUnipolar63', tipo: 'plano', etiqueta: 'Térmica unipolar (50 a 63A)' },
+        { key: 'termicaUnipolar125', tipo: 'plano', etiqueta: 'Térmica unipolar (80 a 125A)' },
         { key: 'termicaBipolarBase', tipo: 'plano', etiqueta: 'Térmica bipolar (hasta 40A)' },
+        { key: 'termicaBipolar63', tipo: 'plano', etiqueta: 'Térmica bipolar (50 a 63A)' },
+        { key: 'termicaBipolar125', tipo: 'plano', etiqueta: 'Térmica bipolar (80 a 125A)' },
         { key: 'termicaTetrapolarBase', tipo: 'plano', etiqueta: 'Térmica tetrapolar (hasta 40A)' },
+        { key: 'termicaTetrapolar63', tipo: 'plano', etiqueta: 'Térmica tetrapolar (50 a 63A)' },
+        { key: 'termicaTetrapolar125', tipo: 'plano', etiqueta: 'Térmica tetrapolar (80 a 125A)' },
       ],
-      nota: 'De 50 a 63A se cobra 1,5× la bipolar; de 80 a 125A, 2,5× — no relevado, es un escalón proporcional. La unipolar tampoco está relevada: sale de la bipolar por proporción. Estos precios son de la línea Hyundai HGD63S (4,5 kA): para cotizar iC60N (6 kA) hay que cargar su precio.',
+      nota: 'Schneider Acti9 iC60N (6 kA), relevado en Fivisa el 17/09/2026 en USD, precio de lista. Por encima de 63A la iC60 no llega: el tetrapolar sale de un C120N de 10 kA y el bipolar quedó en 0, para cotizarlo a mano.',
     },
     {
       titulo: 'Diferenciales tipo A, 30 mA ($/un.)',
       campos: [
-        { key: 'diferencialBipolarBase', tipo: 'plano', etiqueta: 'Diferencial bipolar (hasta 40A)' },
-        { key: 'diferencialTetrapolarBase', tipo: 'plano', etiqueta: 'Diferencial tetrapolar (hasta 40A)' },
+        { key: 'diferencialBipolar25', tipo: 'plano', etiqueta: 'Diferencial bipolar 25A (Acti9 iID A-SI)' },
+        { key: 'diferencialTetrapolarBase', tipo: 'plano', etiqueta: 'Diferencial tetrapolar' },
       ],
-      nota: 'Sin relevar: mientras estén en 0, el diferencial queda sin precio y el presupuesto no se puede aprobar. De 50 a 63A se cobra 1,5×; más, 2,5×. Los tipos F, B y AC se cotizan a mano.',
+      nota: 'En Fivisa el único tipo A de 30 mA es el iID superinmunizado (A-SI) bipolar de 25A. El tetrapolar, los bipolares de más de 25A y los tipos F, B y AC no tienen precio: quedan en 0 y se cotizan a mano.',
     },
     {
       titulo: 'Puntos de luz y de toma ($/un.)',
