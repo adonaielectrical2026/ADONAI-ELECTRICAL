@@ -307,6 +307,7 @@
 
   .badge-apto{ display:inline-flex; align-items:center; gap:6px; background:var(--success-bg); color:var(--success); font-weight:800; font-size:0.8rem; padding:6px 14px; border-radius:var(--radius-pill); }
   .badge-noapto{ display:inline-flex; align-items:center; gap:6px; background:var(--error-bg); color:var(--error); font-weight:800; font-size:0.8rem; padding:6px 14px; border-radius:var(--radius-pill); }
+  .badge-pendiente{ display:inline-flex; align-items:center; gap:6px; background:var(--warning-bg); color:var(--warning); font-weight:800; font-size:0.8rem; padding:6px 14px; border-radius:var(--radius-pill); white-space:nowrap; }
   .badge-apto svg,.badge-noapto svg{ width:15px; height:15px; }
 
   .alert-error{ border-left:4px solid var(--error); background:var(--error-bg); border-radius:var(--radius-sm); padding:14px 16px; font-size:0.86rem; line-height:1.5; color:var(--charcoal); }

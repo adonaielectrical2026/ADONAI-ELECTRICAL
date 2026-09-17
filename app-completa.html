@@ -325,6 +325,7 @@
 
   .badge-apto{ display:inline-flex; align-items:center; gap:6px; background:var(--success-bg); color:var(--success); font-weight:800; font-size:0.8rem; padding:6px 14px; border-radius:var(--radius-pill); }
   .badge-noapto{ display:inline-flex; align-items:center; gap:6px; background:var(--error-bg); color:var(--error); font-weight:800; font-size:0.8rem; padding:6px 14px; border-radius:var(--radius-pill); }
+  .badge-pendiente{ display:inline-flex; align-items:center; gap:6px; background:var(--warning-bg); color:var(--warning); font-weight:800; font-size:0.8rem; padding:6px 14px; border-radius:var(--radius-pill); white-space:nowrap; }
   .badge-apto svg,.badge-noapto svg{ width:15px; height:15px; }
 
   .alert-error{ border-left:4px solid var(--error); background:var(--error-bg); border-radius:var(--radius-sm); padding:14px 16px; font-size:0.86rem; line-height:1.5; color:var(--charcoal); }
@@ -700,6 +701,9 @@
             <option value="300">300 mA</option>
           </select>
         </div>
+        <div class="field" style="margin-top:12px"><label>Tipo de diferencial general</label>
+          <select class="select" id="resumen-diferencial-tipo"></select>
+        </div>
       </div>
 
       <div class="card card-pad">
@@ -776,17 +780,23 @@
               <option value="embutido">Embutido en pared</option>
               <option value="amurado_pvc">Amurado — caño PVC rígido</option>
               <option value="amurado_galvanizado">Amurado — caño de acero galvanizado</option>
-              <option value="bandeja">Bandeja</option>
-              <option value="aire">Aire libre</option>
-              <option value="enterrado">Enterrado bajo tierra</option>
+              <option value="bandeja">Bandeja perforada bajo techo</option>
+              <option value="aire">Al aire bajo techo / exterior protegido</option>
+              <option value="enterrado">Enterrado en caño</option>
             </select>
           </div>
           <div class="field"><label>Temp. ambiente (°C)</label><input class="input" type="number" id="cond-temp" value="30"></div>
         </div>
-        <p style="font-size:0.76rem;color:var(--steel);margin:0">Se calcula a 30 °C, que es el criterio de la casa para toda la obra. Con PVC eso corrige la corriente de tabla por 0,94 (Tabla XIV).</p>
+        <p style="font-size:0.76rem;color:var(--steel);margin:0">Se calcula a 30 °C, que es el criterio de la casa para toda la obra. Una temperatura intermedia toma el escalón superior de la Tabla XIV; fuera de la tabla, el cálculo no se puede verificar.</p>
+        <div class="grid-2">
+          <div class="field"><label>Expuesto al sol</label>
+            <select class="select" id="cond-sol"><option value="0">No</option><option value="1">Sí (x 0,90)</option></select>
+          </div>
+          <div class="field"><label>Caída antes del circuito (%)</label><input class="input" type="number" step="0.1" min="0" id="cond-caida-arriba" value="0"></div>
+        </div>
         <div class="grid-2">
           <div class="field"><label>Circuitos agrupados</label><input class="input" type="number" min="1" id="cond-agrupados" value="1"></div>
-          <div class="field"><label>Caída máx. (%)</label><input class="input" type="number" step="0.5" id="cond-caidamax" value="5"></div>
+          <div class="field"><label>Criterio de proyecto (%)</label><input class="input" type="number" step="0.5" min="0.1" id="cond-caidamax" value="5"></div>
         </div>
         <div class="field" id="cond-disposicion-wrap" hidden><label>Disposición al aire o en bandeja</label>
           <select class="select" id="cond-disposicion">
@@ -810,6 +820,23 @@
         <div class="grid-2">
           <div class="field"><label>Sección a verificar</label><select class="select" id="cond-seccion"></select></div>
           <div class="field"><label>Protección a verificar</label><select class="select" id="cond-in"></select></div>
+        </div>
+        <p style="font-size:0.76rem;color:var(--steel);margin:0">El límite de caída es el de UTE —3 % en alumbrado, 5 % en el resto— o el criterio de proyecto si es más exigente.</p>
+        <div class="grid-2">
+          <div class="field"><label>Tipo de protección</label>
+            <select class="select" id="cond-prot-tipo">
+              <option value="mcb">Termomagnético IEC 60898</option>
+              <option value="otro">Caja moldeada u otro</option>
+            </select>
+          </div>
+          <div class="field" id="cond-i2-wrap" hidden><label>I₂ del fabricante (A)</label><input class="input" type="number" step="0.1" min="0" id="cond-i2"></div>
+        </div>
+        <div class="section-label" style="margin:4px 0 0">Cortocircuito (opcional)</div>
+        <div class="grid-2">
+          <div class="field"><label>Icc prevista (kA)</label><input class="input" type="number" step="0.1" min="0" id="cond-icc"></div>
+          <div class="field"><label>Poder de corte (kA)</label><input class="input" type="number" step="0.5" min="0" id="cond-podercorte"></div>
+          <div class="field" id="cond-i2t-wrap"><label>Energía pasante I²t (A²s)</label><input class="input" type="number" step="100" min="0" id="cond-i2t"></div>
+          <div class="field" id="cond-tiempo-wrap" hidden><label>Tiempo de despeje (s)</label><input class="input" type="number" step="0.01" min="0" id="cond-tiempo"></div>
         </div>
         <div id="cond-comprobacion"></div>
       </div>
@@ -913,6 +940,7 @@
 
       <div class="card card-pad" id="pres-vista-interno">
         <div class="budget-row"><span class="lbl"><svg><use href="#ic-cable"/></svg>Materiales:</span><span class="val" id="pi-materiales">$0</span></div>
+        <div class="alert-error" id="pi-materiales-warning" hidden style="margin:8px 0 12px"></div>
         <div class="budget-row"><span class="lbl"><svg><use href="#ic-user"/></svg>Mano de obra:</span><span class="val"><input class="input" style="min-height:34px;width:120px;text-align:right" type="number" id="pi-manoobra" value="0"></span></div>
         <div class="budget-row"><span class="lbl"><svg><use href="#ic-truck"/></svg>Traslados:</span><span class="val"><input class="input" style="min-height:34px;width:120px;text-align:right" type="number" id="pi-traslados" value="0"></span></div>
         <div class="budget-row"><span class="lbl"><svg><use href="#ic-tag"/></svg>Otros gastos:</span><span class="val"><input class="input" style="min-height:34px;width:120px;text-align:right" type="number" id="pi-otros" value="0"></span></div>
@@ -2167,7 +2195,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     tri_it: { id: 'tri_it', label: 'Trifásico 230V (sistema IT)', v: 230, fases: 3 },
     tri_tt: { id: 'tri_tt', label: 'Trifásico 400V (sistema TT)', v: 400, fases: 3 },
   };
+  // Potencias normalizadas de uso general publicadas por UTE. Los escalones de
+  // 1,4 / 2,0 / 2,5 / 3,0 kW existen, pero son para destinos específicos: no se
+  // sugieren automáticamente para una instalación general.
   const MONO_STEPS = [3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10, 10.5, 11, 11.5];
+  const MONO_STEPS_RESTRINGIDOS = [1.4, 2, 2.5, 3];
   const TRI_STEPS = [6, 8, 10, 12, 15, 20, 25, 30, 35, 40];
 
   // Corriente maxima admisible, RBT-UTE Capitulo II - Anexo (ed. junio 2001).
@@ -2279,8 +2311,24 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   //     monofásico   e = 2·L·W / (K·S·V)
   //     trifásico    e =   L·W / (K·S·V)
   // Con W = V·I·cosφ (o √3·V·I·cosφ) queda e = 2·L·I·cosφ/(K·S), que es como lo
-  // resuelve la app. K es la conductividad a 25 °C que da el propio reglamento.
-  const CONDUCTIVIDAD_UTE = { cobre: 56.9, aluminio: 34.7 };
+  // resuelve la app.
+  //
+  // K: UTE da la conductividad a 25 °C (56,9 cobre, 34,7 aluminio), pero cuando
+  // la sección se dimensiona por capacidad térmica —que es lo que hace la app—
+  // indica usar la de la temperatura de servicio de la aislación: 70 °C el PVC
+  // y 90 °C el XLPE. Esos valores salen de la resistividad a 20 °C corregida
+  // por temperatura (cobre 0,01724 y α 0,00393; aluminio 0,02826 y α 0,00403).
+  const CONDUCTIVIDAD_UTE = {
+    cobre: { pvc: 48.4, xlpe: 45.5, c25: 56.9 },
+    aluminio: { pvc: 29.4, xlpe: 27.6, c25: 34.7 },
+  };
+  function getConductividadUTE(material, aislacion) {
+    const mat = CONDUCTIVIDAD_UTE[material === 'aluminio' ? 'aluminio' : 'cobre'];
+    return mat[aislacion === 'xlpe' ? 'xlpe' : 'pvc'];
+  }
+  // Anexo §3.3.2: conductores expuestos al sol, corriente admisible x 0,90.
+  const FACTOR_SOL_UTE = 0.90;
+  function getSolarFactorUTE(expuesto) { return expuesto ? FACTOR_SOL_UTE : 1; }
   // Los interruptores termomagnéticos domiciliarios (IEC 60898) tienen corriente
   // convencional de disparo I2 = 1,45·In, así que la segunda condición de la
   // IEC 60364-4-43 §431.4.2 —I2 <= 1,45·Iz— se cumple siempre que In <= Iz. Para
@@ -2309,9 +2357,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     embutido: 'Embutido en pared',
     amurado_pvc: 'Amurado — caño PVC rígido',
     amurado_galvanizado: 'Amurado — caño de acero galvanizado',
-    bandeja: 'Bandeja',
-    aire: 'Aire libre',
-    enterrado: 'Enterrado bajo tierra',
+    bandeja: 'Bandeja perforada bajo techo',
+    aire: 'Al aire bajo techo / exterior protegido',
+    enterrado: 'Enterrado en caño',
   };
   const BREAKER_RATINGS = [6, 10, 16, 20, 25, 32, 40, 50, 63, 80, 100, 125];
   // Curva de la térmica según lo que alimenta el circuito:
@@ -2336,7 +2384,62 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   // norma y no se toca; manda el mayor de los dos.
   const MINIMOS_COMERCIALES = { iluminacion: 1, tomacorrientes: 1.5, fuerza: 1.5, motor: 1.5 };
   const CAIDA_MAX_DEFAULT = { iluminacion: 3, tomacorrientes: 5, fuerza: 5, motor: 5 };
-  const DIAMETRO_CANO = [{ s: 2.5, d: 16 }, { s: 6, d: 20 }, { s: 10, d: 25 }, { s: 16, d: 32 }, { s: 95, d: 40 }];
+
+  // RBT-UTE Capítulo IV, Tabla II: cantidad máxima de conductores unipolares
+  // (UNIT-IEC 227) por diámetro nominal de caño. Se cuenta también el
+  // conductor de protección, que va con la misma sección que la fase.
+  const CANO_UTE_TABLA_II = {
+    1:   { 16: 7, 20: 12, 25: 20, 32: 34, 40: 55, 50: 87, 63: 144 },
+    1.5: { 16: 5, 20: 9, 25: 15, 32: 26, 40: 43, 50: 67, 63: 112 },
+    2:   { 16: 4, 20: 7, 25: 12, 32: 21, 40: 34, 50: 54, 63: 90 },
+    2.5: { 16: 3, 20: 6, 25: 10, 32: 17, 40: 28, 50: 44, 63: 73 },
+    4:   { 16: 2, 20: 4, 25: 7, 32: 13, 40: 21, 50: 34, 63: 56 },
+    6:   { 16: 2, 20: 3, 25: 6, 32: 10, 40: 17, 50: 26, 63: 44 },
+    10:  { 16: 1, 20: 2, 25: 3, 32: 6, 40: 10, 50: 16, 63: 28 },
+    16:  { 16: 1, 20: 1, 25: 2, 32: 4, 40: 7, 50: 12, 63: 20 },
+    25:  { 16: 0, 20: 1, 25: 1, 32: 3, 40: 5, 50: 8, 63: 13 },
+    35:  { 16: 0, 20: 0, 25: 1, 32: 2, 40: 4, 50: 6, 63: 10 },
+    50:  { 16: 0, 20: 0, 25: 1, 32: 1, 40: 2, 50: 4, 63: 7 },
+    70:  { 16: 0, 20: 0, 25: 0, 32: 1, 40: 2, 50: 3, 63: 5 },
+    95:  { 16: 0, 20: 0, 25: 0, 32: 1, 40: 1, 50: 2, 63: 4 },
+    120: { 16: 0, 20: 0, 25: 0, 32: 0, 40: 1, 50: 2, 63: 3 },
+    150: { 16: 0, 20: 0, 25: 0, 32: 0, 40: 1, 50: 1, 63: 2 },
+    185: { 16: 0, 20: 0, 25: 0, 32: 0, 40: 0, 50: 1, 63: 2 },
+    240: { 16: 0, 20: 0, 25: 0, 32: 0, 40: 0, 50: 1, 63: 1 },
+    300: { 16: 0, 20: 0, 25: 0, 32: 0, 40: 0, 50: 0, 63: 1 },
+    400: { 16: 0, 20: 0, 25: 0, 32: 0, 40: 0, 50: 0, 63: 1 },
+  };
+  // RBT-UTE Capítulo IV, Tabla III: conductos aislantes pesados. Es la que se
+  // usa para el caño enterrado.
+  const CANO_UTE_TABLA_III_PESADO = {
+    1:   { 16: 6, 20: 10, 25: 17, 32: 30, 40: 51, 50: 82 },
+    1.5: { 16: 4, 20: 7, 25: 13, 32: 23, 40: 40, 50: 63 },
+    2:   { 16: 3, 20: 6, 25: 11, 32: 18, 40: 32, 50: 51 },
+    2.5: { 16: 3, 20: 5, 25: 9, 32: 15, 40: 26, 50: 41 },
+    4:   { 16: 2, 20: 3, 25: 6, 32: 11, 40: 20, 50: 32 },
+    6:   { 16: 1, 20: 3, 25: 5, 32: 9, 40: 15, 50: 25 },
+    10:  { 16: 1, 20: 1, 25: 3, 32: 5, 40: 10, 50: 15 },
+    16:  { 16: 0, 20: 1, 25: 2, 32: 4, 40: 7, 50: 11 },
+    25:  { 16: 0, 20: 0, 25: 1, 32: 2, 40: 4, 50: 7 },
+    35:  { 16: 0, 20: 0, 25: 1, 32: 2, 40: 3, 50: 6 },
+    50:  { 16: 0, 20: 0, 25: 0, 32: 1, 40: 2, 50: 4 },
+    70:  { 16: 0, 20: 0, 25: 0, 32: 1, 40: 2, 50: 3 },
+    95:  { 16: 0, 20: 0, 25: 0, 32: 0, 40: 1, 50: 2 },
+    120: { 16: 0, 20: 0, 25: 0, 32: 0, 40: 1, 50: 2 },
+    150: { 16: 0, 20: 0, 25: 0, 32: 0, 40: 1, 50: 1 },
+    185: { 16: 0, 20: 0, 25: 0, 32: 0, 40: 0, 50: 1 },
+    240: { 16: 0, 20: 0, 25: 0, 32: 0, 40: 0, 50: 1 },
+    300: { 16: 0, 20: 0, 25: 0, 32: 0, 40: 0, 50: 0 },
+    400: { 16: 0, 20: 0, 25: 0, 32: 0, 40: 0, 50: 0 },
+  };
+  // Límite de caída: el de UTE por uso (3 % alumbrado, 5 % el resto). El
+  // criterio de proyecto puede ser más exigente, nunca más permisivo.
+  function limiteCaidaUTE(uso) { return CAIDA_MAX_DEFAULT[uso] || 5; }
+  function limiteCaidaEfectivo(uso, criterioProyecto) {
+    const ute = limiteCaidaUTE(uso);
+    const proyecto = Number(criterioProyecto);
+    return proyecto > 0 ? Math.min(ute, proyecto) : ute;
+  }
 
   /* ============================================================
      PAQUETE NORMATIVO — versiona los valores de referencia del motor
@@ -2344,16 +2447,16 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
      explícito. No se edita a mano: reemplazar este objeto entero
      es "instalar" un paquete nuevo.
      ============================================================ */
-  const MOTOR_VERSION = '1.0.0';
+  const MOTOR_VERSION = '1.1.0';
   const NORMATIVE_PACK = {
-    id: 'rbt-ute-cap-ii-anexo-2001',
-    nombre: 'Reglamento de Baja Tensión UTE — Capítulo II y Anexo',
-    fuente: 'RBT-UTE, Capítulo II "Instalaciones Interiores o Receptoras" y su Anexo (Tablas I a XVI), edición N.5 / Junio 2001, ute.com.uy',
-    version: '0.2-borrador',
+    id: 'rbt-ute-interiores-2001-rev-2026',
+    nombre: 'Reglamento de Baja Tensión UTE — instalaciones interiores (Caps. II, IV y V)',
+    fuente: 'RBT-UTE: Capítulo II "Instalaciones Interiores o Receptoras" y su Anexo (Tablas I a XVI), Capítulo IV (conductos protectores) y Capítulo V (protecciones), edición N.5 / Junio 2001, ute.com.uy',
+    version: '0.3-revision-tecnica',
     estado: 'pendiente', // 'pendiente' | 'verificado' | 'personalizado'
     vigenteDesde: null,
-    actualizadoEl: '2026-09-03',
-    notas: 'Ampacidades (Tablas VI-XIII), sección mínima por resistencia mecánica (Anexo §9) y factor de corrección por temperatura (Tabla XIV) tomados directamente del reglamento. Dos supuestos de mapeo quedan pendientes de confirmar con un electricista matriculado: (1) "Enterrado bajo tubo" se calcula con las tablas de "dentro de conductos" (X-XIII), no con las Tablas XV/XVI de cable armado enterrado directo, porque el reglamento no define una tabla propia para conducto enterrado y XV/XVI son para un producto distinto (cable armado sin caño). (2) El factor de agrupamiento de circuitos "al aire" se dejó en 1,00 (sin reducción) porque el Anexo no da una tabla de agrupamiento para ese método — solo para preensamblado (Tabla II) y dentro de conductos (§5.1, ya aplicado).',
+    actualizadoEl: '2026-09-17',
+    notas: 'Ampacidades (Tablas VI-XIII), temperatura (Tabla XIV, escalón inmediato superior), sol (§3.3.2), caída de tensión con conductividad de servicio (§8) medida desde el medidor, caños por Tablas II y III del Capítulo IV, protección contra sobrecargas y cortocircuitos (Cap. V §1.a y §1.b; Anexo §7). Criterios de la casa, más exigentes que el reglamento: agrupamiento contando neutro y tierra, reducción al aire y en bandeja con factores de referencia IEC, 30 °C y mínimos de 1 / 1,5 mm². Pendientes de confirmar con electricista matriculado: los factores de bandeja, la separación que cuenta como "separados" y la corrección por terreno del caño enterrado.',
   };
   // Referencias que respaldan cada paso del motor. El reglamento que rige en
   // Uruguay es el de UTE: es la referencia principal y es la que manda. La IEC
@@ -2363,23 +2466,30 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     { rango: 'principal', tema: 'Dimensionado del conductor',
       cita: 'UTE, Reglamento de Baja Tensión, Capítulo II - Anexo: Cálculo de Secciones de los Conductores. El conductor se dimensiona evitando calentamiento inadmisible y caída de tensión excesiva, y considerando además resistencia mecánica y comportamiento ante cortocircuito.' },
     { rango: 'principal', tema: 'Corrientes máximas admisibles',
-      cita: 'UTE, RBT Capítulo II - Anexo, Tablas VI a IX (al aire bajo techo) y X a XIII (dentro de conductos: X cobre PVC, XI cobre XLPE, XII aluminio PVC, XIII aluminio XLPE), corregidas por temperatura ambiente (Tabla XIV) y por agrupamiento (§5.1: 4 a 7 conductores 0,90; más de 7, 0,70). La columna de la tabla es la de 2 conductores cargados en monofásico y 3 en trifásico, como indica el reglamento.' },
+      cita: 'UTE, RBT Capítulo II - Anexo, Tablas VI a IX (al aire bajo techo) y X a XIII (dentro de conductos: X cobre PVC, XI cobre XLPE, XII aluminio PVC, XIII aluminio XLPE), corregidas por temperatura ambiente (Tabla XIV, tomando el escalón inmediato superior) y por agrupamiento (§5.1: 4 a 7 conductores 0,90; más de 7, 0,70). La columna de la tabla es la de 2 conductores cargados en monofásico y 3 en trifásico, como indica el reglamento.' },
     { rango: 'principal', tema: 'Conteo de conductores para el agrupamiento',
       cita: 'Criterio de la casa, más exigente que el reglamento: para contar los conductores dentro del caño se suman todos los que van adentro —3 en monofásico y 5 en trifásico—, incluidos el neutro del trifásico y el conductor de protección, que el Anexo §5.1 no computa.' },
+    { rango: 'principal', tema: 'Exposición solar',
+      cita: 'UTE, RBT Capítulo II - Anexo §3.3.2: si los conductores están expuestos al sol, la corriente admisible se afecta por un factor 0,90.' },
     { rango: 'principal', tema: 'Protección contra sobrecargas',
       cita: 'UTE, RBT Capítulo V - Agrupamiento de accesorios de protección - Tableros, numeral 1.a: el dispositivo de protección debe garantizar el límite de corriente admisible del conductor.' },
+    { rango: 'principal', tema: 'Protección contra cortocircuitos',
+      cita: 'UTE, RBT Capítulo V numeral 1.b: en el origen de todo circuito debe haber una protección con capacidad de corte acorde a la corriente de cortocircuito prevista. El Anexo del Capítulo II §7 permite verificar térmicamente el conductor frente al cortocircuito.' },
     { rango: 'principal', tema: 'Caída de tensión',
-      cita: 'UTE, RBT Capítulo II - Anexo, numeral 8 - Caídas de Tensión: máximo 3 % en circuitos de alumbrado y 5 % en los demás usos, medidos entre el origen de la instalación y cualquier punto de utilización. Fórmulas S = 2LW/(KeV) en monofásico y S = LW/(KeV) en trifásico, con conductividad a 25 °C de 56,9 (cobre) y 34,7 (aluminio).' },
+      cita: 'UTE, RBT Capítulo II - Anexo, numeral 8 - Caídas de Tensión: máximo 3 % en circuitos de alumbrado y 5 % en los demás usos, medidos entre el origen de la instalación y cualquier punto de utilización. Fórmulas S = 2LW/(KeV) en monofásico y S = LW/(KeV) en trifásico. Para conductores dimensionados por capacidad térmica, K a temperatura de servicio: 48,4 (Cu/PVC), 45,5 (Cu/XLPE), 29,4 (Al/PVC) y 27,6 (Al/XLPE).' },
+    { rango: 'principal', tema: 'Canalizaciones',
+      cita: 'UTE, RBT Capítulo IV - Conductos protectores, numeral 1.1 y Tablas I a V: el diámetro depende de la sección, la cantidad de conductores y la clase de conducto. Se usa la Tabla II para caño embutido y a la vista, y la Tabla III (conductos pesados) para el enterrado.' },
     { rango: 'complementaria', tema: 'Coordinación conductor - protección',
       cita: 'IEC 60364-4-43:2023, numeral 431.4.2 - Coordination between conductors and overload protective devices: Ib <= In <= Iz y, además, I2 <= 1,45·Iz. Es la formulación explícita de lo que el Capítulo V numeral 1.a de UTE exige.' },
     { rango: 'complementaria', tema: 'Corriente convencional de actuación (I2)',
-      cita: 'Los interruptores termomagnéticos según IEC 60898-1 tienen corriente convencional de disparo I2 = 1,45·In, de modo que I2 <= 1,45·Iz queda garantizado cuando In <= Iz. Para fusibles u otros dispositivos hay que verificar I2 contra la curva del fabricante.' },
+      cita: 'Los interruptores termomagnéticos según IEC 60898-1 tienen corriente convencional de disparo I2 = 1,45·In, de modo que I2 <= 1,45·Iz queda garantizado cuando In <= Iz. En baja tensión en Uruguay ya no se instalan fusibles.' },
+    { rango: 'complementaria', tema: 'Energía pasante en cortocircuito',
+      cita: 'Un termomagnético limita la corriente de cortocircuito: para verificar térmicamente el conductor se compara la energía que deja pasar (I²t, dato del fabricante) con la que el conductor admite, (k·S)². Calcular con la corriente plena durante todo el tiempo de despeje sobrestima esa energía y rechaza circuitos que cumplen.' },
     { rango: 'complementaria', tema: 'Agrupamiento al aire y en bandeja',
       cita: 'El Anexo de UTE sólo da factores de agrupamiento para conductos (§5.1). Al aire y en bandeja se usan los valores de referencia de la práctica IEC 60364-5-52, por cantidad de circuitos en una misma capa y según estén en contacto o separados más de un diámetro. Pendiente de confirmar con electricista matriculado.' },
-    { rango: 'complementaria', tema: 'Canalizaciones',
-      cita: 'IEC 60364-5-52:2009 + AMD1:2024 - Wiring systems, criterios de selección de sistemas de cableado, incluido el numeral 525 sobre caída de tensión.' },
+    { rango: 'complementaria', tema: 'Sistemas de cableado',
+      cita: 'IEC 60364-5-52:2009 + AMD1:2024 - Wiring systems, criterios generales de selección de sistemas de cableado, incluido el numeral 525 sobre caída de tensión.' },
   ];
-
   const ESTADO_PACK_LABEL = { pendiente: 'Pendiente de verificación', verificado: 'Verificado', personalizado: 'Personalizado (no verificado)' };
   const ESTADO_PACK_CLASS = { pendiente: 'status-pending', verificado: 'status-approved', personalizado: 'status-review' };
 
@@ -2392,15 +2502,21 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     if (n === null || n === undefined || Number.isNaN(n)) n = 0;
     return '$ ' + Math.round(n).toLocaleString('es-UY');
   }
+  // Por encima del mayor escalón no se sugiere nada: antes se devolvía el
+  // último en silencio, que es una potencia menor a la que hace falta.
   function nearestStepUp(value, steps) {
     for (const s of steps) if (s >= value) return s;
-    return steps[steps.length - 1];
+    return null;
   }
+  // Tabla XIV. Una temperatura intermedia toma el escalón inmediato superior,
+  // que es el más desfavorable: con 32 °C se usa el factor de 35 °C. Fuera del
+  // rango de la tabla no hay factor y el cálculo queda sin verificar.
   function getTempFactorUTE(aislacion, temp) {
     const tabla = TEMP_FACTORS_UTE[aislacion] || TEMP_FACTORS_UTE.pvc;
-    let closest = tabla[0];
-    for (const tf of tabla) if (Math.abs(tf.t - temp) < Math.abs(closest.t - temp)) closest = tf;
-    return closest.f;
+    const t = Number(temp);
+    if (!Number.isFinite(t) || t < tabla[0].t || t > tabla[tabla.length - 1].t) return null;
+    for (const tf of tabla) if (tf.t >= t) return tf.f;
+    return null;
   }
   // Agrupamiento al aire y en bandeja. El Anexo de UTE no trae una tabla para
   // este montaje —sólo la del §5.1 para conductos—, así que se usan los valores
@@ -2449,9 +2565,20 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     for (const b of BREAKER_RATINGS) if (b >= ib && b <= iz) return b;
     return null;
   }
-  function diametroCano(seccion) {
-    for (const row of DIAMETRO_CANO) if (seccion <= row.s) return row.d;
-    return 40;
+  // Diámetro de caño por las tablas del Capítulo IV, contando los conductores
+  // que van adentro. 0,75 mm² no figura: se usa la fila de 1 mm², que es más
+  // exigente. Devuelve null si ningún diámetro de la tabla alcanza.
+  function diametroCano(seccion, cantidadConductores, metodo) {
+    let sec = Number(seccion);
+    if (sec === 0.75) sec = 1;
+    const tabla = metodo === 'enterrado' ? CANO_UTE_TABLA_III_PESADO : CANO_UTE_TABLA_II;
+    const capacidades = tabla[sec];
+    if (!capacidades) return null;
+    const n = Math.max(1, Number(cantidadConductores) || 1);
+    for (const d of Object.keys(capacidades).map(Number).sort((a, b) => a - b)) {
+      if ((capacidades[d] || 0) >= n) return d;
+    }
+    return null;
   }
   // Ancho de bandeja portacable según cantidad de cables que lleva (criterio del usuario,
   // no una tabla normativa).
@@ -2496,9 +2623,12 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     const pKw = pDemandTotal / 1000;
     const suministroSugerido = sistema.fases === 1 ? nearestStepUp(pKw, MONO_STEPS) : nearestStepUp(pKw, TRI_STEPS);
     // Carga mínima que se puede solicitar: 3,5 kW en monofásica —es el escalón
-    // más chico que da UTE— y 7,6 kW en trifásica.
+    // más chico de uso general— y 7,6 kW en trifásica.
     const minimoDiseno = sistema.fases === 1 ? 3.5 : 7.6;
-    return { potenciaInstalada, pDemandTotal, qDemandTotal, sDemandTotal, cosPhiEq, corriente, suministroSugerido, minimoDiseno };
+    // Una demanda por encima del mayor escalón cargado no recibe una potencia
+    // menor: queda marcada para trámite específico.
+    const fueraRango = pKw > 0 && suministroSugerido === null;
+    return { potenciaInstalada, pDemandTotal, qDemandTotal, sDemandTotal, cosPhiEq, corriente, suministroSugerido, minimoDiseno, fueraRango };
   }
 
   // Núcleo común: dada una corriente de diseño Ib, busca la sección mínima
@@ -2513,7 +2643,16 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     const aislacion = p.aislacion === 'xlpe' ? 'xlpe' : 'pvc';
     const categoria = CATEGORIA_METODO[p.metodo] || 'conducto';
     const tabla = tablaAmpacidad(categoria, material, aislacion);
-    const tempF = getTempFactorUTE(aislacion, Number(p.tempAmb) || 30);
+    const uso = p.uso || 'fuerza';
+    const minimo = Math.max(MINIMOS_REGLAMENTARIOS[uso] ?? 1, MINIMOS_COMERCIALES[uso] ?? 1.5);
+    const curva = CURVA_SUGERIDA[uso] || 'C';
+    const tempF = getTempFactorUTE(aislacion, p.tempAmb ?? TEMP_AMBIENTE_DEFECTO);
+    if (tempF === null) {
+      return {
+        apto: false, ib, seccionCapacidad: null, seccionCaida: null, minimo, curva,
+        error: 'Temperatura ambiente fuera del rango de la Tabla XIV para esta aislación: el cálculo no se puede verificar.',
+      };
+    }
     // Conductores que se cuentan para el agrupamiento dentro del caño: todos
     // los que van adentro, incluidos el neutro del trifásico y el conductor de
     // protección. Es criterio de la casa y es MÁS EXIGENTE que el Anexo §5.1,
@@ -2523,37 +2662,44 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     const conductoresPorCircuito = fases === 1 ? 3 : 5;
     const nConductores = (Number(p.agrupados) || 1) * conductoresPorCircuito;
     const groupF = getGroupFactorUTE(categoria, nConductores, p.agrupados, p.disposicion);
-    const k = CONDUCTIVIDAD_UTE[material] || CONDUCTIVIDAD_UTE.cobre;
-    // El reglamento mide la caída desde el origen de la instalación, así que lo
-    // que ya se perdió en el alimentador entre el medidor y el tablero se le
-    // descuenta al margen del circuito.
-    const caidaMax = Math.max(0, (Number(p.caidaMax) || 5) - (Number(p.caidaPrevia) || 0));
-    const uso = p.uso || 'fuerza';
-    const minimo = Math.max(MINIMOS_REGLAMENTARIOS[uso] ?? 1, MINIMOS_COMERCIALES[uso] ?? 1.5);
-    const curva = CURVA_SUGERIDA[uso] || 'C';
+    const solarF = getSolarFactorUTE(Boolean(p.expuestoSol));
+    const k = getConductividadUTE(material, aislacion);
+    // Límite: el de UTE para el uso, o el de proyecto si es más exigente.
+    const caidaUTE = limiteCaidaUTE(uso);
+    const caidaProyecto = Number(p.caidaMax) > 0 ? Number(p.caidaMax) : caidaUTE;
+    const caidaMax = limiteCaidaEfectivo(uso, caidaProyecto);
+    // El reglamento mide la caída desde el origen de la instalación: lo que ya
+    // se perdió antes del circuito —el alimentador entre el medidor y el
+    // tablero, u otro tramo cargado a mano— se suma a la del circuito.
+    const caidaPrevia = Math.max(0, Number(p.caidaPrevia) || 0) + Math.max(0, Number(p.caidaAguasArribaPct) || 0);
+    const inManual = Number(p.inProteccion) > 0 ? Number(p.inProteccion) : null;
 
     let seccionCapacidad = null, seccionCaida = null, elegido = null;
     for (const row of tabla) {
       if (row.s < minimo) continue;
       const izBase = fases === 1 ? row.c2 : row.c3;
-      const iz = izBase * tempF * groupF;
+      const iz = izBase * tempF * groupF * solarF;
       if (seccionCapacidad === null && iz >= ib) seccionCapacidad = row.s;
       const dU = caidaVolt(fases, l, ib, cosPhi, k, row.s);
       const dUPct = (dU / v) * 100;
-      if (seccionCaida === null && dUPct <= caidaMax) seccionCaida = row.s;
-      // Además de capacidad y caída, tiene que existir una térmica estándar que
-      // proteja el conductor (In >= Ib y In <= Iz) — si no hay ninguna en ese rango
-      // para esta sección, no sirve como "elegido" aunque la corriente admisible ya
-      // alcance; se sigue probando con la sección siguiente.
-      if (iz >= ib && dUPct <= caidaMax && elegido === null) {
-        const breaker = nearestBreaker(ib, iz);
-        if (breaker !== null) elegido = { seccion: row.s, iz, dUPct, breaker };
+      const dUPctTotal = dUPct + caidaPrevia;
+      if (seccionCaida === null && dUPctTotal <= caidaMax) seccionCaida = row.s;
+      // Además de capacidad y caída, tiene que existir una térmica que proteja
+      // el conductor (In >= Ib y In <= Iz). Si se fijó una a mano, tiene que
+      // ser esa; si no, la primera de catálogo que cumpla.
+      if (iz >= ib && dUPctTotal <= caidaMax && elegido === null) {
+        const breaker = inManual !== null
+          ? (inManual >= ib && inManual <= iz ? inManual : null)
+          : nearestBreaker(ib, iz);
+        if (breaker !== null) elegido = { seccion: row.s, iz, dUPct, dUPctTotal, breaker };
       }
     }
-    if (!elegido) return { apto: false, ib, seccionCapacidad, seccionCaida, minimo, curva };
+    const factores = { ft: tempF, fa: groupF, fs: solarF, k, caidaUTE, caidaProyecto, caidaMax, caidaPrevia };
+    if (!elegido) return { apto: false, ib, seccionCapacidad, seccionCaida, minimo, curva, ...factores };
     return {
-      apto: true, ib, seccionCapacidad, seccionCaida, minimo, curva,
-      seccionAdoptada: elegido.seccion, iz: elegido.iz, dUPct: elegido.dUPct, breaker: elegido.breaker,
+      apto: true, ib, seccionCapacidad, seccionCaida, minimo, curva, ...factores,
+      seccionAdoptada: elegido.seccion, iz: elegido.iz, breaker: elegido.breaker,
+      dUPct: elegido.dUPct, dUPctTotal: elegido.dUPctTotal,
     };
   }
 
@@ -2572,48 +2718,108 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
    *   2. coordinación con la protección   Ib <= In <= Iz   (y I2 <= 1,45·Iz)
    *   3. caída de tensión                 ΔU% <= máximo del uso
    */
+  // Energía que admite un conductor de cobre en cortocircuito, en A²s, según la
+  // fórmula del Anexo §7: I = 0,34·S/√t·√log10((234+θf)/(234+θi)) kA. θi es la
+  // temperatura de servicio (70 °C PVC, 90 °C XLPE) y θf la final: 160 °C, que
+  // es la de PVC y la conservadora para XLPE si no se sabe si los terminales
+  // son prensados (con prensados UTE admite 250 °C).
+  function i2tAdmisibleCobre(seccion, aislacion) {
+    const ti = aislacion === 'xlpe' ? 90 : 70;
+    const tf = 160;
+    return Math.pow(340 * seccion, 2) * Math.log10((234 + tf) / (234 + ti));
+  }
+
   function comprobarCircuito(p, opciones) {
     const o = opciones || {};
     const base = calcularSeccion(p);
     const seccion = Number(o.seccion) || base.seccionAdoptada || null;
-    const inProt = Number(o.in) || base.breaker || null;
+    const inProt = Number(o.in) || Number(p.inProteccion) || base.breaker || null;
     const fases = p.fases || 1;
     const material = p.material === 'aluminio' ? 'aluminio' : 'cobre';
     const aislacion = p.aislacion === 'xlpe' ? 'xlpe' : 'pvc';
     const categoria = CATEGORIA_METODO[p.metodo] || 'conducto';
     const ib = Number(p.ib) || 0;
     const v = Number(p.v) || 230;
-    const caidaPrevia = Number(p.caidaPrevia) || 0;
-    const caidaMax = Number(p.caidaMax) || 5;
-    const r = { ib, seccion, in: inProt, caidaMax, caidaPrevia, causas: [], base };
-    if (!seccion) { r.causas.push('No hay ninguna sección de tabla que sirva para este circuito.'); r.verificado = false; return r; }
+    const uso = p.uso || 'fuerza';
+    const caidaUTE = limiteCaidaUTE(uso);
+    const caidaProyecto = Number(p.caidaMax) > 0 ? Number(p.caidaMax) : caidaUTE;
+    const caidaMax = limiteCaidaEfectivo(uso, caidaProyecto);
+    const caidaPrevia = Math.max(0, Number(p.caidaPrevia) || 0) + Math.max(0, Number(p.caidaAguasArribaPct) || 0);
+    const r = { ib, seccion, in: inProt, caidaMax, caidaUTE, caidaProyecto, caidaPrevia, causas: [], pendientes: [], notas: [], base };
+    if (!seccion) {
+      r.causas.push(base.error || 'No hay ninguna sección de tabla que sirva para este circuito.');
+      r.verificado = false;
+      r.estado = 'no_cumple';
+      return r;
+    }
 
     const fila = tablaAmpacidad(categoria, material, aislacion).find((x) => x.s === seccion);
-    r.ft = getTempFactorUTE(aislacion, Number(p.tempAmb) || 30);
+    r.ft = getTempFactorUTE(aislacion, p.tempAmb ?? TEMP_AMBIENTE_DEFECTO);
+    if (r.ft === null) {
+      r.causas.push('Temperatura ambiente fuera del rango de la Tabla XIV para esta aislación: el cálculo no se puede verificar.');
+      r.verificado = false;
+      r.estado = 'no_cumple';
+      return r;
+    }
     r.fa = getGroupFactorUTE(categoria, (Number(p.agrupados) || 1) * (fases === 1 ? 3 : 5), p.agrupados, p.disposicion);
+    r.fs = getSolarFactorUTE(Boolean(p.expuestoSol));
     r.izTabla = fila ? (fases === 1 ? fila.c2 : fila.c3) : 0;
-    r.iz = r.izTabla * r.ft * r.fa;
-    r.dU = caidaVolt(fases, Number(p.l) || 0, ib, Number(p.cosPhi) || 1, CONDUCTIVIDAD_UTE[material], seccion);
+    r.iz = r.izTabla * r.ft * r.fa * r.fs;
+    r.k = getConductividadUTE(material, aislacion);
+    r.dU = caidaVolt(fases, Number(p.l) || 0, ib, Number(p.cosPhi) || 1, r.k, seccion);
     r.dUPct = (r.dU / v) * 100;
-    // total desde el medidor: alimentador + circuito
     r.dUPctTotal = r.dUPct + caidaPrevia;
 
+    // 1 y 2: capacidad y coordinación
     r.cumpleCapacidad = r.iz >= ib;
     r.cumpleIbIn = inProt !== null && ib <= inProt;
     r.cumpleInIz = inProt !== null && inProt <= r.iz;
-    r.i2 = inProt !== null ? inProt * FACTOR_I2_MCB : null;
+    r.tipoProteccion = o.tipoProteccion || p.tipoProteccion || 'mcb';
+    const i2Manual = Number(o.i2 || p.i2 || 0);
+    r.i2 = inProt === null ? null
+      : (r.tipoProteccion === 'mcb' ? inProt * FACTOR_I2_MCB : (i2Manual > 0 ? i2Manual : null));
     r.limite145 = r.iz * 1.45;
     r.cumpleI2 = r.i2 !== null ? r.i2 <= r.limite145 : null;
+    // 3: caída
     r.cumpleCaida = r.dUPctTotal <= caidaMax;
+
+    // Cortocircuito (Cap. V §1.b y Anexo §7). Casi nunca se conoce la corriente
+    // de cortocircuito en el tablero, así que la falta de datos no frena la
+    // verificación: se informa como "sin datos". Si se cargan, sí se exigen.
+    r.iccKa = Number(p.iccKa) > 0 ? Number(p.iccKa) : null;
+    r.poderCorteKa = Number(p.poderCorteKa) > 0 ? Number(p.poderCorteKa) : null;
+    r.i2tPasante = Number(p.i2tPasante) > 0 ? Number(p.i2tPasante) : null;
+    r.tiempoDespejeS = Number(p.tiempoDespejeS) > 0 ? Number(p.tiempoDespejeS) : null;
+    r.cumplePoderCorte = (r.iccKa !== null && r.poderCorteKa !== null) ? r.poderCorteKa >= r.iccKa : null;
+    r.i2tAdmisible = material === 'cobre' ? i2tAdmisibleCobre(seccion, aislacion) : null;
+    r.i2tExigido = null;
+    if (material === 'cobre') {
+      // Un termomagnético limita la corriente: manda la energía que deja pasar
+      // (dato del fabricante). Con otro dispositivo, Icc² · t.
+      if (r.tipoProteccion === 'mcb') r.i2tExigido = r.i2tPasante;
+      else if (r.iccKa !== null && r.tiempoDespejeS !== null) r.i2tExigido = Math.pow(r.iccKa * 1000, 2) * r.tiempoDespejeS;
+    }
+    r.cumpleTermicaCorto = r.i2tExigido !== null ? r.i2tExigido <= r.i2tAdmisible : null;
 
     if (!r.cumpleCapacidad) r.causas.push('Sección insuficiente por capacidad térmica: la corriente admisible corregida (' + fmt(r.iz) + ' A) no llega a la corriente de diseño (' + fmt(ib) + ' A).');
     if (inProt === null) r.causas.push('No hay una protección de catálogo que coordine con este conductor.');
     if (inProt !== null && !r.cumpleIbIn) r.causas.push('La protección seleccionada es inferior a la corriente de diseño del circuito. Seleccione una corriente nominal superior.');
     if (inProt !== null && !r.cumpleInIz) r.causas.push('La corriente nominal de la protección supera la capacidad admisible del conductor. Aumente la sección del conductor o seleccione una protección adecuada.');
-    if (!r.cumpleCaida) r.causas.push('Caída de tensión superior al límite permitido: ' + fmt(r.dUPctTotal) + ' % desde el medidor' +
-      (caidaPrevia > 0 ? ' (' + fmt(caidaPrevia) + ' % del alimentador + ' + fmt(r.dUPct) + ' % del circuito)' : '') +
+    if (r.cumpleI2 === false) r.causas.push('La corriente convencional de actuación I2 supera 1,45 · Iz.');
+    if (r.cumpleI2 === null && inProt !== null) r.pendientes.push('Falta la I2 del fabricante para completar la comprobación de sobrecarga de este dispositivo.');
+    if (!r.cumpleCaida) r.causas.push('Caída de tensión superior al límite: ' + fmt(r.dUPctTotal) + ' % desde el medidor' +
+      (caidaPrevia > 0 ? ' (' + fmt(caidaPrevia) + ' % antes del circuito + ' + fmt(r.dUPct) + ' % del circuito)' : '') +
       ' contra un máximo de ' + fmt(caidaMax) + ' %.');
-    r.verificado = r.cumpleCapacidad && r.cumpleIbIn && r.cumpleInIz && r.cumpleCaida && r.cumpleI2 !== false;
+    if (r.cumplePoderCorte === false) r.causas.push('El poder de corte de la protección (' + fmt(r.poderCorteKa) + ' kA) es inferior a la corriente de cortocircuito prevista (' + fmt(r.iccKa) + ' kA).');
+    if (r.cumplePoderCorte === null) r.notas.push('Poder de corte sin verificar: falta la corriente de cortocircuito prevista o el poder de corte de la protección.');
+    if (material === 'aluminio') r.notas.push('La verificación térmica en cortocircuito del aluminio requiere un cálculo específico: UTE advierte una reducción del tiempo admisible.');
+    else if (r.cumpleTermicaCorto === false) r.causas.push('El conductor no soporta la energía del cortocircuito: ' + fmt(r.i2tExigido / 1000, 0) + ' kA²s contra ' + fmt(r.i2tAdmisible / 1000, 0) + ' kA²s admisibles.');
+    else if (r.cumpleTermicaCorto === null) r.notas.push(r.tipoProteccion === 'mcb'
+      ? 'Cortocircuito térmico sin verificar: falta la energía pasante I²t del termomagnético (dato del fabricante).'
+      : 'Cortocircuito térmico sin verificar: falta la corriente de cortocircuito o el tiempo de despeje.');
+
+    r.estado = r.causas.length ? 'no_cumple' : (r.pendientes.length ? 'pendiente' : 'cumple');
+    r.verificado = r.estado === 'cumple';
     return r;
   }
 
@@ -2629,12 +2835,19 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     return p.fases === 1 ? sVA / p.v : sVA / (SQRT3 * p.v);
   }
 
-  function calcularCircuito(c, caidaPrevia) {
-    return calcularSeccion({
+  // Todo lo que el motor necesita de un circuito guardado. Un solo lugar, así
+  // la pantalla, la planilla y el PDF calculan exactamente lo mismo.
+  function datosCircuito(c, caidaPrevia) {
+    return {
       ib: c.ib, v: c.v, fases: c.fases, l: c.l, material: c.material, metodo: c.metodo, aislacion: c.aislacion,
       tempAmb: c.tempAmb, agrupados: c.agrupados, disposicion: c.disposicion, cosPhi: c.cosPhi,
-      caidaMax: c.caidaMax, caidaPrevia, uso: c.uso || 'fuerza',
-    });
+      caidaMax: c.caidaMax, caidaPrevia, uso: c.uso || 'fuerza', expuestoSol: c.expuestoSol,
+      inProteccion: c.inProteccion, tipoProteccion: c.tipoProteccion || 'mcb', i2: c.i2,
+      iccKa: c.iccKa, poderCorteKa: c.poderCorteKa, i2tPasante: c.i2tPasante, tiempoDespejeS: c.tiempoDespejeS,
+    };
+  }
+  function calcularCircuito(c, caidaPrevia) {
+    return calcularSeccion(datosCircuito(c, caidaPrevia));
   }
 
   /*
@@ -2654,6 +2867,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     // La corriente de diseño del enlace es la del suministro que se solicita
     // ante UTE, no la demanda instantánea. Además la general nunca puede quedar
     // por debajo de la mayor térmica de circuito, o cortaría antes que ella.
+    const fueraRango = r.suministroSugerido === null;
     const pW = (r.suministroSugerido || 0) * 1000;
     const ig = sistema.fases === 1 ? pW / sistema.v : pW / (SQRT3 * sistema.v);
     const maxCircuito = Math.max(0, ...(((draft && draft.circuitos) || []).map((c) => calcularCircuito(c).breaker || 0)));
@@ -2671,9 +2885,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     const iz = comp ? comp.iz : 0;
     const termicaIn = seccion ? (BREAKER_RATINGS.find((b) => b >= ibDiseno && b <= iz) ?? null) : null;
     // La caída se mide con la corriente de demanda real de la instalación.
-    const dU = seccion ? caidaVolt(sistema.fases, l, r.corriente, r.cosPhiEq || 1, CONDUCTIVIDAD_UTE.cobre, seccion) : 0;
+    const dU = seccion ? caidaVolt(sistema.fases, l, r.corriente, r.cosPhiEq || 1, getConductividadUTE('cobre', 'pvc'), seccion) : 0;
     return {
-      l, ib: r.corriente, ig, maxCircuito, ibDiseno, seccion, iz, termicaIn,
+      l, ib: r.corriente, ig, maxCircuito, ibDiseno, seccion, iz, termicaIn: fueraRango ? null : termicaIn, fueraRango,
       automatica: !acom.seccion, dU, dUPct: sistema.v ? (dU / sistema.v) * 100 : 0, datos,
     };
   }
@@ -2696,16 +2910,25 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     const enlace = calcularAcometida(draft);
     const ig = enlace.ig;
     const maxCircuito = enlace.maxCircuito;
-    const termicaIn = enlace.termicaIn ?? BREAKER_RATINGS[BREAKER_RATINGS.length - 1];
+    const pgGuardada = draft.proteccionGeneral || {};
+    const comun = {
+      aplica: true, ig, enlace, termicaCurva: 'C', termicaPolos: sistema.fases === 1 ? 2 : 4,
+      diferencialSensibilidad: pgGuardada.diferencialSensibilidad || 30,
+      diferencialTipo: pgGuardada.diferencialTipo || '',
+    };
+    // Si la potencia supera el mayor escalón, o ninguna térmica coordina con el
+    // enlace, no se inventa una: queda marcada para resolver a mano.
+    if (enlace.fueraRango || enlace.termicaIn === null) {
+      return { ...comun, termicaIn: null, diferencialIn: null, coordina: false, fueraRango: enlace.fueraRango,
+               motivo: enlace.fueraRango
+                 ? 'La demanda supera el mayor escalón de potencia cargado: requiere trámite y selección específicos.'
+                 : 'Ninguna térmica de catálogo coordina con el conductor de enlace: subí la sección del alimentador.' };
+    }
+    const termicaIn = enlace.termicaIn;
     // En Uruguay no suelen conseguirse diferenciales de menos de 25A: si la térmica general
     // da 16 o 20A, el diferencial general igual se sugiere en 25A.
     const diferencialIn = Math.max(termicaIn, 25);
-    return {
-      aplica: true, ig, termicaIn, termicaCurva: 'C', termicaPolos: sistema.fases === 1 ? 2 : 4,
-      enlace, coordina: enlace.termicaIn !== null,
-      diferencialIn, diferencialSensibilidad: (draft.proteccionGeneral && draft.proteccionGeneral.diferencialSensibilidad) || 30,
-      diferencialTipo: 'AC',
-    };
+    return { ...comun, termicaIn, diferencialIn, coordina: true };
   }
 
   function importarCargasComoCircuitos(cargas, sistema) {
@@ -2953,27 +3176,39 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     circuitos.forEach((c) => {
       const calc = calcularCircuito(c, caidaPrevia);
       if (!calc.apto) return;
+      // Conductores activos (fase y neutro) más el de protección, que va con
+      // la misma sección que la fase. Antes el de tierra no se cotizaba.
       const conductores = c.fases === 1 ? 2 : 4;
+      const enCano = conductores + 1;
+      const seccion = calc.seccionAdoptada;
+      const seccionTxt = fmt(seccion, seccion < 10 ? 1 : 0).replace(/,00$/, '');
+      const largo = Math.ceil((Number(c.l) || 0) * 1.1);
+      const tierra = () => add('Cable unipolar verde/amarillo (tierra) ' + seccionTxt + ' mm²', 'm', largo,
+                               precios.cableUnipolar[seccion] || 0);
       // Al aire libre se tira cable bajo goma y en bandeja bajo plástico: son un
       // cable solo con todos los conductores adentro, así que se cotiza el largo
-      // del tramo y no el largo por conductor.
+      // del tramo. En monofásica el 3x ya trae la tierra; en trifásica el
+      // catálogo llega a 4x, así que la tierra va aparte.
       const multi = CABLE_POR_METODO[c.metodo];
-      const seccionTxt = fmt(calc.seccionAdoptada, calc.seccionAdoptada < 10 ? 1 : 0).replace(/,00$/, '');
-      if (multi) {
-        const medida = conductores + 'x' + calc.seccionAdoptada;
-        const largoMulti = Math.ceil((Number(c.l) || 0) * 1.1);
-        if (largoMulti > 0) {
-          add('Cable ' + multi.etiqueta + ' ' + conductores + 'x' + seccionTxt + ' mm²', 'm', largoMulti,
-              precios[multi.precio][medida] || 0);
-        }
-      } else {
-        const largoCable = Math.ceil((Number(c.l) || 0) * conductores * 1.1);
-        if (largoCable > 0) add('Cable unipolar ' + seccionTxt + ' mm²', 'm', largoCable, precios.cableUnipolar[calc.seccionAdoptada] || 0);
+      if (multi && largo > 0) {
+        const hilos = c.fases === 1 ? 3 : 4;
+        add('Cable ' + multi.etiqueta + ' ' + hilos + 'x' + seccionTxt + ' mm²' + (c.fases === 1 ? ' (con tierra)' : ''), 'm', largo,
+            precios[multi.precio][hilos + 'x' + seccion] || 0);
+        if (c.fases !== 1) tierra();
+      } else if (largo > 0) {
+        add('Cable unipolar ' + seccionTxt + ' mm²', 'm', Math.ceil((Number(c.l) || 0) * conductores * 1.1),
+            precios.cableUnipolar[seccion] || 0);
+        tierra();
       }
-      const largo = Math.ceil((Number(c.l) || 0) * 1.1);
       if (largo > 0) {
-        const d = diametroCano(calc.seccionAdoptada);
-        if (c.metodo === 'amurado_pvc') {
+        // Diámetro por las Tablas II y III del Capítulo IV, con la tierra
+        // adentro. El galvanizado usa la Tabla II como referencia —sus tablas
+        // propias, IV y V, van en pulgadas— y después la medida que se consigue.
+        const d = diametroCano(seccion, enCano, c.metodo);
+        const sinTabla = (tipo) => add(tipo + ' — dimensionar a mano: ' + enCano + ' conductores de ' + seccionTxt + ' mm² no entran en la tabla UTE', 'm', largo, 0);
+        if (d === null && c.metodo !== 'bandeja' && c.metodo !== 'aire') {
+          sinTabla(c.metodo === 'amurado_galvanizado' ? 'Caño galvanizado' : 'Caño');
+        } else if (c.metodo === 'amurado_pvc') {
           add('Caño PVC rígido ' + d + ' mm', 'm', largo, precios.canoPvcRigido[d] || 0);
           add('Grampa omega', 'un.', largo, precios.grampaOmega);
           // Cantidad en 0: el caño flexible se dobla solo, pero el amurado con caño rígido
@@ -3004,7 +3239,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         // 'aire' (aire libre): sin canalización
       }
       const tipoTermica = { 1: 'unipolar', 2: 'bipolar', 3: 'tripolar', 4: 'tetrapolar' }[polosDe(c)];
-      add('Térmica ' + tipoTermica + ' ' + calc.breaker + 'A curva ' + calc.curva, 'un.', 1, precioTermica(tipoTermica, calc.breaker, precios));
+      if ((c.tipoProteccion || 'mcb') === 'mcb') {
+        add('Térmica ' + tipoTermica + ' ' + calc.breaker + 'A curva ' + calc.curva, 'un.', 1, precioTermica(tipoTermica, calc.breaker, precios));
+      } else {
+        add('Interruptor ' + tipoTermica + ' ' + calc.breaker + 'A (caja moldeada u otro) — elegir modelo', 'un.', 1, 0);
+      }
     });
     // Puntos de luz y de toma, según la cantidad cargada en cada carga del relevamiento.
     // Quedan como cualquier otro material: editables a mano si la cantidad real difiere.
@@ -3134,7 +3373,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     const mono = sistema.fases === 1;
     const items = [];
     const pg = calcularProteccionGeneral(draft);
-    if (pg.aplica) {
+    if (pg.aplica && pg.termicaIn !== null) {
       // Los puentes de la general y del diferencial llevan la sección que
       // corresponde a la térmica general.
       const seccionGeneral = calcularCircuito({
@@ -3151,7 +3390,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         img: mono ? 'rcd-2p' : 'rcd-4p', modulos: mono ? 2 : 4, seccion: seccionGeneral,
         cara: pg.diferencialIn + 'A', caraChica: pg.diferencialSensibilidad + 'mA',
         rotulo: 'DIFERENCIAL', etiqueta: 'Diferencial general',
-        detalle: pg.diferencialIn + ' A · ' + pg.diferencialSensibilidad + ' mA · tipo ' + pg.diferencialTipo,
+        detalle: pg.diferencialIn + ' A · ' + pg.diferencialSensibilidad + ' mA · ' + textoTipoDiferencial(pg.diferencialTipo),
       });
     }
     (draft.circuitos || []).forEach((c, i) => {
@@ -4049,7 +4288,20 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     return cambio;
   }
 
-  function saveDB() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); } catch (e) {} }
+  // Si el navegador no deja guardar (memoria llena, modo privado), se avisa:
+  // antes fallaba en silencio y los cambios se perdían al cerrar.
+  function saveDB() {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
+      return true;
+    } catch (e) {
+      console.error('No se pudieron guardar los datos:', e);
+      if (typeof toast === 'function' && document.getElementById('toast')) {
+        toast('No se pudieron guardar los cambios. Exportá una copia de seguridad.');
+      }
+      return false;
+    }
+  }
   // La conversión de medidas se guarda enseguida; si no, se repetiría en cada
   // arranque y el catálogo en pantalla no coincidiría con el del disco.
   DB.trabajos.forEach((tr) => { if (cotizarMaterialesSinPrecio(tr)) clavesAgregadas = true; });
@@ -4521,10 +4773,15 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       statBox('Potencia reactiva', fmt(r.qDemandTotal / 1000) + ' kVAr') +
       statBox('Corriente estimada', fmt(r.corriente) + ' A') +
       statBox('cos φ equivalente', fmt(r.cosPhiEq, 2)) +
-      statBox('Suministro sugerido', (sistema.fases === 1 ? 'Mono' : 'Trifásico') + ' · ' + fmt(r.suministroSugerido, 1) + ' kW', true);
-    $('#potencia-warning').textContent = r.pDemandTotal / 1000 < r.minimoDiseno
-      ? 'La potencia de cálculo está por debajo de la carga mínima de diseño habitual de UTE (' + r.minimoDiseno + ' kW). Puede aplicar igual por excepciones — confirmalo.'
-      : '';
+      statBox('Suministro sugerido', r.suministroSugerido === null
+        ? 'Fuera de los escalones cargados'
+        : (sistema.fases === 1 ? 'Mono' : 'Trifásico') + ' · ' + fmt(r.suministroSugerido, 1) + ' kW', true);
+    const pKw = r.pDemandTotal / 1000;
+    $('#potencia-warning').textContent = r.fueraRango
+      ? 'La demanda supera el mayor escalón de potencia cargado. No se asigna una potencia menor: requiere trámite y selección específicos.'
+      : (pKw > 0 && pKw < r.minimoDiseno
+        ? 'La potencia de cálculo está por debajo de la mínima que se puede solicitar (' + fmt(r.minimoDiseno, 1) + ' kW). UTE tiene escalones menores para destinos específicos: confirmá el caso.'
+        : '');
     $('#btn-ir-circuitos').disabled = draft.cargas.length === 0;
   }
 
@@ -4532,13 +4789,25 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     return '<div class="stat-box"><div class="lbl">' + label + '</div><div class="val' + (big ? ' big' : '') + '">' + value + '</div></div>';
   }
 
+  // El tipo de diferencial depende de las cargas (electrónica, variadores,
+  // cargadores): no se asume AC. Mientras no se elija, se dice que falta.
+  const TIPOS_DIFERENCIAL = [
+    { v: '', label: 'A definir según las cargas' },
+    { v: 'A', label: 'Tipo A' },
+    { v: 'F', label: 'Tipo F' },
+    { v: 'B', label: 'Tipo B' },
+    { v: 'AC', label: 'Tipo AC (sólo cargas resistivas)' },
+  ];
+  function textoTipoDiferencial(tipo) { return tipo ? 'tipo ' + tipo : 'tipo a definir'; }
   function proteccionGeneralHtml(pg) {
+    if (pg.termicaIn === null) return '<div class="alert-error">' + escapeHtml(pg.motivo) + '</div>';
     return statBox('Térmica general', pg.termicaIn + 'A · ' + pg.termicaPolos + 'p · curva ' + pg.termicaCurva, true) +
-      statBox('Diferencial general', pg.diferencialIn + 'A · ' + pg.diferencialSensibilidad + ' mA · tipo ' + pg.diferencialTipo, true);
+      statBox('Diferencial general', pg.diferencialIn + 'A · ' + pg.diferencialSensibilidad + ' mA · ' + textoTipoDiferencial(pg.diferencialTipo), true);
   }
   function proteccionGeneralLightHtml(pg) {
+    if (pg.termicaIn === null) return '<div class="alert-error">' + escapeHtml(pg.motivo) + '</div>';
     return '<div class="light-stat-row"><span class="lbl">Térmica general</span><span class="val strong">' + pg.termicaIn + 'A · ' + pg.termicaPolos + 'p · curva ' + pg.termicaCurva + '</span></div>' +
-      '<div class="light-stat-row"><span class="lbl">Diferencial general</span><span class="val strong">' + pg.diferencialIn + 'A · ' + pg.diferencialTipo + '</span></div>';
+      '<div class="light-stat-row"><span class="lbl">Diferencial general</span><span class="val strong">' + pg.diferencialIn + 'A · ' + textoTipoDiferencial(pg.diferencialTipo) + '</span></div>';
   }
 
   // Ficha del alimentador: longitud, sección y la caída que arrastra.
@@ -4564,6 +4833,14 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         fmt(Math.max(0, 3 - a.dUPct)) + ' % en iluminación · ' + fmt(Math.max(0, 5 - a.dUPct)) + ' % en el resto</span></div>';
   }
 
+  // Fichas con los datos avanzados abiertos: se re-dibujan con cada cambio y
+  // no tienen que cerrarse solas.
+  const circuitosAbiertos = new Set();
+  function tieneAvanzados(c) {
+    return Boolean(c.expuestoSol || c.inProteccion || (c.tipoProteccion && c.tipoProteccion !== 'mcb') ||
+      c.iccKa || c.poderCorteKa || c.i2tPasante || c.tiempoDespejeS);
+  }
+
   function renderCircuitosList() {
     renderAcometida();
     const caidaPrevia = caidaPreviaDe(draft);
@@ -4574,6 +4851,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     }
     draft.circuitos.forEach((c) => {
       const calc = calcularCircuito(c, caidaPrevia);
+      const comp = calc.apto ? comprobarCircuito(datosCircuito(c, caidaPrevia)) : null;
       const card = el('div', { class: 'card card-pad item-card', style: 'position:relative' });
       card.innerHTML =
         '<button class="remove-btn" type="button">' + icon('ic-trash') + '</button>' +
@@ -4599,22 +4877,59 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         '<div class="field"><label>Aislación</label><select class="select" data-f="aislacion">' +
         '<option value="pvc"' + ((c.aislacion || 'pvc') === 'pvc' ? ' selected' : '') + '>PVC</option>' +
         '<option value="xlpe"' + (c.aislacion === 'xlpe' ? ' selected' : '') + '>XLPE</option></select></div>' +
-        '<div class="field"><label>Caída máx. (%)</label><input class="input" type="number" step="0.5" data-f="caidaMax" value="' + c.caidaMax + '"></div>' +
+        '<div class="field"><label>Criterio de proyecto (%)</label><input class="input" type="number" step="0.5" min="0.1" data-f="caidaMax" value="' + c.caidaMax + '"></div>' +
         '<div class="field"><label>cos φ</label><input class="input" type="number" step="0.05" min="0" max="1" data-f="cosPhi" value="' + c.cosPhi + '"></div>' +
         '</div>' +
+        // Los datos que casi nunca cambian van plegados, para que la ficha no
+        // sea eterna en el celular.
+        '<details class="avanzados" style="margin-top:12px"' + (circuitosAbiertos.has(c.id) ? ' open' : '') + '>' +
+        '<summary class="section-label" style="margin:0">Datos avanzados' + (tieneAvanzados(c) ? ' · cargados' : '') + '</summary>' +
+        '<div class="item-grid" style="margin-top:10px">' +
+        '<div class="field"><label>Expuesto al sol</label><select class="select" data-f="expuestoSol">' +
+        '<option value="0"' + (!c.expuestoSol ? ' selected' : '') + '>No</option><option value="1"' + (c.expuestoSol ? ' selected' : '') + '>Sí (x 0,90)</option></select></div>' +
+        '<div class="field"><label>Protección (In)</label><select class="select" data-f="inProteccion">' +
+        '<option value="">La que calcula la app</option>' +
+        BREAKER_RATINGS.map((b) => '<option value="' + b + '"' + (Number(c.inProteccion) === b ? ' selected' : '') + '>' + b + ' A</option>').join('') +
+        '</select></div>' +
+        '<div class="field"><label>Tipo de protección</label><select class="select" data-f="tipoProteccion">' +
+        '<option value="mcb"' + ((c.tipoProteccion || 'mcb') === 'mcb' ? ' selected' : '') + '>Termomagnético IEC 60898</option>' +
+        '<option value="otro"' + (c.tipoProteccion === 'otro' ? ' selected' : '') + '>Caja moldeada u otro</option></select></div>' +
+        ((c.tipoProteccion || 'mcb') === 'otro'
+          ? '<div class="field"><label>I₂ del fabricante (A)</label><input class="input" type="number" step="0.1" min="0" data-f="i2" value="' + (Number(c.i2) || '') + '"></div>'
+          : '') +
+        '<div class="field"><label>Icc prevista (kA)</label><input class="input" type="number" step="0.1" min="0" data-f="iccKa" value="' + (Number(c.iccKa) || '') + '"></div>' +
+        '<div class="field"><label>Poder de corte (kA)</label><input class="input" type="number" step="0.5" min="0" data-f="poderCorteKa" value="' + (Number(c.poderCorteKa) || '') + '"></div>' +
+        ((c.tipoProteccion || 'mcb') === 'mcb'
+          ? '<div class="field"><label>Energía pasante I²t (A²s)</label><input class="input" type="number" step="100" min="0" data-f="i2tPasante" value="' + (Number(c.i2tPasante) || '') + '"></div>'
+          : '<div class="field"><label>Tiempo de despeje (s)</label><input class="input" type="number" step="0.01" min="0" data-f="tiempoDespejeS" value="' + (Number(c.tiempoDespejeS) || '') + '"></div>') +
+        '</div></details>' +
         '<div style="margin-top:16px">' + (calc.apto
           ? '<div class="panel-dark card-pad" style="display:flex;flex-wrap:wrap;gap:20px">' +
             statBox('Sección', calc.seccionAdoptada + ' mm²', true) + statBox('Iz corregida', fmt(calc.iz) + ' A') +
             statBox('Caída del circuito', fmt(calc.dUPct) + ' %') +
-            statBox('Caída desde el medidor', fmt(calc.dUPct + caidaPrevia) + ' %', true) +
-            statBox('Protección', calc.breaker + ' A', true) + statBox('Curva sugerida', calc.curva) + '</div>'
-          : '<div class="alert-error">Ninguna sección de la tabla cumple corriente admisible y caída de tensión. Revisá longitud, método o caída máxima.</div>') + '</div>';
+            statBox('Caída desde el medidor', fmt(calc.dUPctTotal) + ' %', true) +
+            statBox('Protección', calc.breaker + ' A', true) + statBox('Curva sugerida', calc.curva) +
+            statBox('Comprobación', comp.estado === 'cumple' ? 'Verificado' : (comp.estado === 'pendiente' ? 'Pendiente' : 'No cumple')) + '</div>' +
+            (comp.causas.length || comp.pendientes.length
+              ? '<ul style="margin:10px 0 0;padding-left:18px;font-size:0.8rem;color:var(--error)">' +
+                comp.causas.concat(comp.pendientes).map((x) => '<li>' + escapeHtml(x) + '</li>').join('') + '</ul>'
+              : '')
+          : '<div class="alert-error">' + escapeHtml(calc.error || 'Ninguna sección de la tabla cumple corriente admisible y caída de tensión. Revisá longitud, método o criterio de proyecto.') + '</div>') + '</div>';
+      const detalles = card.querySelector('details.avanzados');
+      detalles.addEventListener('toggle', () => {
+        if (detalles.open) circuitosAbiertos.add(c.id); else circuitosAbiertos.delete(c.id);
+      });
       card.querySelector('.remove-btn').addEventListener('click', () => { draft.circuitos = draft.circuitos.filter((x) => x.id !== c.id); renderCircuitosList(); });
       card.querySelectorAll('[data-f]').forEach((input) => {
         input.addEventListener('change', () => {
           const f = input.dataset.f;
-          const esTexto = f === 'nombre' || f === 'material' || f === 'metodo' || f === 'uso' || f === 'aislacion' || f === 'disposicion';
-          c[f] = esTexto ? input.value : Number(input.value);
+          const esTexto = f === 'nombre' || f === 'material' || f === 'metodo' || f === 'uso' || f === 'aislacion' ||
+            f === 'disposicion' || f === 'tipoProteccion';
+          if (f === 'expuestoSol') c[f] = input.value === '1';
+          // vacío = que decida la app
+          else if (f === 'inProteccion' || f === 'i2' || f === 'iccKa' || f === 'poderCorteKa' || f === 'i2tPasante' || f === 'tiempoDespejeS') {
+            c[f] = Number(input.value) > 0 ? Number(input.value) : null;
+          } else c[f] = esTexto ? input.value : Number(input.value);
           // Cada uso trae su propia caída máxima admisible: iluminación admite
           // menos que fuerza. Al cambiar el uso se acompaña el valor.
           if (f === 'uso') {
@@ -4637,7 +4952,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       const calc = calcularCircuito(c, caidaPrevia);
       return '<tr><td>' + escapeHtml(c.nombre || '—') + '</td><td>' + fmt(c.ib) + '</td><td>' + (calc.apto ? calc.seccionAdoptada + ' mm²' : '—') + '</td>' +
         '<td>' + (calc.apto ? calc.breaker + 'A · ' + calc.curva : '—') + '</td>' +
-        '<td style="color:' + (calc.apto && calc.dUPct > c.caidaMax ? 'var(--error)' : 'inherit') + '">' + (calc.apto ? fmt(calc.dUPct) : '—') + '</td></tr>';
+        '<td style="color:' + (calc.apto && calc.dUPctTotal > calc.caidaMax ? 'var(--error)' : 'inherit') + '">' + (calc.apto ? fmt(calc.dUPctTotal) : '—') + '</td></tr>';
     }).join('');
 
     const pgWrap = $('#circuitos-proteccion-general');
@@ -4703,6 +5018,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     if (pg.aplica) {
       $('#resumen-proteccion-general-stats').innerHTML = proteccionGeneralLightHtml(pg);
       $('#resumen-diferencial-sensibilidad').value = String(pg.diferencialSensibilidad);
+      $('#resumen-diferencial-tipo').value = pg.diferencialTipo || '';
     }
 
     $('#resumen-materiales-count').textContent = draft.materiales.length + ' ítems';
@@ -4762,10 +5078,13 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   }
   // Panel de comprobación: las tres condiciones, con sus números a la vista y la
   // causa concreta cuando alguna no se cumple.
+  // cumple: true / false, o null cuando faltan datos para decidir.
   function filaComprobacion(titulo, cumple, detalle, formula) {
-    const badge = cumple
-      ? '<span class="badge-apto">' + icon('ic-check-circle') + 'Cumple</span>'
-      : '<span class="badge-noapto">' + icon('ic-x-circle') + 'No cumple</span>';
+    const badge = cumple === null
+      ? '<span class="badge-pendiente">Sin datos</span>'
+      : (cumple
+        ? '<span class="badge-apto">' + icon('ic-check-circle') + 'Cumple</span>'
+        : '<span class="badge-noapto">' + icon('ic-x-circle') + 'No cumple</span>');
     return '<div class="light-stat-row" style="align-items:flex-start;gap:10px">' +
       '<span class="lbl" style="flex:1"><strong>' + titulo + '</strong>' +
       '<span style="display:block;font-family:ui-monospace,monospace;font-size:0.78rem;color:var(--steel)">' + escapeHtml(detalle) + '</span>' +
@@ -4779,7 +5098,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       wrap.innerHTML = '<div class="empty-state">No hay sección de tabla que cumpla con estos datos.</div>';
       return;
     }
-    const izTxt = fmt(c.izTabla) + ' A x ' + fmt(c.ft, 2) + ' (temp.) x ' + fmt(c.fa, 2) + ' (agrup.) = ' + fmt(c.iz) + ' A';
+    const izTxt = fmt(c.izTabla) + ' A x ' + fmt(c.ft, 2) + ' (temp.) x ' + fmt(c.fa, 2) + ' (agrup.) x ' + fmt(c.fs, 2) + ' (sol) = ' + fmt(c.iz) + ' A';
     const inTxt = c.in === null ? 'sin protección' : fmt(c.in) + ' A';
     let html = '<div class="light-stat-grid">' +
       filaComprobacion('Capacidad de conducción', c.cumpleCapacidad,
@@ -4787,19 +5106,36 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       filaComprobacion('Coordinación con la protección', c.cumpleIbIn && c.cumpleInIz,
         'Ib ' + fmt(c.ib) + ' A <= In ' + inTxt + ' <= Iz ' + fmt(c.iz) + ' A',
         'IEC 60364-4-43 §431.4.2 · UTE RBT Cap. V §1.a') +
-      filaComprobacion('Sobrecarga (I2)', c.cumpleI2 !== false,
+      filaComprobacion('Sobrecarga (I2)', c.cumpleI2,
         'I2 ' + (c.i2 === null ? '—' : fmt(c.i2) + ' A') + ' <= 1,45 · Iz ' + fmt(c.limite145) + ' A',
-        'I2 = 1,45 · In para termomagnéticos IEC 60898') +
+        c.tipoProteccion === 'mcb' ? 'I2 = 1,45 · In para termomagnéticos IEC 60898' : 'I2 del fabricante') +
       filaComprobacion('Caída de tensión', c.cumpleCaida,
-        'ΔU ' + fmt(c.dU) + ' V = ' + fmt(c.dUPct) + ' % <= ' + fmt(c.caidaMax) + ' %',
-        'UTE RBT Cap. II - Anexo §8') +
+        (c.caidaPrevia > 0
+          ? 'Circuito ' + fmt(c.dUPct) + ' % + antes del circuito ' + fmt(c.caidaPrevia) + ' % = ' + fmt(c.dUPctTotal) + ' %'
+          : 'Circuito ' + fmt(c.dUPct) + ' %') + ' <= ' + fmt(c.caidaMax) + ' %',
+        'UTE RBT Cap. II - Anexo §8 · K = ' + fmt(c.k, 1) + ' (servicio)') +
+      filaComprobacion('Poder de corte', c.cumplePoderCorte,
+        (c.poderCorteKa === null ? '—' : fmt(c.poderCorteKa) + ' kA') + ' >= Icc ' + (c.iccKa === null ? '—' : fmt(c.iccKa) + ' kA'),
+        'UTE RBT Cap. V §1.b') +
+      filaComprobacion('Cortocircuito térmico', c.cumpleTermicaCorto,
+        c.i2tExigido === null
+          ? 'Admisible ' + (c.i2tAdmisible === null ? '—' : fmt(c.i2tAdmisible / 1000, 0) + ' kA²s')
+          : fmt(c.i2tExigido / 1000, 0) + ' kA²s <= ' + fmt(c.i2tAdmisible / 1000, 0) + ' kA²s admisibles',
+        'UTE RBT Cap. II - Anexo §7' + (c.tipoProteccion === 'mcb' ? ' · energía pasante del termomagnético' : '')) +
       '</div>';
-    html += '<div style="margin-top:12px">' + (c.verificado
+    html += '<div style="margin-top:12px">' + (c.estado === 'cumple'
       ? '<span class="badge-apto">' + icon('ic-check-circle') + 'Circuito verificado</span>'
-      : '<span class="badge-noapto">' + icon('ic-x-circle') + 'Circuito no verificado</span>') + '</div>';
+      : (c.estado === 'pendiente'
+        ? '<span class="badge-pendiente">Verificación pendiente</span>'
+        : '<span class="badge-noapto">' + icon('ic-x-circle') + 'Circuito no verificado</span>')) + '</div>';
     if (c.causas.length) {
       html += '<ul style="margin:10px 0 0;padding-left:18px;font-size:0.82rem;color:var(--error)">' +
         c.causas.map((x) => '<li>' + escapeHtml(x) + '</li>').join('') + '</ul>';
+    }
+    const avisos = c.pendientes.concat(c.notas);
+    if (avisos.length) {
+      html += '<ul style="margin:10px 0 0;padding-left:18px;font-size:0.8rem;color:var(--steel)">' +
+        avisos.map((x) => '<li>' + escapeHtml(x) + '</li>').join('') + '</ul>';
     }
     html += '<details style="margin-top:12px"><summary class="section-label" style="margin:0">En qué se respalda</summary>' +
       '<div class="stack-sm" style="margin-top:8px">' + referenciasHtml() + '</div></details>';
@@ -4846,16 +5182,29 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       tempAmb: Number($('#cond-temp').value) || 30, agrupados: Number($('#cond-agrupados').value) || 1,
       disposicion: $('#cond-disposicion').value,
       cosPhi, caidaMax: Number($('#cond-caidamax').value) || 5, uso: $('#cond-uso').value,
+      expuestoSol: $('#cond-sol').value === '1',
+      caidaAguasArribaPct: Number($('#cond-caida-arriba').value) || 0,
+      tipoProteccion: $('#cond-prot-tipo').value,
+      i2: Number($('#cond-i2').value) || null,
+      iccKa: Number($('#cond-icc').value) || null,
+      poderCorteKa: Number($('#cond-podercorte').value) || null,
+      i2tPasante: Number($('#cond-i2t').value) || null,
+      tiempoDespejeS: Number($('#cond-tiempo').value) || null,
     };
+    const esMcb = datos.tipoProteccion === 'mcb';
+    $('#cond-i2-wrap').hidden = esMcb;
+    $('#cond-i2t-wrap').hidden = !esMcb;
+    $('#cond-tiempo-wrap').hidden = esMcb;
     // la disposición sólo cuenta al aire o en bandeja
     $('#cond-disposicion-wrap').hidden = CATEGORIA_METODO[datos.metodo] !== 'aire';
     const r = calcularSeccion(datos);
     opcionesComprobacion(datos.material, datos.aislacion, datos.metodo);
     renderComprobacion(comprobarCircuito(datos, { seccion: $('#cond-seccion').value, in: $('#cond-in').value }));
     $('#cond-badge').innerHTML = r.apto
-      ? '<span class="badge-apto">' + icon('ic-check-circle') + 'Apto · Cumple RBT UTE</span>'
+      ? '<span class="badge-apto">' + icon('ic-check-circle') + 'Dimensionado apto</span>'
       : '<span class="badge-noapto">' + icon('ic-x-circle') + 'No apto</span>';
     const rows = [
+      ...(r.error ? [['ic-tool', 'Observación', r.error]] : []),
       ['ic-zap', 'Corriente de diseño', fmt(r.ib) + ' A'],
       ['ic-cable', 'Sección por capacidad', (r.seccionCapacidad ?? '—') + (r.seccionCapacidad ? ' mm²' : '')],
       ['ic-ruler', 'Sección por caída', (r.seccionCaida ?? '—') + (r.seccionCaida ? ' mm²' : '')],
@@ -4865,7 +5214,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       rows.push(['ic-cable', 'Conductor adoptado', r.seccionAdoptada + ' mm² ' + ($('#cond-material').value === 'cobre' ? 'Cu' : 'Al') + ' ' + $('#cond-aislacion').value.toUpperCase()]);
       rows.push(['ic-calc', 'Protección sugerida', r.breaker + ' A curva ' + r.curva]);
       rows.push(['ic-tool', 'Por qué esa curva', CURVA_DESCRIPCION[r.curva] || '—']);
-      rows.push(['ic-thermo', 'Caída de tensión', fmt(r.dUPct) + ' % — ' + (r.dUPct <= Number($('#cond-caidamax').value) ? 'Cumple' : 'No cumple')]);
+      rows.push(['ic-ruler', 'Conductividad K (servicio)', fmt(r.k, 1) + ' m/(Ω·mm²)']);
+      rows.push(['ic-thermo', 'Caída del circuito', fmt(r.dUPct) + ' %']);
+      rows.push(['ic-thermo', 'Caída total desde el origen', fmt(r.dUPctTotal) + ' % de ' + fmt(r.caidaMax) + ' % — ' + (r.dUPctTotal <= r.caidaMax ? 'Cumple' : 'No cumple')]);
     }
     $('#cond-resultado').innerHTML = rows.map((row) =>
       '<div class="light-stat-row"><span class="lbl">' + icon(row[0]) + row[1] + '</span><span class="val strong">' + row[2] + '</span></div>').join('');
@@ -5329,6 +5680,12 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     renderPresupuestoDetalle();
   }
 
+  // Materiales con cantidad y sin precio: un presupuesto así no se puede aprobar.
+  function materialesSinPrecio(p) {
+    const tr = p && p.trabajoId ? DB.trabajos.find((x) => x.id === p.trabajoId) : null;
+    return tr ? (tr.materiales || []).filter((m) => (Number(m.cantidad) || 0) > 0 && !(Number(m.precioUnit) > 0)) : [];
+  }
+
   function renderPresupuestoDetalle() {
     const p = presActual;
     $('#pres-codigo').textContent = 'Presupuesto ' + p.codigo;
@@ -5336,6 +5693,16 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     $('#pres-cliente-nombre').readOnly = !!p.trabajoId;
     $('#pres-estado-pill').outerHTML = '<span id="pres-estado-pill" class="status-pill ' + (ESTADO_CLASS[p.estado] || 'status-draft') + '">' + (ESTADO_LABEL[p.estado] || p.estado) + '</span>';
     $('#pi-materiales').textContent = money(p.materiales);
+    const aviso = $('#pi-materiales-warning');
+    if (aviso) {
+      const sinPrecio = materialesSinPrecio(p);
+      aviso.hidden = sinPrecio.length === 0;
+      aviso.textContent = sinPrecio.length
+        ? 'Presupuesto incompleto: ' + sinPrecio.length + (sinPrecio.length === 1 ? ' material tiene' : ' materiales tienen') +
+          ' precio $0 (' + sinPrecio.slice(0, 3).map((m) => m.nombre).join(', ') + (sinPrecio.length > 3 ? '…' : '') +
+          '). Cotizalos antes de aprobarlo.'
+        : '';
+    }
     $('#pi-manoobra').value = p.manoObra;
     $('#pi-traslados').value = p.traslados;
     $('#pi-otros').value = p.otros;
@@ -5462,7 +5829,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       const sistema = SISTEMAS[draft.sistemaId];
       draft.circuitos.push({ id: uid('m2'), nombre: '', ib: 10, v: sistema.v, fases: sistema.fases, l: 15,
         material: 'cobre', metodo: 'embutido', aislacion: 'pvc', tempAmb: 30, agrupados: 1,
-        caidaMax: CAIDA_MAX_DEFAULT.fuerza, cosPhi: 1, uso: 'fuerza' });
+        caidaMax: CAIDA_MAX_DEFAULT.fuerza, cosPhi: 1, uso: 'fuerza', expuestoSol: false, tipoProteccion: 'mcb' });
       renderCircuitosList();
     });
     $('#btn-add-material').addEventListener('click', () => {
@@ -5479,6 +5846,12 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       toast('Materiales regenerados desde los circuitos');
     });
     $('#resumen-estado').addEventListener('change', () => { draft.estado = $('#resumen-estado').value; });
+    $('#resumen-diferencial-tipo').innerHTML = TIPOS_DIFERENCIAL.map((t) => '<option value="' + t.v + '">' + t.label + '</option>').join('');
+    $('#resumen-diferencial-tipo').addEventListener('change', () => {
+      if (!draft.proteccionGeneral) draft.proteccionGeneral = { diferencialSensibilidad: 30 };
+      draft.proteccionGeneral.diferencialTipo = $('#resumen-diferencial-tipo').value;
+      renderResumen();
+    });
     $('#resumen-diferencial-sensibilidad').addEventListener('change', () => {
       draft.proteccionGeneral.diferencialSensibilidad = Number($('#resumen-diferencial-sensibilidad').value);
     });
@@ -5507,6 +5880,10 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     });
     // cada uso trae su caída máxima: iluminación admite 3 % y el resto 5 %
     $('#cond-disposicion').addEventListener('change', calcularConductorForm);
+    ['#cond-sol', '#cond-prot-tipo'].forEach((sel) => $(sel).addEventListener('change', calcularConductorForm));
+    ['#cond-caida-arriba', '#cond-i2', '#cond-icc', '#cond-podercorte', '#cond-i2t', '#cond-tiempo'].forEach((sel) => {
+      $(sel).addEventListener('input', calcularConductorForm);
+    });
     $('#cond-uso').addEventListener('change', () => {
       $('#cond-caidamax').value = CAIDA_MAX_DEFAULT[$('#cond-uso').value] || 5;
       calcularConductorForm();
@@ -5556,6 +5933,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       savePresupuesto();
     });
     $('#btn-pres-aprobar').addEventListener('click', () => {
+      if (materialesSinPrecio(presActual).length) {
+        toast('No se puede aprobar: hay materiales con precio $0.');
+        renderPresupuestoDetalle();
+        return;
+      }
       presActual.estado = 'aprobado';
       savePresupuesto();
       renderPresupuestoDetalle();
@@ -5723,19 +6105,16 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     // La copia interna lleva la comprobación de cada circuito, con los números
     // que respaldan el cálculo y la norma que los pide.
     if (interno && trabajo && trabajo.circuitos && trabajo.circuitos.length) {
+      const previaPdf = caidaPreviaDe(trabajo);
       const filasComp = trabajo.circuitos.map((c) => {
-        const comp = comprobarCircuito({
-          ib: c.ib, v: c.v, fases: c.fases, l: c.l, material: c.material, metodo: c.metodo,
-          aislacion: c.aislacion, tempAmb: c.tempAmb, agrupados: c.agrupados, cosPhi: c.cosPhi,
-          caidaMax: c.caidaMax, uso: c.uso || 'fuerza',
-        });
+        const comp = comprobarCircuito(datosCircuito(c, previaPdf));
         return [c.nombre || 'Circuito',
                 comp.seccion ? comp.seccion + ' mm²' : '-',
                 fmt(comp.ib) + ' A',
                 comp.in ? comp.in + ' A' : '-',
                 fmt(comp.iz) + ' A',
-                fmt(comp.dUPct) + ' %',
-                comp.verificado ? 'Verificado' : 'Revisar'];
+                fmt(comp.dUPctTotal) + ' %',
+                comp.estado === 'cumple' ? 'Verificado' : (comp.estado === 'pendiente' ? 'Pendiente' : 'No cumple')];
       });
       lugarPara(4 + FILA * 3);
       doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
@@ -5744,7 +6123,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       doc.autoTable({
         startY: y,
         margin: margenTablas,
-        head: [['Circuito', 'Sección', 'Ib', 'In', 'Iz corr.', 'ΔU', 'Estado']],
+        head: [['Circuito', 'Sección', 'Ib', 'In', 'Iz corr.', 'Caída total', 'Estado']],
         body: pdfFilas(filasComp),
         theme: 'plain',
         styles: { fontSize: 8, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
@@ -5754,12 +6133,13 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       y = doc.lastAutoTable.finalY + 4;
       doc.setFont('helvetica', 'italic'); doc.setFontSize(7); doc.setTextColor(111, 114, 119);
       const refs = doc.splitTextToSize(pdfTexto(
-        'Cómo se comprobó cada circuito. Capacidad de conducción: Iz = I de tabla x factor de temperatura x factor de agrupamiento, y se verifica Iz >= Ib ' +
-        '(Reglamento de Baja Tensión de UTE, Capítulo II - Anexo, Tablas VI a XIII, Tabla XIV de temperatura y §5.1 de agrupamiento). ' +
-        'Coordinación con la protección: Ib <= In <= Iz (UTE, Capítulo V numeral 1.a, que exige que la protección garantice el límite admisible del conductor; ' +
-        'formulación explícita en IEC 60364-4-43:2023 §431.4.2, como referencia técnica complementaria, que agrega I2 <= 1,45 Iz, cumplida porque en los ' +
-        'termomagnéticos IEC 60898-1 es I2 = 1,45 In). Caída de tensión: e = 2LW/(KSV) en monofásico y LW/(KSV) en trifásico, con K a 25 °C de 56,9 (Cu) y ' +
-        '34,7 (Al), contra un máximo de 3 % en alumbrado y 5 % en los demás usos (UTE, Capítulo II - Anexo, numeral 8).'),
+        'Cómo se comprobó cada circuito. Capacidad de conducción: Iz = I de tabla x factor de temperatura (Tabla XIV, escalón superior) x factor de agrupamiento x factor solar (0,90 si está al sol), ' +
+        'y se verifica Iz >= Ib (Reglamento de Baja Tensión de UTE, Capítulo II - Anexo, Tablas VI a XIV, §3.3.2 y §5.1; para el agrupamiento se cuentan también el neutro y la tierra, criterio más exigente que el reglamento). ' +
+        'Coordinación con la protección: Ib <= In <= Iz (UTE, Capítulo V numeral 1.a; formulación explícita en IEC 60364-4-43:2023 §431.4.2, referencia técnica complementaria, ' +
+        'que agrega I2 <= 1,45 Iz, cumplida porque en los termomagnéticos IEC 60898-1 es I2 = 1,45 In). ' +
+        'Caída de tensión: e = 2LW/(KSV) en monofásico y LW/(KSV) en trifásico, con la conductividad de servicio (Cu/PVC 48,4; Cu/XLPE 45,5; Al/PVC 29,4; Al/XLPE 27,6), ' +
+        'sumando la caída del alimentador entre el medidor y el tablero, contra un máximo de 3 % en alumbrado y 5 % en los demás usos (UTE, Capítulo II - Anexo, numeral 8). ' +
+        'Cortocircuito (Capítulo V §1.b y Anexo §7): se verifica sólo cuando se cargan la corriente de cortocircuito prevista, el poder de corte y la energía pasante del termomagnético.'),
         pageWidth - 2 * margin);
       doc.text(refs, margin, y);
       y += refs.length * 3.2 + 8;
@@ -6096,6 +6476,14 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   /* ============================================================
      INIT
      ============================================================ */
+  // Guarda la app en el dispositivo para abrirla sin conexión. Sólo funciona
+  // servida por http(s), no desde el archivo suelto.
+  function registrarServiceWorker() {
+    if (!('serviceWorker' in navigator)) return;
+    if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
+    navigator.serviceWorker.register('./sw.js').catch((e) => console.warn('Sin modo sin conexión:', e));
+  }
+
   function init() {
     document.querySelectorAll('[data-logo]').forEach((img) => { img.src = LOGO_SRC; });
     try { document.documentElement.style.setProperty('--watermark-src', 'url("' + LOGO_SRC + '")'); } catch (e) {}
@@ -6116,6 +6504,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     showView('home');
   }
 
+  registrarServiceWorker();
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
   else init();
 })();

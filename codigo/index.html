@@ -348,6 +348,9 @@
             <option value="300">300 mA</option>
           </select>
         </div>
+        <div class="field" style="margin-top:12px"><label>Tipo de diferencial general</label>
+          <select class="select" id="resumen-diferencial-tipo"></select>
+        </div>
       </div>
 
       <div class="card card-pad">
@@ -424,17 +427,23 @@
               <option value="embutido">Embutido en pared</option>
               <option value="amurado_pvc">Amurado — caño PVC rígido</option>
               <option value="amurado_galvanizado">Amurado — caño de acero galvanizado</option>
-              <option value="bandeja">Bandeja</option>
-              <option value="aire">Aire libre</option>
-              <option value="enterrado">Enterrado bajo tierra</option>
+              <option value="bandeja">Bandeja perforada bajo techo</option>
+              <option value="aire">Al aire bajo techo / exterior protegido</option>
+              <option value="enterrado">Enterrado en caño</option>
             </select>
           </div>
           <div class="field"><label>Temp. ambiente (°C)</label><input class="input" type="number" id="cond-temp" value="30"></div>
         </div>
-        <p style="font-size:0.76rem;color:var(--steel);margin:0">Se calcula a 30 °C, que es el criterio de la casa para toda la obra. Con PVC eso corrige la corriente de tabla por 0,94 (Tabla XIV).</p>
+        <p style="font-size:0.76rem;color:var(--steel);margin:0">Se calcula a 30 °C, que es el criterio de la casa para toda la obra. Una temperatura intermedia toma el escalón superior de la Tabla XIV; fuera de la tabla, el cálculo no se puede verificar.</p>
+        <div class="grid-2">
+          <div class="field"><label>Expuesto al sol</label>
+            <select class="select" id="cond-sol"><option value="0">No</option><option value="1">Sí (x 0,90)</option></select>
+          </div>
+          <div class="field"><label>Caída antes del circuito (%)</label><input class="input" type="number" step="0.1" min="0" id="cond-caida-arriba" value="0"></div>
+        </div>
         <div class="grid-2">
           <div class="field"><label>Circuitos agrupados</label><input class="input" type="number" min="1" id="cond-agrupados" value="1"></div>
-          <div class="field"><label>Caída máx. (%)</label><input class="input" type="number" step="0.5" id="cond-caidamax" value="5"></div>
+          <div class="field"><label>Criterio de proyecto (%)</label><input class="input" type="number" step="0.5" min="0.1" id="cond-caidamax" value="5"></div>
         </div>
         <div class="field" id="cond-disposicion-wrap" hidden><label>Disposición al aire o en bandeja</label>
           <select class="select" id="cond-disposicion">
@@ -458,6 +467,23 @@
         <div class="grid-2">
           <div class="field"><label>Sección a verificar</label><select class="select" id="cond-seccion"></select></div>
           <div class="field"><label>Protección a verificar</label><select class="select" id="cond-in"></select></div>
+        </div>
+        <p style="font-size:0.76rem;color:var(--steel);margin:0">El límite de caída es el de UTE —3 % en alumbrado, 5 % en el resto— o el criterio de proyecto si es más exigente.</p>
+        <div class="grid-2">
+          <div class="field"><label>Tipo de protección</label>
+            <select class="select" id="cond-prot-tipo">
+              <option value="mcb">Termomagnético IEC 60898</option>
+              <option value="otro">Caja moldeada u otro</option>
+            </select>
+          </div>
+          <div class="field" id="cond-i2-wrap" hidden><label>I₂ del fabricante (A)</label><input class="input" type="number" step="0.1" min="0" id="cond-i2"></div>
+        </div>
+        <div class="section-label" style="margin:4px 0 0">Cortocircuito (opcional)</div>
+        <div class="grid-2">
+          <div class="field"><label>Icc prevista (kA)</label><input class="input" type="number" step="0.1" min="0" id="cond-icc"></div>
+          <div class="field"><label>Poder de corte (kA)</label><input class="input" type="number" step="0.5" min="0" id="cond-podercorte"></div>
+          <div class="field" id="cond-i2t-wrap"><label>Energía pasante I²t (A²s)</label><input class="input" type="number" step="100" min="0" id="cond-i2t"></div>
+          <div class="field" id="cond-tiempo-wrap" hidden><label>Tiempo de despeje (s)</label><input class="input" type="number" step="0.01" min="0" id="cond-tiempo"></div>
         </div>
         <div id="cond-comprobacion"></div>
       </div>
@@ -561,6 +587,7 @@
 
       <div class="card card-pad" id="pres-vista-interno">
         <div class="budget-row"><span class="lbl"><svg><use href="#ic-cable"/></svg>Materiales:</span><span class="val" id="pi-materiales">$0</span></div>
+        <div class="alert-error" id="pi-materiales-warning" hidden style="margin:8px 0 12px"></div>
         <div class="budget-row"><span class="lbl"><svg><use href="#ic-user"/></svg>Mano de obra:</span><span class="val"><input class="input" style="min-height:34px;width:120px;text-align:right" type="number" id="pi-manoobra" value="0"></span></div>
         <div class="budget-row"><span class="lbl"><svg><use href="#ic-truck"/></svg>Traslados:</span><span class="val"><input class="input" style="min-height:34px;width:120px;text-align:right" type="number" id="pi-traslados" value="0"></span></div>
         <div class="budget-row"><span class="lbl"><svg><use href="#ic-tag"/></svg>Otros gastos:</span><span class="val"><input class="input" style="min-height:34px;width:120px;text-align:right" type="number" id="pi-otros" value="0"></span></div>
