@@ -1418,6 +1418,10 @@
     termicaUnipolarBase: 80,
     termicaBipolarBase: 277,
     termicaTetrapolarBase: 294,
+    // Diferencial tipo A, 30 mA, hasta 40 A. Sin relevar: se carga en el
+    // catálogo. Los tipos F, B y AC se cotizan a mano en cada presupuesto.
+    diferencialBipolarBase: 0,
+    diferencialTetrapolarBase: 0,
     cajaOctogonal: 72,
     portalamparas: 45,
     llaveLuzSimple: 140,
@@ -1503,11 +1507,20 @@
     return Math.floor((Date.now() - ts) / (24 * 3600e3));
   }
 
-  function precioTermica(tipo, amp, precios) {
-    const base = Number(precios[BASE_POR_TIPO[tipo] || 'termicaBipolarBase']) || 0;
+  // Escalón por corriente nominal, igual para térmicas y diferenciales: hasta
+  // 40 A el precio base, hasta 63 A 1,5 veces y por encima 2,5 veces.
+  function escalonPorCorriente(base, amp) {
     if (amp <= 40) return base;
     if (amp <= 63) return Math.round(base * 1.5);
     return Math.round(base * 2.5);
+  }
+  function precioTermica(tipo, amp, precios) {
+    return escalonPorCorriente(Number(precios[BASE_POR_TIPO[tipo] || 'termicaBipolarBase']) || 0, amp);
+  }
+  function precioDiferencial(tipoRcd, polos, amp, precios) {
+    if (tipoRcd !== 'A') return 0;
+    const base = Number(precios[polos <= 2 ? 'diferencialBipolarBase' : 'diferencialTetrapolarBase']) || 0;
+    return escalonPorCorriente(base, amp);
   }
   // Medida de gabinete que hay que comprar para una cantidad de módulos: la
   // siguiente de la lista. No existe un gabinete de 20 módulos — se compra el de
@@ -1655,7 +1668,10 @@
       // equipo. Sin precio de catálogo: F y B se cotizan a mano.
       const ded = rcdMat.dedicados.find((d) => d.circuito === c);
       if (ded && calc.breaker) {
-        add('Diferencial tipo ' + ded.tipo + ' ' + (c.fases === 1 ? 2 : 4) + 'P ' + Math.max(25, calc.breaker) + 'A 30 mA — ' + (c.nombre || 'circuito'), 'un.', 1, 0);
+        const polosRcd = c.fases === 1 ? 2 : 4;
+        const inRcd = Math.max(25, calc.breaker);
+        add('Diferencial tipo ' + ded.tipo + ' ' + polosRcd + 'P ' + inRcd + 'A 30 mA — ' + (c.nombre || 'circuito'), 'un.', 1,
+            precioDiferencial(ded.tipo, polosRcd, inRcd, precios));
       }
     });
     // Puntos de luz y de toma, según la cantidad cargada en cada carga del relevamiento.
@@ -1672,6 +1688,17 @@
         add('Tomacorriente', 'un.', n, precios.tomacorriente);
       }
     });
+    if (pgMat.aplica && pgMat.termicaIn !== null) {
+      // Protección general del tablero: la térmica con su poder de corte y el
+      // diferencial con su tipo. Mismo criterio de precio que los circuitos.
+      const tipoGen = pgMat.termicaPolos <= 2 ? 'bipolar' : 'tetrapolar';
+      const pcGen = pgMat.poderCorte;
+      const baseGen = pcGen && pcGen.poderCorteKa !== null && pcGen.poderCorteKa <= Math.max(pcGen.pisoKa, NORMATIVE_PACK.parametros.iccPlazaKa);
+      add('Térmica general ' + tipoGen + ' ' + pgMat.termicaIn + 'A curva ' + pgMat.termicaCurva + ' — ' + (pcGen ? textoPoderCorte(pcGen) : 'PdC a definir'),
+          'un.', 1, baseGen ? precioTermica(tipoGen, pgMat.termicaIn, precios) : 0);
+      add('Diferencial general tipo ' + tipoGeneralMat + ' ' + pgMat.termicaPolos + 'P ' + pgMat.diferencialIn + 'A ' + pgMat.diferencialSensibilidad + ' mA',
+          'un.', 1, precioDiferencial(tipoGeneralMat, pgMat.termicaPolos, pgMat.diferencialIn, precios));
+    }
     if (draft && draft.obra && draft.obra.naturaleza === 'Instalación nueva') {
       // Módulos que ocupa el tablero, no cantidad de llaves: una térmica bipolar
       // ocupa 2 módulos y una tetrapolar 4. Contando llaves, el gabinete salía
@@ -3954,7 +3981,15 @@
         { key: 'termicaBipolarBase', tipo: 'plano', etiqueta: 'Térmica bipolar (hasta 40A)' },
         { key: 'termicaTetrapolarBase', tipo: 'plano', etiqueta: 'Térmica tetrapolar (hasta 40A)' },
       ],
-      nota: 'De 50 a 63A se cobra 1,5× la bipolar; de 80 a 125A, 2,5× — no relevado, es un escalón proporcional. La unipolar tampoco está relevada: sale de la bipolar por proporción.',
+      nota: 'De 50 a 63A se cobra 1,5× la bipolar; de 80 a 125A, 2,5× — no relevado, es un escalón proporcional. La unipolar tampoco está relevada: sale de la bipolar por proporción. Estos precios son de la línea Hyundai HGD63S (4,5 kA): para cotizar iC60N (6 kA) hay que cargar su precio.',
+    },
+    {
+      titulo: 'Diferenciales tipo A, 30 mA ($/un.)',
+      campos: [
+        { key: 'diferencialBipolarBase', tipo: 'plano', etiqueta: 'Diferencial bipolar (hasta 40A)' },
+        { key: 'diferencialTetrapolarBase', tipo: 'plano', etiqueta: 'Diferencial tetrapolar (hasta 40A)' },
+      ],
+      nota: 'Sin relevar: mientras estén en 0, el diferencial queda sin precio y el presupuesto no se puede aprobar. De 50 a 63A se cobra 1,5×; más, 2,5×. Los tipos F, B y AC se cotizan a mano.',
     },
     {
       titulo: 'Puntos de luz y de toma ($/un.)',
