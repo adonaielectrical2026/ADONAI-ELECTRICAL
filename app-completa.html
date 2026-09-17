@@ -623,7 +623,16 @@
         <div class="grid-2">
           <div class="field"><label>Longitud medidor → tablero (m)</label><input class="input" type="number" min="0" id="f-acom-l" value="10"></div>
           <div class="field"><label>Sección del alimentador</label><select class="select" id="f-acom-seccion"></select></div>
+          <div class="field"><label>Icc en el tablero (kA)</label><input class="input" type="number" step="0.1" min="0" id="f-acom-icc" placeholder="Vacío: 6 kA de plaza"></div>
+          <div class="field"><label>Subestación propia</label>
+            <select class="select" id="f-acom-subestacion">
+              <option value="auto">Según la potencia (más de 50 kW)</option>
+              <option value="no">No, suministro estándar</option>
+              <option value="si">Sí, con subestación propia</option>
+            </select>
+          </div>
         </div>
+        <p style="font-size:0.78rem;color:var(--steel);margin:0">La Icc la informa UTE o sale de medirla. Sin ese dato, en un suministro estándar se cotiza con 6 kA de plaza (sin verificar); con subestación propia no hay valor por defecto: se toma de la Tabla A del Anexo.</p>
         <div class="light-stat-grid" id="acom-resultado"></div>
       </div>
 
@@ -857,8 +866,10 @@
         </div>
         <div class="section-label" style="margin:4px 0 0">Cortocircuito (opcional)</div>
         <div class="grid-2">
-          <div class="field"><label>Icc prevista (kA)</label><input class="input" type="number" step="0.1" min="0" id="cond-icc"></div>
-          <div class="field"><label>Poder de corte (kA)</label><input class="input" type="number" step="0.5" min="0" id="cond-podercorte"></div>
+          <div class="field"><label>Icc prevista (kA)</label><input class="input" type="number" step="0.1" min="0" id="cond-icc" placeholder="Vacío: 6 kA de plaza"></div>
+          <div class="field"><label>Subestación propia</label><select class="select" id="cond-subestacion"><option value="no">No</option><option value="si">Sí (más de 50 kW)</option></select></div>
+          <div class="field"><label id="cond-podercorte-label">Icn IEC 60898-1 (kA)</label><input class="input" type="number" step="0.5" min="0" id="cond-podercorte" placeholder="Según la gama"></div>
+          <div class="field" id="cond-icu-wrap"><label>Icu IEC 60947-2 (kA, sólo ficha)</label><input class="input" type="number" step="0.5" min="0" id="cond-icu"></div>
           <div class="field" id="cond-i2t-wrap"><label>Energía pasante I²t (A²s)</label><input class="input" type="number" step="100" min="0" id="cond-i2t"></div>
           <div class="field" id="cond-tiempo-wrap" hidden><label>Tiempo de despeje (s)</label><input class="input" type="number" step="0.01" min="0" id="cond-tiempo"></div>
         </div>
@@ -2471,12 +2482,12 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
      explícito. No se edita a mano: reemplazar este objeto entero
      es "instalar" un paquete nuevo.
      ============================================================ */
-  const MOTOR_VERSION = '1.3.0';
+  const MOTOR_VERSION = '1.4.0';
   const NORMATIVE_PACK = {
     id: 'rbt-ute-interiores-2001-rev-2026',
     nombre: 'Reglamento de Baja Tensión UTE — instalaciones interiores (Caps. II, IV y V)',
     fuente: 'RBT-UTE: Capítulo II "Instalaciones Interiores o Receptoras" y su Anexo (Tablas I a XVI), Capítulo IV (conductos protectores) y Capítulo V (protecciones), edición N.5 / Junio 2001, ute.com.uy',
-    version: '0.6-supuesto-2-aprobado',
+    version: '0.7-cortocircuito',
     estado: 'pendiente', // 'pendiente' | 'verificado' | 'personalizado'
     vigenteDesde: null,
     actualizadoEl: '2026-09-17',
@@ -2499,8 +2510,25 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       // el listado de técnicos instaladores de UTE, Salto, Categoría C. Con
       // null, los circuitos que usan esos factores salen como pendientes.
       aprobacionSupuesto2: { nombre: 'Claudio Rodríguez', categoria: 'C', fecha: '2026-09-17' },
+      // Cortocircuito. El Anexo da el método (Tabla A por potencia del
+      // transformador, Tablas B a E por el cable) pero no un valor por
+      // defecto, y en vivienda casi nunca se conocen esos datos. Sin Icc real
+      // y sin subestación propia se toma la de plaza: 6 kA, que es la del
+      // ejemplo del propio Anexo (20 kA → 6 kA tras 5 m de 6 mm²) y el primer
+      // escalón de la gama. Con subestación propia (> 50 kW, §10) la
+      // instalación está casi en bornes del transformador: no hay default.
+      iccPlazaKa: 6,
+      potenciaSubestacionKw: 50,
+      // Gama de termomagnéticos que se cotiza (Schneider Acti9 iC60), por su
+      // poder de corte Icn según IEC 60898-1. Pendiente de confirmar códigos
+      // y disponibilidad con el distribuidor en Uruguay.
+      gamaPoderCorte: [
+        { linea: 'iC60N', icnKa: 6 },
+        { linea: 'iC60H', icnKa: 10 },
+        { linea: 'iC60L', icnKa: 15 },
+      ],
     },
-    notas:'Ampacidades (Tablas VI-XIII), temperatura (Tabla XIV, escalón inmediato superior), sol (§3.3.2), caída de tensión con conductividad de servicio (§8) medida desde el medidor, caños por Tablas II y III del Capítulo IV, protección contra sobrecargas y cortocircuitos (Cap. V §1.a y §1.b; Anexo §7). Criterios de la casa, más exigentes que el reglamento: agrupamiento contando neutro y tierra, reducción al aire y en bandeja con factores de referencia IEC, 30 °C y mínimos de 1 / 1,5 mm². Al aire libre sin reducción por agrupamiento (criterio de la casa: nunca un circuito en contacto con otro). En bandeja, IEC 60364-5-52 Tabla B.52.17 según el montaje (manojo, capa sobre pared, capa sobre bandeja perforada), sin reducción si entre circuitos hay más de 2·De; enterrados por separación entre caños (Tabla B.52.19: en contacto, 0,25, 0,5 y 1 m; más de 1 m sin reducción). Factores IEC de agrupamiento (B.52.17 y B.52.19): Aprobado el 17/09/2026 por Claudio Rodríguez, técnico instalador UTE Categoría C (supuesto 2), con respaldo en el contraste de las Tablas VI a IX con los métodos E y F de la IEC. Pendiente: la corrección por terreno del caño enterrado.',
+    notas:'Ampacidades (Tablas VI-XIII), temperatura (Tabla XIV, escalón inmediato superior), sol (§3.3.2), caída de tensión con conductividad de servicio (§8) medida desde el medidor, caños por Tablas II y III del Capítulo IV, protección contra sobrecargas y cortocircuitos (Cap. V §1.a y §1.b; Anexo §7). Criterios de la casa, más exigentes que el reglamento: agrupamiento contando neutro y tierra, reducción al aire y en bandeja con factores de referencia IEC, 30 °C y mínimos de 1 / 1,5 mm². Al aire libre sin reducción por agrupamiento (criterio de la casa: nunca un circuito en contacto con otro). En bandeja, IEC 60364-5-52 Tabla B.52.17 según el montaje (manojo, capa sobre pared, capa sobre bandeja perforada), sin reducción si entre circuitos hay más de 2·De; enterrados por separación entre caños (Tabla B.52.19: en contacto, 0,25, 0,5 y 1 m; más de 1 m sin reducción). Factores IEC de agrupamiento (B.52.17 y B.52.19): Aprobado el 17/09/2026 por Claudio Rodríguez, técnico instalador UTE Categoría C (supuesto 2), con respaldo en el contraste de las Tablas VI a IX con los métodos E y F de la IEC. Cortocircuito en tres niveles: Icc informada (se verifica), subestación propia (se exige la Icc, Tabla A) o 6 kA de plaza (no verificado); poder de corte por Icn IEC 60898-1 con la gama iC60 N/H/L. Pendientes: la corrección por terreno del caño enterrado y confirmar con el distribuidor la gama de termomagnéticos.',
   };
   // Referencias que respaldan cada paso del motor. El reglamento que rige en
   // Uruguay es el de UTE: es la referencia principal y es la que manda. La IEC
@@ -2518,7 +2546,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     { rango: 'principal', tema: 'Protección contra sobrecargas',
       cita: 'UTE, RBT Capítulo V - Agrupamiento de accesorios de protección - Tableros, numeral 1.a: el dispositivo de protección debe garantizar el límite de corriente admisible del conductor.' },
     { rango: 'principal', tema: 'Protección contra cortocircuitos',
-      cita: 'UTE, RBT Capítulo V numeral 1.b: en el origen de todo circuito debe haber una protección con capacidad de corte acorde a la corriente de cortocircuito prevista. El Anexo del Capítulo II §7 permite verificar térmicamente el conductor frente al cortocircuito.' },
+      cita: 'UTE, RBT Capítulo V numeral 1.b: en el origen de todo circuito debe haber una protección con capacidad de corte acorde a la corriente de cortocircuito prevista. El Anexo del Capítulo II §7 permite verificar térmicamente el conductor frente al cortocircuito, y su Tabla A (con las Tablas B a E para el tramo de cable) da la corriente de cortocircuito según la potencia del transformador, calculada con 500 MVA aguas arriba.' },
+    { rango: 'principal', tema: 'Corriente de cortocircuito por defecto',
+      cita: 'El Anexo da el método pero no un valor por defecto. Con la Icc informada por UTE o medida, se verifica. Con subestación propia (más de 50 kW, Anexo §10) no hay default: la instalación está casi en bornes del transformador y se toma la Tabla A sin atenuar por cable. En suministro estándar sin dato se toma 6 kA de plaza, que es el valor del ejemplo del propio Anexo (20 kA pasan a 6 kA tras 5 m de 6 mm²); la térmica se cotiza con ese poder de corte y el cortocircuito queda marcado como no verificado.' },
+    { rango: 'complementaria', tema: 'Poder de corte de los termomagnéticos',
+      cita: 'IEC 60898-1: poder de corte asignado Icn, el que se compara con la Icc en termomagnéticos de uso doméstico y análogo (ensayo O-CO-CO). El Icu de la IEC 60947-2 que traen las fichas es otro ensayo y no se usa en la comparación. Gama de referencia Schneider Acti9 iC60: N 6 kA, H 10 kA, L 15 kA; se cotiza el primer escalón que cubre la Icc. Pendiente de confirmar códigos y disponibilidad con el distribuidor en Uruguay.' },
     { rango: 'principal', tema: 'Caída de tensión',
       cita: 'UTE, RBT Capítulo II - Anexo, numeral 8 - Caídas de Tensión: máximo 3 % en circuitos de alumbrado y 5 % en los demás usos, medidos entre el origen de la instalación y cualquier punto de utilización. Fórmulas S = 2LW/(KeV) en monofásico y S = LW/(KeV) en trifásico. Para conductores dimensionados por capacidad térmica, K a temperatura de servicio: 48,4 (Cu/PVC), 45,5 (Cu/XLPE), 29,4 (Al/PVC) y 27,6 (Al/XLPE).' },
     { rango: 'principal', tema: 'Canalizaciones',
@@ -2688,6 +2720,49 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   }
   // Si el factor de agrupamiento del circuito sale de una tabla IEC de
   // referencia (y no del §5.1 de UTE), devuelve la tabla; si no, null.
+  // Corriente de cortocircuito que corresponde al circuito, en tres niveles:
+  //   real        → la cargada (en el circuito o en el tablero): se verifica;
+  //   subestacion → instalación con SE propia (> 50 kW) sin dato: no hay
+  //                 default, se exige la Icc (Anexo Tabla A, sin atenuar);
+  //   plaza       → suministro estándar sin dato: 6 kA para elegir la
+  //                 térmica, marcado como no verificado.
+  function iccDelCircuito(p) {
+    const param = NORMATIVE_PACK.parametros;
+    const real = Number(p.iccKa) > 0 ? Number(p.iccKa) : (Number(p.iccTableroKa) > 0 ? Number(p.iccTableroKa) : null);
+    if (real !== null) return { fuente: 'real', iccKa: real };
+    if (p.conSubestacion) return { fuente: 'subestacion', iccKa: null };
+    return { fuente: 'plaza', iccKa: param.iccPlazaKa };
+  }
+  // Poder de corte con el que se cotiza la protección. En termomagnéticos
+  // manda el Icn de la IEC 60898-1 (el del rectángulo del frente); el Icu de
+  // la IEC 60947-2 de la ficha es otro ensayo y no entra en la comparación.
+  // Si no se declara, se toma el primer escalón de la gama que cubre la Icc.
+  function poderCorteDe(p) {
+    const icc = iccDelCircuito(p);
+    const declarado = Number(p.poderCorteKa) > 0 ? Number(p.poderCorteKa) : null;
+    const mcb = (p.tipoProteccion || 'mcb') === 'mcb';
+    if (declarado !== null) return { ...icc, poderCorteKa: declarado, linea: null, declarado: true, mcb };
+    if (!mcb || icc.iccKa === null) return { ...icc, poderCorteKa: null, linea: null, declarado: false, mcb };
+    const g = NORMATIVE_PACK.parametros.gamaPoderCorte.find((x) => x.icnKa >= icc.iccKa) || null;
+    return { ...icc, poderCorteKa: g ? g.icnKa : null, linea: g ? g.linea : null, declarado: false, mcb, fueraDeGama: !g };
+  }
+  // Instalación con subestación propia: marcada a mano o potencia > 50 kW.
+  function contextoCortocircuito(draft) {
+    const acom = (draft && draft.acometida) || {};
+    let conSubestacion = acom.subestacion === 'si';
+    if (acom.subestacion !== 'si' && acom.subestacion !== 'no' && draft) {
+      const sistema = SISTEMAS[draft.sistemaId] || SISTEMAS.tri_tt;
+      const r = calcularPotencia(draft.cargas || [], sistema, draft.factores || {});
+      const kw = Math.max(r.suministroSugerido || 0, r.pDemandTotal / 1000);
+      conSubestacion = r.fueraRango || kw > NORMATIVE_PACK.parametros.potenciaSubestacionKw;
+    }
+    return { iccTableroKa: Number(acom.iccKa) > 0 ? Number(acom.iccKa) : null, conSubestacion };
+  }
+  function textoPoderCorte(pc) {
+    if (pc.poderCorteKa === null) return pc.fuente === 'subestacion' ? 'PdC a definir (falta Icc)' : 'PdC a definir';
+    return (pc.linea ? pc.linea + ' ' : '') + fmt(pc.poderCorteKa, 0) + ' kA' + (pc.mcb ? ' (IEC 60898-1)' : ' (IEC 60947-2)');
+  }
+
   // Texto de la aprobación del supuesto 2, o '' si todavía no está aprobado.
   function textoAprobacionSupuesto2() {
     const a = NORMATIVE_PACK.parametros.aprobacionSupuesto2;
@@ -2938,18 +3013,27 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     // Cortocircuito (Cap. V §1.b y Anexo §7). Casi nunca se conoce la corriente
     // de cortocircuito en el tablero, así que la falta de datos no frena la
     // verificación: se informa como "sin datos". Si se cargan, sí se exigen.
-    r.iccKa = Number(p.iccKa) > 0 ? Number(p.iccKa) : null;
-    r.poderCorteKa = Number(p.poderCorteKa) > 0 ? Number(p.poderCorteKa) : null;
+    const pc = poderCorteDe(p);
+    r.iccFuente = pc.fuente;
+    r.iccKa = pc.iccKa;
+    r.poderCorteKa = pc.poderCorteKa;
+    r.poderCorteLinea = pc.linea;
+    r.poderCorteTexto = textoPoderCorte(pc);
+    r.icu60947Ka = Number(p.icu60947Ka) > 0 ? Number(p.icu60947Ka) : null;
     r.i2tPasante = Number(p.i2tPasante) > 0 ? Number(p.i2tPasante) : null;
     r.tiempoDespejeS = Number(p.tiempoDespejeS) > 0 ? Number(p.tiempoDespejeS) : null;
-    r.cumplePoderCorte = (r.iccKa !== null && r.poderCorteKa !== null) ? r.poderCorteKa >= r.iccKa : null;
+    // Con la Icc de plaza no hay verificación numérica, salvo que se declare
+    // un poder de corte menor que ese piso.
+    if (r.iccKa === null || r.poderCorteKa === null) r.cumplePoderCorte = null;
+    else if (pc.fuente === 'plaza') r.cumplePoderCorte = r.poderCorteKa < r.iccKa ? false : null;
+    else r.cumplePoderCorte = r.poderCorteKa >= r.iccKa;
     r.i2tAdmisible = material === 'cobre' ? i2tAdmisibleCobre(seccion, aislacion) : null;
     r.i2tExigido = null;
     if (material === 'cobre') {
       // Un termomagnético limita la corriente: manda la energía que deja pasar
       // (dato del fabricante). Con otro dispositivo, Icc² · t.
       if (r.tipoProteccion === 'mcb') r.i2tExigido = r.i2tPasante;
-      else if (r.iccKa !== null && r.tiempoDespejeS !== null) r.i2tExigido = Math.pow(r.iccKa * 1000, 2) * r.tiempoDespejeS;
+      else if (pc.fuente === 'real' && r.tiempoDespejeS !== null) r.i2tExigido = Math.pow(r.iccKa * 1000, 2) * r.tiempoDespejeS;
     }
     r.cumpleTermicaCorto = r.i2tExigido !== null ? r.i2tExigido <= r.i2tAdmisible : null;
 
@@ -2962,14 +3046,29 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     if (!r.cumpleCaida) r.causas.push('Caída de tensión superior al límite: ' + fmt(r.dUPctTotal) + ' % desde el medidor' +
       (caidaPrevia > 0 ? ' (' + fmt(caidaPrevia) + ' % antes del circuito + ' + fmt(r.dUPct) + ' % del circuito)' : '') +
       ' contra un máximo de ' + fmt(caidaMax) + ' %.');
-    if (r.cumplePoderCorte === false) r.causas.push('El poder de corte de la protección (' + fmt(r.poderCorteKa) + ' kA) es inferior a la corriente de cortocircuito prevista (' + fmt(r.iccKa) + ' kA).');
+    if (r.cumplePoderCorte === false) r.causas.push('El poder de corte de la protección (' + fmt(r.poderCorteKa) + ' kA) es inferior a la corriente de cortocircuito ' +
+      (pc.fuente === 'plaza' ? 'de plaza' : 'prevista') + ' (' + fmt(r.iccKa) + ' kA).');
+    if (pc.fueraDeGama) r.causas.push('La corriente de cortocircuito (' + fmt(r.iccKa) + ' kA) supera el mayor escalón de la gama de termomagnéticos (' +
+      fmt(NORMATIVE_PACK.parametros.gamaPoderCorte.slice(-1)[0].icnKa, 0) + ' kA): hace falta una protección de mayor poder de corte o filiación con la de cabecera.');
+    if (pc.fuente === 'subestacion') r.pendientes.push('Instalación con subestación propia (más de ' + NORMATIVE_PACK.parametros.potenciaSubestacionKw +
+      ' kW): falta la corriente de cortocircuito en el tablero. No se aplica el valor de plaza: tomarla de la Tabla A del Anexo para el transformador real, sin atenuar por cable, y elegir el escalón de la gama que la cubra.');
     r.factorReferencia = factorDeReferencia(p);
     if (r.factorReferencia) {
       const aprobado = textoAprobacionSupuesto2();
       r.notas.push('Factor de agrupamiento ' + fmt(r.fa) + ': valor de referencia (' + r.factorReferencia + '), ' +
         (aprobado ? 'criterio ' + aprobado + ' (supuesto 2).' : 'pendiente de confirmación por electricista matriculado (supuesto 2).'));
     }
-    if (r.cumplePoderCorte === null) r.notas.push('Poder de corte sin verificar: falta la corriente de cortocircuito prevista o el poder de corte de la protección.');
+    if (r.poderCorteKa === null && !pc.mcb && pc.fuente !== 'subestacion') {
+      r.notas.push('Poder de corte sin verificar: falta el Icu (IEC 60947-2) del dispositivo' +
+        (pc.fuente === 'plaza' ? '; la Icc de plaza es ' + fmt(r.iccKa, 0) + ' kA.' : '.'));
+    } else if (pc.fuente === 'plaza' && r.cumplePoderCorte !== false) {
+      r.notas.push('Poder de corte de plaza: se cotiza ' + r.poderCorteTexto + ' con la Icc de plaza de ' + fmt(r.iccKa, 0) +
+        ' kA. El cortocircuito no está verificado contra una Icc real: cargar la informada por UTE o medida.');
+    } else if (pc.fuente === 'real' && !pc.declarado && r.poderCorteLinea) {
+      r.notas.push('Se cotiza ' + r.poderCorteTexto + ', el primer escalón de la gama que cubre la Icc de ' + fmt(r.iccKa) + ' kA.');
+    } else if (pc.fuente === 'real' && r.poderCorteKa === null && !pc.fueraDeGama) {
+      r.notas.push('Poder de corte sin verificar: falta el Icu (IEC 60947-2) del dispositivo.');
+    }
     if (material === 'aluminio') r.notas.push('La verificación térmica en cortocircuito del aluminio requiere un cálculo específico: UTE advierte una reducción del tiempo admisible.');
     else if (r.cumpleTermicaCorto === false) r.causas.push('El conductor no soporta la energía del cortocircuito: ' + fmt(r.i2tExigido / 1000, 0) + ' kA²s contra ' + fmt(r.i2tAdmisible / 1000, 0) + ' kA²s admisibles.');
     else if (r.cumpleTermicaCorto === null) r.notas.push(r.tipoProteccion === 'mcb'
@@ -2995,8 +3094,10 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
 
   // Todo lo que el motor necesita de un circuito guardado. Un solo lugar, así
   // la pantalla, la planilla y el PDF calculan exactamente lo mismo.
-  function datosCircuito(c, caidaPrevia) {
+  function datosCircuito(c, caidaPrevia, ctx) {
     return {
+      iccTableroKa: ctx ? ctx.iccTableroKa : null, conSubestacion: ctx ? ctx.conSubestacion : false,
+      icu60947Ka: c.icu60947Ka,
       ib: c.ib, v: c.v, fases: c.fases, l: c.l, material: c.material, metodo: c.metodo, aislacion: c.aislacion,
       tempAmb: c.tempAmb, agrupados: c.agrupados, disposicion: c.disposicion, montaje: c.montaje, separados2De: c.separados2De, cosPhi: c.cosPhi,
       caidaMax: c.caidaMax, caidaPrevia, uso: c.uso || 'fuerza', expuestoSol: c.expuestoSol,
@@ -3086,7 +3187,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     // En Uruguay no suelen conseguirse diferenciales de menos de 25A: si la térmica general
     // da 16 o 20A, el diferencial general igual se sugiere en 25A.
     const diferencialIn = Math.max(termicaIn, 25);
-    return { ...comun, termicaIn, diferencialIn, coordina: true };
+    const ctx = contextoCortocircuito(draft);
+    const poderCorte = poderCorteDe({ iccTableroKa: ctx.iccTableroKa, conSubestacion: ctx.conSubestacion, tipoProteccion: 'mcb' });
+    return { ...comun, termicaIn, diferencialIn, coordina: true, poderCorte };
   }
 
   function importarCargasComoCircuitos(cargas, sistema) {
@@ -3325,6 +3428,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   function generarMateriales(circuitos, draft) {
     const precios = DB.settings.precios;
     const caidaPrevia = caidaPreviaDe(draft);
+    const ctxCorto = contextoCortocircuito(draft);
     const mapa = {};
     function add(nombre, unidad, cantidad, precioUnit) {
       const key = nombre;
@@ -3398,7 +3502,12 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       }
       const tipoTermica = { 1: 'unipolar', 2: 'bipolar', 3: 'tripolar', 4: 'tetrapolar' }[polosDe(c)];
       if ((c.tipoProteccion || 'mcb') === 'mcb') {
-        add('Térmica ' + tipoTermica + ' ' + calc.breaker + 'A curva ' + calc.curva, 'un.', 1, precioTermica(tipoTermica, calc.breaker, precios));
+        // El poder de corte va en el nombre: un iC60H o iC60L no cuesta lo
+        // mismo que el N de lista, así que esos quedan sin precio para cargar.
+        const pc = poderCorteDe({ ...datosCircuito(c, caidaPrevia, ctxCorto), inProteccion: calc.breaker });
+        const base = pc.poderCorteKa === null || pc.poderCorteKa <= NORMATIVE_PACK.parametros.iccPlazaKa;
+        add('Térmica ' + tipoTermica + ' ' + calc.breaker + 'A curva ' + calc.curva + ' — ' + textoPoderCorte(pc), 'un.', 1,
+            base && pc.poderCorteKa !== null ? precioTermica(tipoTermica, calc.breaker, precios) : 0);
       } else {
         add('Interruptor ' + tipoTermica + ' ' + calc.breaker + 'A (caja moldeada u otro) — elegir modelo', 'un.', 1, 0);
       }
@@ -4959,12 +5068,12 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   function textoTipoDiferencial(tipo) { return tipo ? 'tipo ' + tipo : 'tipo a definir'; }
   function proteccionGeneralHtml(pg) {
     if (pg.termicaIn === null) return '<div class="alert-error">' + escapeHtml(pg.motivo) + '</div>';
-    return statBox('Térmica general', pg.termicaIn + 'A · ' + pg.termicaPolos + 'p · curva ' + pg.termicaCurva, true) +
+    return statBox('Térmica general', pg.termicaIn + 'A · ' + pg.termicaPolos + 'p · curva ' + pg.termicaCurva + (pg.poderCorte ? ' · ' + textoPoderCorte(pg.poderCorte) : ''), true) +
       statBox('Diferencial general', pg.diferencialIn + 'A · ' + pg.diferencialSensibilidad + ' mA · ' + textoTipoDiferencial(pg.diferencialTipo), true);
   }
   function proteccionGeneralLightHtml(pg) {
     if (pg.termicaIn === null) return '<div class="alert-error">' + escapeHtml(pg.motivo) + '</div>';
-    return '<div class="light-stat-row"><span class="lbl">Térmica general</span><span class="val strong">' + pg.termicaIn + 'A · ' + pg.termicaPolos + 'p · curva ' + pg.termicaCurva + '</span></div>' +
+    return '<div class="light-stat-row"><span class="lbl">Térmica general</span><span class="val strong">' + pg.termicaIn + 'A · ' + pg.termicaPolos + 'p · curva ' + pg.termicaCurva + (pg.poderCorte ? ' · ' + textoPoderCorte(pg.poderCorte) : '') + '</span></div>' +
       '<div class="light-stat-row"><span class="lbl">Diferencial general</span><span class="val strong">' + pg.diferencialIn + 'A · ' + textoTipoDiferencial(pg.diferencialTipo) + '</span></div>';
   }
 
@@ -4973,6 +5082,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     if (!draft.acometida) draft.acometida = { ...ACOMETIDA_DEFECTO };
     const a = calcularAcometida(draft);
     $('#f-acom-l').value = draft.acometida.l;
+    $('#f-acom-icc').value = Number(draft.acometida.iccKa) > 0 ? draft.acometida.iccKa : '';
+    $('#f-acom-subestacion').value = draft.acometida.subestacion || 'auto';
     const sel = $('#f-acom-seccion');
     const secciones = tablaAmpacidad('conducto', 'cobre', 'pvc').map((x) => x.s);
     sel.innerHTML = '<option value="">La que calcula la app' + (a.seccion ? ' (' + fmt(a.seccion, a.seccion < 10 ? 1 : 0).replace(/,0$/, '') + ' mm²)' : '') + '</option>' +
@@ -4987,6 +5098,15 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         (a.termicaIn ? a.termicaIn + ' A (Ib ' + fmt(a.ibDiseno) + ' ≤ In ≤ Iz ' + fmt(a.iz) + ')' : 'ninguna coordina: subí la sección') + '</span></div>' +
       '<div class="light-stat-row"><span class="lbl">Caída del alimentador</span><span class="val strong" style="color:' + (a.dUPct > limite ? 'var(--error)' : 'inherit') + '">' +
         fmt(a.dU) + ' V · ' + fmt(a.dUPct) + ' %</span></div>' +
+      (() => {
+        const ctx = contextoCortocircuito(draft);
+        const pc = poderCorteDe({ iccTableroKa: ctx.iccTableroKa, conSubestacion: ctx.conSubestacion, tipoProteccion: 'mcb' });
+        const txt = pc.fuente === 'real' ? fmt(pc.iccKa) + ' kA informada → ' + textoPoderCorte(pc)
+          : pc.fuente === 'plaza' ? fmt(pc.iccKa, 0) + ' kA de plaza → ' + textoPoderCorte(pc) + ', sin verificar'
+          : 'subestación propia: cargá la Icc (Anexo Tabla A)';
+        return '<div class="light-stat-row"><span class="lbl">Cortocircuito en el tablero</span><span class="val strong" style="color:' +
+          (pc.fuente === 'subestacion' || pc.fueraDeGama ? 'var(--error)' : 'inherit') + '">' + escapeHtml(txt) + '</span></div>';
+      })() +
       '<div class="light-stat-row"><span class="lbl">Margen que queda para los circuitos</span><span class="val">' +
         fmt(Math.max(0, 3 - a.dUPct)) + ' % en iluminación · ' + fmt(Math.max(0, 5 - a.dUPct)) + ' % en el resto</span></div>';
   }
@@ -4996,12 +5116,13 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   const circuitosAbiertos = new Set();
   function tieneAvanzados(c) {
     return Boolean(c.expuestoSol || c.inProteccion || (c.tipoProteccion && c.tipoProteccion !== 'mcb') ||
-      c.iccKa || c.poderCorteKa || c.i2tPasante || c.tiempoDespejeS);
+      c.iccKa || c.poderCorteKa || c.icu60947Ka || c.i2tPasante || c.tiempoDespejeS);
   }
 
   function renderCircuitosList() {
     renderAcometida();
     const caidaPrevia = caidaPreviaDe(draft);
+    const ctxCorto = contextoCortocircuito(draft);
     const wrap = $('#circuitos-list');
     wrap.innerHTML = '';
     if (draft.circuitos.length === 0) {
@@ -5009,7 +5130,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     }
     draft.circuitos.forEach((c) => {
       const calc = calcularCircuito(c, caidaPrevia);
-      const comp = calc.apto ? comprobarCircuito(datosCircuito(c, caidaPrevia)) : null;
+      const comp = calc.apto ? comprobarCircuito(datosCircuito(c, caidaPrevia, ctxCorto)) : null;
       const card = el('div', { class: 'card card-pad item-card', style: 'position:relative' });
       card.innerHTML =
         '<button class="remove-btn" type="button">' + icon('ic-trash') + '</button>' +
@@ -5065,8 +5186,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         ((c.tipoProteccion || 'mcb') === 'otro'
           ? '<div class="field"><label>I₂ del fabricante (A)</label><input class="input" type="number" step="0.1" min="0" data-f="i2" value="' + (Number(c.i2) || '') + '"></div>'
           : '') +
-        '<div class="field"><label>Icc prevista (kA)</label><input class="input" type="number" step="0.1" min="0" data-f="iccKa" value="' + (Number(c.iccKa) || '') + '"></div>' +
-        '<div class="field"><label>Poder de corte (kA)</label><input class="input" type="number" step="0.5" min="0" data-f="poderCorteKa" value="' + (Number(c.poderCorteKa) || '') + '"></div>' +
+        '<div class="field"><label>Icc en el circuito (kA)</label><input class="input" type="number" step="0.1" min="0" data-f="iccKa" placeholder="La del tablero" value="' + (Number(c.iccKa) || '') + '"></div>' +
+        ((c.tipoProteccion || 'mcb') === 'mcb'
+          ? '<div class="field"><label>Icn IEC 60898-1 (kA)</label><input class="input" type="number" step="0.5" min="0" data-f="poderCorteKa" placeholder="Según la gama" value="' + (Number(c.poderCorteKa) || '') + '"></div>' +
+            '<div class="field"><label>Icu IEC 60947-2 (kA, sólo ficha)</label><input class="input" type="number" step="0.5" min="0" data-f="icu60947Ka" value="' + (Number(c.icu60947Ka) || '') + '"></div>'
+          : '<div class="field"><label>Icu IEC 60947-2 (kA)</label><input class="input" type="number" step="0.5" min="0" data-f="poderCorteKa" value="' + (Number(c.poderCorteKa) || '') + '"></div>') +
         ((c.tipoProteccion || 'mcb') === 'mcb'
           ? '<div class="field"><label>Energía pasante I²t (A²s)</label><input class="input" type="number" step="100" min="0" data-f="i2tPasante" value="' + (Number(c.i2tPasante) || '') + '"></div>'
           : '<div class="field"><label>Tiempo de despeje (s)</label><input class="input" type="number" step="0.01" min="0" data-f="tiempoDespejeS" value="' + (Number(c.tiempoDespejeS) || '') + '"></div>') +
@@ -5076,7 +5200,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
             statBox('Sección', calc.seccionAdoptada + ' mm²', true) + statBox('Iz corregida', fmt(calc.iz) + ' A') +
             statBox('Caída del circuito', fmt(calc.dUPct) + ' %') +
             statBox('Caída desde el medidor', fmt(calc.dUPctTotal) + ' %', true) +
-            statBox('Protección', calc.breaker + ' A', true) + statBox('Curva sugerida', calc.curva) +
+            statBox('Protección', calc.breaker + ' A' + (comp && comp.poderCorteKa !== null ? ' · ' + fmt(comp.poderCorteKa, 0) + ' kA' + (comp.iccFuente === 'plaza' ? ' (plaza)' : '') : ''), true) + statBox('Curva sugerida', calc.curva) +
             statBox('Comprobación', comp.estado === 'cumple' ? 'Verificado' : (comp.estado === 'pendiente' ? 'Pendiente' : 'No cumple')) + '</div>' +
             (comp.causas.length || comp.pendientes.length
               ? '<ul style="margin:10px 0 0;padding-left:18px;font-size:0.8rem;color:var(--error)">' +
@@ -5095,7 +5219,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
             f === 'disposicion' || f === 'montaje' || f === 'tipoProteccion';
           if (f === 'expuestoSol' || f === 'separados2De') c[f] = input.value === '1';
           // vacío = que decida la app
-          else if (f === 'inProteccion' || f === 'i2' || f === 'iccKa' || f === 'poderCorteKa' || f === 'i2tPasante' || f === 'tiempoDespejeS') {
+          else if (f === 'inProteccion' || f === 'i2' || f === 'iccKa' || f === 'poderCorteKa' || f === 'icu60947Ka' || f === 'i2tPasante' || f === 'tiempoDespejeS') {
             c[f] = Number(input.value) > 0 ? Number(input.value) : null;
           } else c[f] = esTexto ? input.value : Number(input.value);
           // Cada uso trae su propia caída máxima admisible: iluminación admite
@@ -5283,8 +5407,10 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
           : 'Circuito ' + fmt(c.dUPct) + ' %') + ' <= ' + fmt(c.caidaMax) + ' %',
         'UTE RBT Cap. II - Anexo §8 · K = ' + fmt(c.k, 1) + ' (servicio)') +
       filaComprobacion('Poder de corte', c.cumplePoderCorte,
-        (c.poderCorteKa === null ? '—' : fmt(c.poderCorteKa) + ' kA') + ' >= Icc ' + (c.iccKa === null ? '—' : fmt(c.iccKa) + ' kA'),
-        'UTE RBT Cap. V §1.b') +
+        c.poderCorteTexto + ' >= Icc ' + (c.iccKa === null ? '—' : fmt(c.iccKa) + ' kA') +
+          { real: ' (informada)', plaza: ' (de plaza, no verificada)', subestacion: ' (falta: subestación propia)' }[c.iccFuente] +
+          (c.icu60947Ka !== null ? ' · Icu IEC 60947-2 ' + fmt(c.icu60947Ka) + ' kA, sólo informativo' : ''),
+        'UTE RBT Cap. V §1.b · Anexo Tabla A') +
       filaComprobacion('Cortocircuito térmico', c.cumpleTermicaCorto,
         c.i2tExigido === null
           ? 'Admisible ' + (c.i2tAdmisible === null ? '—' : fmt(c.i2tAdmisible / 1000, 0) + ' kA²s')
@@ -5358,6 +5484,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       i2: Number($('#cond-i2').value) || null,
       iccKa: Number($('#cond-icc').value) || null,
       poderCorteKa: Number($('#cond-podercorte').value) || null,
+      icu60947Ka: Number($('#cond-icu').value) || null,
+      conSubestacion: $('#cond-subestacion').value === 'si',
       i2tPasante: Number($('#cond-i2t').value) || null,
       tiempoDespejeS: Number($('#cond-tiempo').value) || null,
     };
@@ -5365,6 +5493,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     $('#cond-i2-wrap').hidden = esMcb;
     $('#cond-i2t-wrap').hidden = !esMcb;
     $('#cond-tiempo-wrap').hidden = esMcb;
+    $('#cond-icu-wrap').hidden = !esMcb;
+    $('#cond-podercorte-label').textContent = esMcb ? 'Icn IEC 60898-1 (kA)' : 'Icu IEC 60947-2 (kA)';
     // montaje y separación cuentan al aire y en bandeja; los caños, enterrado
     const alAire = pideMontaje(datos.metodo);
     $('#cond-montaje-wrap').hidden = !alAire;
@@ -5999,6 +6129,16 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       draft.acometida.l = Number($('#f-acom-l').value) || 0;
       renderCircuitosList();
     });
+    $('#f-acom-icc').addEventListener('change', () => {
+      if (!draft.acometida) draft.acometida = { ...ACOMETIDA_DEFECTO };
+      draft.acometida.iccKa = Number($('#f-acom-icc').value) > 0 ? Number($('#f-acom-icc').value) : null;
+      renderCircuitosList();
+    });
+    $('#f-acom-subestacion').addEventListener('change', () => {
+      if (!draft.acometida) draft.acometida = { ...ACOMETIDA_DEFECTO };
+      draft.acometida.subestacion = $('#f-acom-subestacion').value;
+      renderCircuitosList();
+    });
     $('#f-acom-seccion').addEventListener('change', () => {
       if (!draft.acometida) draft.acometida = { ...ACOMETIDA_DEFECTO };
       draft.acometida.seccion = Number($('#f-acom-seccion').value) || null;
@@ -6062,7 +6202,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     $('#cond-montaje').addEventListener('change', calcularConductorForm);
     $('#cond-separados').addEventListener('change', calcularConductorForm);
     ['#cond-sol', '#cond-prot-tipo'].forEach((sel) => $(sel).addEventListener('change', calcularConductorForm));
-    ['#cond-caida-arriba', '#cond-i2', '#cond-icc', '#cond-podercorte', '#cond-i2t', '#cond-tiempo'].forEach((sel) => {
+    $('#cond-subestacion').addEventListener('change', calcularConductorForm);
+    ['#cond-caida-arriba', '#cond-i2', '#cond-icc', '#cond-podercorte', '#cond-icu', '#cond-i2t', '#cond-tiempo'].forEach((sel) => {
       $(sel).addEventListener('input', calcularConductorForm);
     });
     $('#cond-uso').addEventListener('change', () => {
@@ -6287,14 +6428,20 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     // que respaldan el cálculo y la norma que los pide.
     if (interno && trabajo && trabajo.circuitos && trabajo.circuitos.length) {
       const previaPdf = caidaPreviaDe(trabajo);
+      const ctxCortoPdf = contextoCortocircuito(trabajo);
       let hayReferencia = false;
+      let hayPlaza = false;
+      let haySubestacion = false;
       const filasComp = trabajo.circuitos.map((c) => {
-        const comp = comprobarCircuito(datosCircuito(c, previaPdf));
+        const comp = comprobarCircuito(datosCircuito(c, previaPdf, ctxCortoPdf));
         if (comp.factorReferencia) hayReferencia = true;
-        return [(c.nombre || 'Circuito') + (comp.factorReferencia ? ' *' : ''),
+        if (comp.iccFuente === 'plaza') hayPlaza = true;
+        if (comp.iccFuente === 'subestacion') haySubestacion = true;
+        return [(c.nombre || 'Circuito') + (comp.factorReferencia ? ' *' : '') + (comp.iccFuente === 'plaza' ? ' **' : ''),
                 comp.seccion ? comp.seccion + ' mm²' : '-',
                 fmt(comp.ib) + ' A',
                 comp.in ? comp.in + ' A' : '-',
+                comp.poderCorteKa !== null ? fmt(comp.poderCorteKa, 0) + ' kA' : '-',
                 fmt(comp.iz) + ' A',
                 fmt(comp.dUPctTotal) + ' %',
                 comp.estado === 'cumple' ? 'Verificado' : (comp.estado === 'pendiente' ? 'Pendiente' : 'No cumple')];
@@ -6306,12 +6453,12 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       doc.autoTable({
         startY: y,
         margin: margenTablas,
-        head: [['Circuito', 'Sección', 'Ib', 'In', 'Iz corr.', 'Caída total', 'Estado']],
+        head: [['Circuito', 'Sección', 'Ib', 'In', 'PdC', 'Iz corr.', 'Caída total', 'Estado']],
         body: pdfFilas(filasComp),
         theme: 'plain',
         styles: { fontSize: 8, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
         headStyles: { textColor: [111, 114, 119], fontStyle: 'bold', fontSize: 7, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
-        columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' } },
+        columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } },
       });
       y = doc.lastAutoTable.finalY + 4;
       doc.setFont('helvetica', 'italic'); doc.setFontSize(7); doc.setTextColor(111, 114, 119);
@@ -6319,13 +6466,19 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         (hayReferencia
           ? '* Factor de agrupamiento con valor de referencia de IEC 60364-5-52 (Tabla B.52.17 al aire y en bandeja, B.52.19 en caños enterrados separados), no del reglamento de UTE: ' + (textoAprobacionSupuesto2() ? 'criterio ' + textoAprobacionSupuesto2() + ' (supuesto 2). ' : 'pendiente de confirmación por electricista matriculado (supuesto 2). ')
           : '') +
+        (hayPlaza
+          ? '** Poder de corte de plaza: la térmica se cotiza con 6 kA (Icn según IEC 60898-1, primer escalón de la gama) porque no se conoce la corriente de cortocircuito del tablero. El cortocircuito de ese circuito no está verificado numéricamente contra una Icc real. '
+          : '') +
+        (haySubestacion
+          ? 'Instalación con subestación propia: falta la corriente de cortocircuito en el tablero (Anexo, Tabla A); no se aplica el valor de plaza y la protección queda a definir. '
+          : '') +
         'Cómo se comprobó cada circuito. Capacidad de conducción: Iz = I de tabla x factor de temperatura (Tabla XIV, escalón superior) x factor de agrupamiento x factor solar (0,90 si está al sol), ' +
         'y se verifica Iz >= Ib (Reglamento de Baja Tensión de UTE, Capítulo II - Anexo, Tablas VI a XIV, §3.3.2 y §5.1; para el agrupamiento se cuentan también el neutro y la tierra, criterio más exigente que el reglamento; al aire y en bandeja, IEC 60364-5-52 Tabla B.52.17 según el montaje, sin reducción si entre circuitos hay más de 2 diámetros exteriores; en caños enterrados separados, Tabla B.52.19 según la distancia, sin reducción a más de 1 m). ' +
         'Coordinación con la protección: Ib <= In <= Iz (UTE, Capítulo V numeral 1.a; formulación explícita en IEC 60364-4-43:2023 §431.4.2, referencia técnica complementaria, ' +
         'que agrega I2 <= 1,45 Iz, cumplida porque en los termomagnéticos IEC 60898-1 es I2 = 1,45 In). ' +
         'Caída de tensión: e = 2LW/(KSV) en monofásico y LW/(KSV) en trifásico, con la conductividad de servicio (Cu/PVC 48,4; Cu/XLPE 45,5; Al/PVC 29,4; Al/XLPE 27,6), ' +
         'sumando la caída del alimentador entre el medidor y el tablero, contra un máximo de 3 % en alumbrado y 5 % en los demás usos (UTE, Capítulo II - Anexo, numeral 8). ' +
-        'Cortocircuito (Capítulo V §1.b y Anexo §7): se verifica sólo cuando se cargan la corriente de cortocircuito prevista, el poder de corte y la energía pasante del termomagnético.'),
+        'Cortocircuito (Capítulo V §1.b, Anexo §7 y Tabla A): el poder de corte que se compara es el Icn de la IEC 60898-1 en termomagnéticos (el Icu de la IEC 60947-2 no se usa) y el Icu en otros dispositivos; la verificación térmica requiere la energía pasante del termomagnético.'),
         pageWidth - 2 * margin);
       doc.text(refs, margin, y);
       y += refs.length * 3.2 + 8;
