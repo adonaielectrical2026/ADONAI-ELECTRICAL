@@ -398,16 +398,31 @@
      explícito. No se edita a mano: reemplazar este objeto entero
      es "instalar" un paquete nuevo.
      ============================================================ */
-  const MOTOR_VERSION = '1.2.0';
+  const MOTOR_VERSION = '1.3.0';
   const NORMATIVE_PACK = {
     id: 'rbt-ute-interiores-2001-rev-2026',
     nombre: 'Reglamento de Baja Tensión UTE — instalaciones interiores (Caps. II, IV y V)',
     fuente: 'RBT-UTE: Capítulo II "Instalaciones Interiores o Receptoras" y su Anexo (Tablas I a XVI), Capítulo IV (conductos protectores) y Capítulo V (protecciones), edición N.5 / Junio 2001, ute.com.uy',
-    version: '0.4-separaciones',
+    version: '0.5-parametros-agrupamiento',
     estado: 'pendiente', // 'pendiente' | 'verificado' | 'personalizado'
     vigenteDesde: null,
     actualizadoEl: '2026-09-17',
-    notas: 'Ampacidades (Tablas VI-XIII), temperatura (Tabla XIV, escalón inmediato superior), sol (§3.3.2), caída de tensión con conductividad de servicio (§8) medida desde el medidor, caños por Tablas II y III del Capítulo IV, protección contra sobrecargas y cortocircuitos (Cap. V §1.a y §1.b; Anexo §7). Criterios de la casa, más exigentes que el reglamento: agrupamiento contando neutro y tierra, reducción al aire y en bandeja con factores de referencia IEC, 30 °C y mínimos de 1 / 1,5 mm². Agrupamiento al aire y en bandeja por IEC 60364-5-52 Tabla B.52.17 según el montaje (manojo, capa sobre pared, capa sobre bandeja perforada), sin reducción si entre circuitos hay más de 2·De; enterrados por separación entre caños (Tabla B.52.19: en contacto, 0,25, 0,5 y 1 m; más de 1 m sin reducción). Pendientes de confirmar con electricista matriculado: esos factores IEC, la disposición de referencia de las Tablas VI a IX de UTE y la corrección por terreno del caño enterrado.',
+    // Supuesto 2, pendiente de confirmación. El contraste numérico de las
+    // Tablas VI a IX (llevando la IEC B.52.2 de 30 a 25 °C con 1,06) cae
+    // entre los métodos E y F, que son un circuito al aire separado de la
+    // pared: la interacción con circuitos vecinos queda fuera y por eso se
+    // aplica la B.52.17. Cuando el matriculado lo confirme o lo descarte se
+    // cambia acá, sin tocar el cálculo.
+    parametros: {
+      // Criterio de la casa: al aire libre nunca va un circuito en contacto
+      // con otro, así que ese método no lleva reducción por agrupamiento.
+      aireLibreSeparado: true,
+      aplicarAgrupamientoAire: true,
+      fuenteFactoresAire: 'IEC-B.52.17',
+      aplicarAgrupamientoEnterrado: true,
+      fuenteFactoresEnterrado: 'IEC-B.52.19',
+    },
+    notas:'Ampacidades (Tablas VI-XIII), temperatura (Tabla XIV, escalón inmediato superior), sol (§3.3.2), caída de tensión con conductividad de servicio (§8) medida desde el medidor, caños por Tablas II y III del Capítulo IV, protección contra sobrecargas y cortocircuitos (Cap. V §1.a y §1.b; Anexo §7). Criterios de la casa, más exigentes que el reglamento: agrupamiento contando neutro y tierra, reducción al aire y en bandeja con factores de referencia IEC, 30 °C y mínimos de 1 / 1,5 mm². Al aire libre sin reducción por agrupamiento (criterio de la casa: nunca un circuito en contacto con otro). En bandeja, IEC 60364-5-52 Tabla B.52.17 según el montaje (manojo, capa sobre pared, capa sobre bandeja perforada), sin reducción si entre circuitos hay más de 2·De; enterrados por separación entre caños (Tabla B.52.19: en contacto, 0,25, 0,5 y 1 m; más de 1 m sin reducción). Pendientes de confirmar con electricista matriculado: esos factores IEC, la disposición de referencia de las Tablas VI a IX de UTE y la corrección por terreno del caño enterrado.',
   };
   // Referencias que respaldan cada paso del motor. El reglamento que rige en
   // Uruguay es el de UTE: es la referencia principal y es la que manda. La IEC
@@ -519,6 +534,12 @@
     if (!MONTAJE_DEFECTO[metodo]) return null;
     return GRUPO_B5217[montaje] ? montaje : MONTAJE_DEFECTO[metodo];
   }
+  // Montajes donde hay que elegir fila y separación: la bandeja siempre; al
+  // aire libre sólo si la casa no lo da por separado.
+  function pideMontaje(metodo) {
+    if (!MONTAJE_DEFECTO[metodo]) return false;
+    return !(metodo === 'aire' && NORMATIVE_PACK.parametros.aireLibreSeparado);
+  }
   function textoMontaje(metodo, montaje) {
     const m = MONTAJES_AIRE.find((x) => x.id === montajeDe(metodo, montaje));
     return m ? m.label : '';
@@ -570,8 +591,10 @@
   function getGroupFactorUTE(p, nConductores, porCircuito) {
     const metodo = p.metodo;
     const circuitos = p.agrupados;
+    const param = NORMATIVE_PACK.parametros;
+    if (metodo === 'aire' && param.aireLibreSeparado) return 1;
     if (MONTAJE_DEFECTO[metodo]) {
-      if (p.separados2De) return 1;
+      if (p.separados2De || !param.aplicarAgrupamientoAire) return 1;
       return factorPorCircuitos(GRUPO_B5217[montajeDe(metodo, p.montaje)], circuitos);
     }
     if (metodo === 'enterrado') {
@@ -579,10 +602,26 @@
       if (disp !== 'mismo') {
         // cada caño lleva un solo circuito: §5.1 adentro y separación afuera
         const dentro = factorConducto(porCircuito);
-        return disp === 'libres' ? dentro : dentro * factorPorCircuitos(GRUPO_ENTERRADO[disp], circuitos);
+        if (disp === 'libres' || !param.aplicarAgrupamientoEnterrado) return dentro;
+        return dentro * factorPorCircuitos(GRUPO_ENTERRADO[disp], circuitos);
       }
     }
     return factorConducto(nConductores);
+  }
+  // Si el factor de agrupamiento del circuito sale de una tabla IEC de
+  // referencia (y no del §5.1 de UTE), devuelve la tabla; si no, null.
+  function factorDeReferencia(p) {
+    const param = NORMATIVE_PACK.parametros;
+    if ((Number(p.agrupados) || 1) <= 1) return null;
+    if (p.metodo === 'aire' && param.aireLibreSeparado) return null;
+    if (MONTAJE_DEFECTO[p.metodo]) {
+      return p.separados2De || !param.aplicarAgrupamientoAire ? null : 'IEC 60364-5-52 Tabla B.52.17';
+    }
+    if (p.metodo === 'enterrado' && param.aplicarAgrupamientoEnterrado) {
+      const disp = disposicionEnterrado(p.disposicion);
+      return disp === 'mismo' || disp === 'libres' ? null : 'IEC 60364-5-52 Tabla B.52.19';
+    }
+    return null;
   }
   function tablaAmpacidad(categoria, material, aislacion) {
     const cat = TABLAS_UTE[categoria] || TABLAS_UTE.conducto;
@@ -839,6 +878,10 @@
       (caidaPrevia > 0 ? ' (' + fmt(caidaPrevia) + ' % antes del circuito + ' + fmt(r.dUPct) + ' % del circuito)' : '') +
       ' contra un máximo de ' + fmt(caidaMax) + ' %.');
     if (r.cumplePoderCorte === false) r.causas.push('El poder de corte de la protección (' + fmt(r.poderCorteKa) + ' kA) es inferior a la corriente de cortocircuito prevista (' + fmt(r.iccKa) + ' kA).');
+    r.factorReferencia = factorDeReferencia(p);
+    if (r.factorReferencia) {
+      r.notas.push('Factor de agrupamiento ' + fmt(r.fa) + ': valor de referencia (' + r.factorReferencia + '), pendiente de confirmación por electricista matriculado (supuesto 2).');
+    }
     if (r.cumplePoderCorte === null) r.notas.push('Poder de corte sin verificar: falta la corriente de cortocircuito prevista o el poder de corte de la protección.');
     if (material === 'aluminio') r.notas.push('La verificación térmica en cortocircuito del aluminio requiere un cálculo específico: UTE advierte una reducción del tiempo admisible.');
     else if (r.cumpleTermicaCorto === false) r.causas.push('El conductor no soporta la energía del cortocircuito: ' + fmt(r.i2tExigido / 1000, 0) + ' kA²s contra ' + fmt(r.i2tAdmisible / 1000, 0) + ' kA²s admisibles.');
@@ -2890,8 +2933,10 @@
         '<div class="field"><label>Material</label><select class="select" data-f="material"><option value="cobre"' + (c.material === 'cobre' ? ' selected' : '') + '>Cobre</option><option value="aluminio"' + (c.material === 'aluminio' ? ' selected' : '') + '>Aluminio</option></select></div>' +
         '<div class="field"><label>Método</label><select class="select" data-f="metodo">' + Object.keys(METODO_LABEL).map((k) => '<option value="' + k + '"' + (c.metodo === k ? ' selected' : '') + '>' + METODO_LABEL[k] + '</option>').join('') + '</select></div>' +
         '<div class="field"><label>Temp. amb. (°C)</label><input class="input" type="number" data-f="tempAmb" value="' + c.tempAmb + '"></div>' +
-        '<div class="field"><label>' + (c.metodo === 'bandeja' ? 'Circuitos en la bandeja' : 'Circuitos agrupados') + '</label><input class="input" type="number" min="1" data-f="agrupados" value="' + c.agrupados + '"></div>' +
-        (MONTAJE_DEFECTO[c.metodo]
+        (c.metodo === 'aire' && NORMATIVE_PACK.parametros.aireLibreSeparado
+          ? '<div class="field"><label>Agrupamiento</label><div class="hint" style="margin:0">Sin reducción: al aire libre los circuitos van separados, nunca en contacto.</div></div>'
+          : '<div class="field"><label>' + (c.metodo === 'bandeja' ? 'Circuitos en la bandeja' : 'Circuitos agrupados') + '</label><input class="input" type="number" min="1" data-f="agrupados" value="' + c.agrupados + '"></div>') +
+        (pideMontaje(c.metodo)
           ? '<div class="field"><label>Montaje</label><select class="select" data-f="montaje">' +
             MONTAJES_AIRE.map((m) => '<option value="' + m.id + '"' + (montajeDe(c.metodo, c.montaje) === m.id ? ' selected' : '') + '>' + m.label + '</option>').join('') +
             '</select></div>' +
@@ -3234,8 +3279,9 @@
     $('#cond-i2t-wrap').hidden = !esMcb;
     $('#cond-tiempo-wrap').hidden = esMcb;
     // montaje y separación cuentan al aire y en bandeja; los caños, enterrado
-    const alAire = Boolean(MONTAJE_DEFECTO[datos.metodo]);
+    const alAire = pideMontaje(datos.metodo);
     $('#cond-montaje-wrap').hidden = !alAire;
+    $('#cond-aire-nota').hidden = !(datos.metodo === 'aire' && NORMATIVE_PACK.parametros.aireLibreSeparado);
     $('#cond-disposicion-wrap').hidden = datos.metodo !== 'enterrado';
     if (alAire && $('#cond-montaje').dataset.metodo !== datos.metodo) {
       // al cambiar de método se propone el montaje típico de ese método
@@ -4154,9 +4200,11 @@
     // que respaldan el cálculo y la norma que los pide.
     if (interno && trabajo && trabajo.circuitos && trabajo.circuitos.length) {
       const previaPdf = caidaPreviaDe(trabajo);
+      let hayReferencia = false;
       const filasComp = trabajo.circuitos.map((c) => {
         const comp = comprobarCircuito(datosCircuito(c, previaPdf));
-        return [c.nombre || 'Circuito',
+        if (comp.factorReferencia) hayReferencia = true;
+        return [(c.nombre || 'Circuito') + (comp.factorReferencia ? ' *' : ''),
                 comp.seccion ? comp.seccion + ' mm²' : '-',
                 fmt(comp.ib) + ' A',
                 comp.in ? comp.in + ' A' : '-',
@@ -4181,6 +4229,9 @@
       y = doc.lastAutoTable.finalY + 4;
       doc.setFont('helvetica', 'italic'); doc.setFontSize(7); doc.setTextColor(111, 114, 119);
       const refs = doc.splitTextToSize(pdfTexto(
+        (hayReferencia
+          ? '* Factor de agrupamiento con valor de referencia de IEC 60364-5-52 (Tabla B.52.17 al aire y en bandeja, B.52.19 en caños enterrados separados), no del reglamento de UTE: pendiente de confirmación por electricista matriculado (supuesto 2). '
+          : '') +
         'Cómo se comprobó cada circuito. Capacidad de conducción: Iz = I de tabla x factor de temperatura (Tabla XIV, escalón superior) x factor de agrupamiento x factor solar (0,90 si está al sol), ' +
         'y se verifica Iz >= Ib (Reglamento de Baja Tensión de UTE, Capítulo II - Anexo, Tablas VI a XIV, §3.3.2 y §5.1; para el agrupamiento se cuentan también el neutro y la tierra, criterio más exigente que el reglamento; al aire y en bandeja, IEC 60364-5-52 Tabla B.52.17 según el montaje, sin reducción si entre circuitos hay más de 2 diámetros exteriores; en caños enterrados separados, Tabla B.52.19 según la distancia, sin reducción a más de 1 m). ' +
         'Coordinación con la protección: Ib <= In <= Iz (UTE, Capítulo V numeral 1.a; formulación explícita en IEC 60364-4-43:2023 §431.4.2, referencia técnica complementaria, ' +
