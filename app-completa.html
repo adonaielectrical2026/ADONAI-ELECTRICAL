@@ -1053,6 +1053,155 @@ main.view{
   .result-mini .l{ margin:0; order:-1; }
 }
 
+/* ============================================================
+   CONTRASTE MODO OSCURO — 2026-09-17
+   Ajuste global para botones, formularios y controles fuera de Inicio.
+   ============================================================ */
+:root[data-theme="dark"]{
+  color-scheme:dark;
+}
+
+/* Botones principales: en oscuro pasan a superficie clara para destacar
+   sobre el fondo sin perder la identidad monocromática de ADONAI. */
+:root[data-theme="dark"] .btn-primary{
+  background:linear-gradient(135deg,#f7f7f8,#dedfe2);
+  color:#0b0c0e;
+  border-color:#f0f1f2;
+  box-shadow:0 8px 22px rgba(0,0,0,.34);
+}
+:root[data-theme="dark"] .btn-primary:hover{
+  background:linear-gradient(135deg,#ffffff,#e8e9eb);
+  box-shadow:0 10px 26px rgba(0,0,0,.42);
+}
+:root[data-theme="dark"] .btn-primary:focus-visible{
+  outline-color:#f5f5f6;
+}
+:root[data-theme="dark"] .btn-primary:disabled{
+  background:#2b2d31;
+  color:#777a80;
+  border-color:#34363b;
+  opacity:1;
+}
+
+/* Secundarios: un escalón por encima del fondo para que el contorno se lea. */
+:root[data-theme="dark"] .btn-outline{
+  background:#181a1e;
+  color:#f5f5f6;
+  border-color:#44474e;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.025);
+}
+:root[data-theme="dark"] .btn-outline:hover{
+  background:#212328;
+  border-color:#696c73;
+}
+:root[data-theme="dark"] .btn-ghost{
+  color:#c5c7cc;
+}
+:root[data-theme="dark"] .btn-ghost:hover{
+  color:#ffffff;
+  background:#1b1d21;
+}
+
+/* Botones solo icono. */
+:root[data-theme="dark"] .icon-btn{
+  color:#f1f2f3;
+}
+:root[data-theme="dark"] .icon-btn:hover{
+  background:#1d1f23;
+}
+
+/* Formularios generales: algunos conservaban la superficie clara del tema
+   diurno y dejaban texto claro sobre fondo claro. */
+:root[data-theme="dark"] .input,
+:root[data-theme="dark"] .select,
+:root[data-theme="dark"] .textarea{
+  background-color:#17191d;
+  color:#f2f3f4;
+  border-color:#383b41;
+}
+:root[data-theme="dark"] .input::placeholder,
+:root[data-theme="dark"] .textarea::placeholder{
+  color:#8d9096;
+  opacity:1;
+}
+:root[data-theme="dark"] .input:focus,
+:root[data-theme="dark"] .select:focus,
+:root[data-theme="dark"] .textarea:focus{
+  border-color:#85898f;
+  box-shadow:0 0 0 3px rgba(210,212,216,.12);
+}
+
+/* Controles específicos que tenían colores claros fijos. */
+:root[data-theme="dark"] .summary-state-select{
+  background:#24262b;
+  color:#f1f2f3;
+  border:1px solid #3b3e44;
+}
+:root[data-theme="dark"] .summary-circuit-stat{
+  border-left-color:#303238;
+}
+:root[data-theme="dark"] .summary-circuit-chevron{
+  color:#b9bbc0;
+}
+:root[data-theme="dark"] #step-resumen .eyebrow{
+  color:#e7e7e9;
+}
+:root[data-theme="dark"] .budget-main-card .budget-row{
+  border-bottom-color:#303238;
+}
+
+/* Wizard: pasos inactivos legibles y activos claramente destacados. */
+:root[data-theme="dark"] .step .dot{
+  background:#23252a;
+  color:#c9cbd0;
+  border:1px solid #3a3d43;
+}
+:root[data-theme="dark"] .step.current .dot,
+:root[data-theme="dark"] .step.done .dot{
+  background:#f4f5f6;
+  color:#0b0c0e;
+  border-color:#f4f5f6;
+}
+:root[data-theme="dark"] .step-line{
+  background:#34363b;
+}
+
+/* Segmentados: seleccionado claro, no seleccionado suficientemente visible. */
+:root[data-theme="dark"] .segmented{
+  background:#17191d !important;
+  border-color:#363940;
+}
+:root[data-theme="dark"] .segmented button{
+  color:#b6b8bd;
+}
+:root[data-theme="dark"] .segmented button.active{
+  background:#f4f5f6;
+  color:#0b0c0e;
+  box-shadow:0 2px 8px rgba(0,0,0,.25);
+}
+
+/* Navegación inferior: el activo era negro sobre una barra oscura. */
+:root[data-theme="dark"] .nav-item{
+  color:#9fa2a8;
+}
+:root[data-theme="dark"] .nav-item.active{
+  color:#ffffff;
+}
+:root[data-theme="dark"] .nav-item.active::after{
+  background:#ffffff;
+}
+
+/* Chips y pequeños selectores. */
+:root[data-theme="dark"] .chip{
+  background:#181a1e;
+  color:#e8e9eb;
+  border-color:#3b3e44;
+}
+:root[data-theme="dark"] .chip:hover{
+  background:#222429;
+  border-color:#656970;
+}
+
 </style>
   <style>
     :root{ color-scheme:light dark; }
