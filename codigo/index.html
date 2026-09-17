@@ -278,6 +278,26 @@
             </select>
           </div>
         </div>
+        <details class="advanced-panel" id="acom-anexo">
+          <summary>Calcular la Icc con el Anexo <span>Tablas A, B y C del reglamento</span></summary>
+          <div class="advanced-fields">
+            <div class="grid-2">
+              <div class="field"><label>Transformador de UTE</label><select class="select" id="f-acom-kva"></select></div>
+              <div class="field"><label>Tensión de la red</label>
+                <select class="select" id="f-acom-red">
+                  <option value="380">380/400 V trifásica (Tabla C)</option>
+                  <option value="220">220/230 V trifásica (Tabla B)</option>
+                </select>
+              </div>
+              <div class="field"><label>Transformador → medidor (m)</label><input class="input" type="number" min="0" id="f-acom-redl" placeholder="Largo de red y acometida"></div>
+              <div class="field"><label>Sección de la red y acometida</label><select class="select" id="f-acom-redsec"></select></div>
+              <div class="field"><label>Material de la red y acometida</label>
+                <select class="select" id="f-acom-redmat"><option value="aluminio">Aluminio</option><option value="cobre">Cobre</option></select>
+              </div>
+            </div>
+            <p class="advanced-note">Se parte de la Icc en bornes del transformador y se la reduce por el tramo de red hasta el medidor y por el alimentador hasta el tablero. Si cargás la Icc a mano, manda esa.</p>
+          </div>
+        </details>
         <p style="font-size:0.78rem;color:var(--steel);margin:0">La Icc la informa UTE o sale de medirla. Sin ese dato, en un suministro estándar se cotiza con 6 kA de plaza (sin verificar); con subestación propia no hay valor por defecto: se toma de la Tabla A del Anexo.</p>
         <div class="light-stat-grid" id="acom-resultado"></div>
       </div>
