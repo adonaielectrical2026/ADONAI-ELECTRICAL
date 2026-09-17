@@ -403,7 +403,7 @@
     id: 'rbt-ute-interiores-2001-rev-2026',
     nombre: 'Reglamento de Baja Tensión UTE — instalaciones interiores (Caps. II, IV y V)',
     fuente: 'RBT-UTE: Capítulo II "Instalaciones Interiores o Receptoras" y su Anexo (Tablas I a XVI), Capítulo IV (conductos protectores) y Capítulo V (protecciones), edición N.5 / Junio 2001, ute.com.uy',
-    version: '0.5-parametros-agrupamiento',
+    version: '0.6-supuesto-2-aprobado',
     estado: 'pendiente', // 'pendiente' | 'verificado' | 'personalizado'
     vigenteDesde: null,
     actualizadoEl: '2026-09-17',
@@ -421,8 +421,13 @@
       fuenteFactoresAire: 'IEC-B.52.17',
       aplicarAgrupamientoEnterrado: true,
       fuenteFactoresEnterrado: 'IEC-B.52.19',
+      // Aprobación del supuesto 2 (B.52.17 y B.52.19) por el técnico
+      // instalador. En Uruguay no hay matrícula sino categoría UTE; figura en
+      // el listado de técnicos instaladores de UTE, Salto, Categoría C. Con
+      // null, los circuitos que usan esos factores salen como pendientes.
+      aprobacionSupuesto2: { nombre: 'Claudio Rodríguez', categoria: 'C', fecha: '2026-09-17' },
     },
-    notas:'Ampacidades (Tablas VI-XIII), temperatura (Tabla XIV, escalón inmediato superior), sol (§3.3.2), caída de tensión con conductividad de servicio (§8) medida desde el medidor, caños por Tablas II y III del Capítulo IV, protección contra sobrecargas y cortocircuitos (Cap. V §1.a y §1.b; Anexo §7). Criterios de la casa, más exigentes que el reglamento: agrupamiento contando neutro y tierra, reducción al aire y en bandeja con factores de referencia IEC, 30 °C y mínimos de 1 / 1,5 mm². Al aire libre sin reducción por agrupamiento (criterio de la casa: nunca un circuito en contacto con otro). En bandeja, IEC 60364-5-52 Tabla B.52.17 según el montaje (manojo, capa sobre pared, capa sobre bandeja perforada), sin reducción si entre circuitos hay más de 2·De; enterrados por separación entre caños (Tabla B.52.19: en contacto, 0,25, 0,5 y 1 m; más de 1 m sin reducción). Pendientes de confirmar con electricista matriculado: esos factores IEC, la disposición de referencia de las Tablas VI a IX de UTE y la corrección por terreno del caño enterrado.',
+    notas:'Ampacidades (Tablas VI-XIII), temperatura (Tabla XIV, escalón inmediato superior), sol (§3.3.2), caída de tensión con conductividad de servicio (§8) medida desde el medidor, caños por Tablas II y III del Capítulo IV, protección contra sobrecargas y cortocircuitos (Cap. V §1.a y §1.b; Anexo §7). Criterios de la casa, más exigentes que el reglamento: agrupamiento contando neutro y tierra, reducción al aire y en bandeja con factores de referencia IEC, 30 °C y mínimos de 1 / 1,5 mm². Al aire libre sin reducción por agrupamiento (criterio de la casa: nunca un circuito en contacto con otro). En bandeja, IEC 60364-5-52 Tabla B.52.17 según el montaje (manojo, capa sobre pared, capa sobre bandeja perforada), sin reducción si entre circuitos hay más de 2·De; enterrados por separación entre caños (Tabla B.52.19: en contacto, 0,25, 0,5 y 1 m; más de 1 m sin reducción). Factores IEC de agrupamiento (B.52.17 y B.52.19): Aprobado el 17/09/2026 por Claudio Rodríguez, técnico instalador UTE Categoría C (supuesto 2), con respaldo en el contraste de las Tablas VI a IX con los métodos E y F de la IEC. Pendiente: la corrección por terreno del caño enterrado.',
   };
   // Referencias que respaldan cada paso del motor. El reglamento que rige en
   // Uruguay es el de UTE: es la referencia principal y es la que manda. La IEC
@@ -452,9 +457,9 @@
     { rango: 'complementaria', tema: 'Energía pasante en cortocircuito',
       cita: 'Un termomagnético limita la corriente de cortocircuito: para verificar térmicamente el conductor se compara la energía que deja pasar (I²t, dato del fabricante) con la que el conductor admite, (k·S)². Calcular con la corriente plena durante todo el tiempo de despeje sobrestima esa energía y rechaza circuitos que cumplen.' },
     { rango: 'complementaria', tema: 'Agrupamiento al aire y en bandeja',
-      cita: 'El Anexo de UTE sólo da factores de agrupamiento para conductos (§5.1). Al aire y en bandeja se usa IEC 60364-5-52, Tabla B.52.17, por cantidad de circuitos y con una fila por montaje: en manojo o haz (1,00 · 0,80 · 0,70 · 0,65 · 0,60 · 0,57 · 0,54 · 0,52 · 0,50; 12 circuitos 0,45, 16 → 0,41, 20 → 0,38), capa única sobre pared, piso o bandeja no perforada (1,00 · 0,85 · 0,79 · 0,75 · 0,73 · 0,72 · 0,72 · 0,71 · 0,70) y capa única sobre bandeja perforada (1,00 · 0,88 · 0,82 · 0,77 · 0,75 · 0,73 · 0,73 · 0,72 · 0,72). Con una cantidad intermedia se toma la columna inmediata superior. El criterio de separación es un umbral (IEC 60364-5-52 y REBT ITC-BT-19): si la distancia entre las superficies de un circuito y el vecino supera 2·De no se corrige (factor 1,00); en contacto o más cerca, el factor de la fila. Se mide entre superficies y entre circuitos. Por defecto se toma en contacto. Pendiente de confirmar con electricista matriculado, junto con la disposición de referencia de las Tablas VI a IX de UTE: si ya suponen conductores separados, aplicar encima el factor de contacto es un criterio conservador.' },
+      cita: 'El Anexo de UTE sólo da factores de agrupamiento para conductos (§5.1). Al aire y en bandeja se usa IEC 60364-5-52, Tabla B.52.17, por cantidad de circuitos y con una fila por montaje: en manojo o haz (1,00 · 0,80 · 0,70 · 0,65 · 0,60 · 0,57 · 0,54 · 0,52 · 0,50; 12 circuitos 0,45, 16 → 0,41, 20 → 0,38), capa única sobre pared, piso o bandeja no perforada (1,00 · 0,85 · 0,79 · 0,75 · 0,73 · 0,72 · 0,72 · 0,71 · 0,70) y capa única sobre bandeja perforada (1,00 · 0,88 · 0,82 · 0,77 · 0,75 · 0,73 · 0,73 · 0,72 · 0,72). Con una cantidad intermedia se toma la columna inmediata superior. El criterio de separación es un umbral (IEC 60364-5-52 y REBT ITC-BT-19): si la distancia entre las superficies de un circuito y el vecino supera 2·De no se corrige (factor 1,00); en contacto o más cerca, el factor de la fila. Se mide entre superficies y entre circuitos. Por defecto se toma en contacto. Las Tablas VI a IX, llevadas a la misma temperatura, caen entre los métodos E y F de la IEC (un circuito al aire), por lo que aplicarles la B.52.17 es el uso previsto. Aprobado el 17/09/2026 por Claudio Rodríguez, técnico instalador UTE Categoría C (supuesto 2).' },
     { rango: 'complementaria', tema: 'Agrupamiento de caños enterrados',
-      cita: 'Si los circuitos enterrados comparten caño, rige el §5.1 del Anexo de UTE. Si cada circuito va en su propio caño, se aplica además el factor por separación entre caños de IEC 60364-5-52, Tabla B.52.19 (en contacto, 0,25 m, 0,5 m y 1 m); a partir de 1 m la influencia térmica mutua es despreciable y el factor se toma 1. Pendiente de confirmar con electricista matriculado.' },
+      cita: 'Si los circuitos enterrados comparten caño, rige el §5.1 del Anexo de UTE. Si cada circuito va en su propio caño, se aplica además el factor por separación entre caños de IEC 60364-5-52, Tabla B.52.19 (en contacto, 0,25 m, 0,5 m y 1 m); a partir de 1 m la influencia térmica mutua es despreciable y el factor se toma 1. Aprobado el 17/09/2026 por Claudio Rodríguez, técnico instalador UTE Categoría C (supuesto 2).' },
     { rango: 'complementaria', tema: 'Separación entre potencia y datos',
       cita: 'EN 50174-2 fija distancias entre cables de potencia y de datos (del orden de 30 a 200 mm según la potencia y si hay tabique metálico). Es un criterio de compatibilidad electromagnética, no térmico: no modifica la corriente admisible ni el factor de agrupamiento.' },
     { rango: 'complementaria', tema: 'Sistemas de cableado',
@@ -610,6 +615,13 @@
   }
   // Si el factor de agrupamiento del circuito sale de una tabla IEC de
   // referencia (y no del §5.1 de UTE), devuelve la tabla; si no, null.
+  // Texto de la aprobación del supuesto 2, o '' si todavía no está aprobado.
+  function textoAprobacionSupuesto2() {
+    const a = NORMATIVE_PACK.parametros.aprobacionSupuesto2;
+    if (!a || !a.nombre) return '';
+    const fecha = a.fecha ? a.fecha.split('-').reverse().join('/') : '';
+    return 'aprobado por ' + a.nombre + (a.categoria ? ' (técnico instalador UTE Cat. ' + a.categoria + ')' : '') + (fecha ? ' el ' + fecha : '');
+  }
   function factorDeReferencia(p) {
     const param = NORMATIVE_PACK.parametros;
     if ((Number(p.agrupados) || 1) <= 1) return null;
@@ -880,7 +892,9 @@
     if (r.cumplePoderCorte === false) r.causas.push('El poder de corte de la protección (' + fmt(r.poderCorteKa) + ' kA) es inferior a la corriente de cortocircuito prevista (' + fmt(r.iccKa) + ' kA).');
     r.factorReferencia = factorDeReferencia(p);
     if (r.factorReferencia) {
-      r.notas.push('Factor de agrupamiento ' + fmt(r.fa) + ': valor de referencia (' + r.factorReferencia + '), pendiente de confirmación por electricista matriculado (supuesto 2).');
+      const aprobado = textoAprobacionSupuesto2();
+      r.notas.push('Factor de agrupamiento ' + fmt(r.fa) + ': valor de referencia (' + r.factorReferencia + '), ' +
+        (aprobado ? 'criterio ' + aprobado + ' (supuesto 2).' : 'pendiente de confirmación por electricista matriculado (supuesto 2).'));
     }
     if (r.cumplePoderCorte === null) r.notas.push('Poder de corte sin verificar: falta la corriente de cortocircuito prevista o el poder de corte de la protección.');
     if (material === 'aluminio') r.notas.push('La verificación térmica en cortocircuito del aluminio requiere un cálculo específico: UTE advierte una reducción del tiempo admisible.');
@@ -4230,7 +4244,7 @@
       doc.setFont('helvetica', 'italic'); doc.setFontSize(7); doc.setTextColor(111, 114, 119);
       const refs = doc.splitTextToSize(pdfTexto(
         (hayReferencia
-          ? '* Factor de agrupamiento con valor de referencia de IEC 60364-5-52 (Tabla B.52.17 al aire y en bandeja, B.52.19 en caños enterrados separados), no del reglamento de UTE: pendiente de confirmación por electricista matriculado (supuesto 2). '
+          ? '* Factor de agrupamiento con valor de referencia de IEC 60364-5-52 (Tabla B.52.17 al aire y en bandeja, B.52.19 en caños enterrados separados), no del reglamento de UTE: ' + (textoAprobacionSupuesto2() ? 'criterio ' + textoAprobacionSupuesto2() + ' (supuesto 2). ' : 'pendiente de confirmación por electricista matriculado (supuesto 2). ')
           : '') +
         'Cómo se comprobó cada circuito. Capacidad de conducción: Iz = I de tabla x factor de temperatura (Tabla XIV, escalón superior) x factor de agrupamiento x factor solar (0,90 si está al sol), ' +
         'y se verifica Iz >= Ib (Reglamento de Baja Tensión de UTE, Capítulo II - Anexo, Tablas VI a XIV, §3.3.2 y §5.1; para el agrupamiento se cuentan también el neutro y la tierra, criterio más exigente que el reglamento; al aire y en bandeja, IEC 60364-5-52 Tabla B.52.17 según el montaje, sin reducción si entre circuitos hay más de 2 diámetros exteriores; en caños enterrados separados, Tabla B.52.19 según la distancia, sin reducción a más de 1 m). ' +
