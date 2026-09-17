@@ -60,6 +60,8 @@
     { cat: 'cargaFija', grupo: 'Climatización', nombre: 'Aire acondicionado 12000 BTU', w: 1650, cosPhi: 0.9, fuente: 'James' },
     { cat: 'cargaFija', grupo: 'Climatización', nombre: 'Aire acondicionado 18000 BTU', w: 2500, cosPhi: 0.9 },
     { cat: 'cargaFija', grupo: 'Climatización', nombre: 'Aire acondicionado 24000 BTU', w: 3300, cosPhi: 0.9 },
+    { cat: 'cargaFija', grupo: 'Climatización', nombre: 'Aire acondicionado inverter 12000 BTU', w: 1300, cosPhi: 0.95, equipo: 'variador_mono' },
+    { cat: 'cargaFija', grupo: 'Climatización', nombre: 'Aire acondicionado inverter 18000 BTU', w: 1900, cosPhi: 0.95, equipo: 'variador_mono' },
     { cat: 'cargaFija', grupo: 'Climatización', nombre: 'Estufa eléctrica / caloventor', w: 2000, cosPhi: 1 },
     { cat: 'cargaFija', grupo: 'Climatización', nombre: 'Ventilador de techo', w: 70, cosPhi: 0.8 },
 
@@ -95,8 +97,9 @@
     { cat: 'cargaFija', grupo: 'Otros', nombre: 'Bomba de agua 1 HP', w: 1100, cosPhi: 0.8 , uso: 'motor'},
     { cat: 'cargaFija', grupo: 'Otros', nombre: 'Bomba de piscina', w: 750, cosPhi: 0.8 , uso: 'motor'},
     { cat: 'cargaFija', grupo: 'Otros', nombre: 'Portón eléctrico', w: 400, cosPhi: 0.8 },
-    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Cargador de auto eléctrico', w: 7400, cosPhi: 1 },
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Cargador de auto eléctrico', w: 7400, cosPhi: 1, equipo: 'cargador_ve' },
     { cat: 'cargaFija', grupo: 'Otros', nombre: 'Motor / otro', w: 750, cosPhi: 0.8 , uso: 'motor'},
+    { cat: 'cargaFija', grupo: 'Otros', nombre: 'Inversor fotovoltaico', w: 3000, cosPhi: 1, equipo: 'fotovoltaica' },
   ];
   // Uso del circuito. Define la sección mínima reglamentaria, la curva de la
   // térmica y la caída de tensión admisible, así que tiene que poder elegirse:
@@ -398,12 +401,12 @@
      explícito. No se edita a mano: reemplazar este objeto entero
      es "instalar" un paquete nuevo.
      ============================================================ */
-  const MOTOR_VERSION = '1.5.0';
+  const MOTOR_VERSION = '1.6.0';
   const NORMATIVE_PACK = {
     id: 'rbt-ute-interiores-2001-rev-2026',
     nombre: 'Reglamento de Baja Tensión UTE — instalaciones interiores (Caps. II, IV y V)',
     fuente: 'RBT-UTE: Capítulo II "Instalaciones Interiores o Receptoras" y su Anexo (Tablas I a XVI), Capítulo IV (conductos protectores) y Capítulo V (protecciones), edición N.5 / Junio 2001, ute.com.uy',
-    version: '0.8-icc-anexo',
+    version: '0.9-diferenciales',
     estado: 'pendiente', // 'pendiente' | 'verificado' | 'personalizado'
     vigenteDesde: null,
     actualizadoEl: '2026-09-17',
@@ -477,8 +480,10 @@
       cita: 'UTE, RBT Capítulo II - Anexo §7, Tabla A (Icc en bornes del transformador según su potencia, 500 MVA aguas arriba) y Tablas B (220 V) y C (380 V) (Icc al extremo de un cable según sección y longitud). La app aplica la Tabla A y luego las Tablas B o C al tramo de red y acometida y al alimentador. Criterios del lado seguro: transformador y fila de Icc inmediatos superiores, sección inmediata superior, longitud inmediata inferior, y ante erratas del Anexo, el valor que da mayor Icc. Las Tablas D y E son una lectura simplificada de las B y C para Icc de hasta 20 kA y no se usan.' },
     { rango: 'principal', tema: 'Corriente de cortocircuito por defecto',
       cita: 'El Anexo da el método pero no un valor por defecto. Con la Icc informada por UTE o medida, se verifica. Con subestación propia (más de 50 kW, Anexo §10) no hay default: la instalación está casi en bornes del transformador y se toma la Tabla A sin atenuar por cable. En suministro estándar sin dato se toma 6 kA de plaza, que es el valor del ejemplo del propio Anexo (20 kA pasan a 6 kA tras 5 m de 6 mm²); la térmica se cotiza con ese poder de corte y el cortocircuito queda marcado como no verificado.' },
+    { rango: 'complementaria', tema: 'Tipo de diferencial',
+      cita: 'IEC 61008-1 / 61009-1 (tipos AC, A y F) e IEC 62423 (tipos F y B): AC sólo detecta alterna senoidal; A agrega continua pulsante; F agrega componentes de hasta 1 kHz; B agrega continua pura. La app propone A por defecto, F para variadores monofásicos y B para cargador de auto, fotovoltaica, variador trifásico y UPS sin aislación; un cargador con monitor de continua de 6 mA según IEC 62955 se conforma con A. AC no se propone: sólo como elección manual con aviso. Una fuga de continua pura puede cegar a un tipo A o F aguas arriba, por eso un circuito tipo B no debe quedar debajo de un diferencial general A o F.' },
     { rango: 'complementaria', tema: 'Poder de corte de los termomagnéticos',
-      cita: 'IEC 60898-1: poder de corte asignado Icn, el que se compara con la Icc en termomagnéticos de uso doméstico y análogo (ensayo O-CO-CO). El Icu de la IEC 60947-2 que traen las fichas es otro ensayo y no se usa en la comparación. Gama que se cotiza, confirmada: Schneider Acti9 iC60 (N 6 kA, H 10 kA, L 15 kA, hasta 63 A); se cotiza el primer escalón que cubre la Icc. Criterio de la casa: mínimo 6 kA hasta 99 A y 10 kA desde 100 A, en monofásico y trifásico.' },
+      cita: 'IEC 60898-1: poder de corte asignado Icn, el que se compara con la Icc en termomagnéticos de uso doméstico y análogo (ensayo O-CO-CO). El Icu de la IEC 60947-2 que traen las fichas es otro ensayo y no se usa en la comparación. Gama que se cotiza, confirmada: Schneider Acti9 iC60 (N 6 kA, H 10 kA, L 15 kA, iguales en 230 V 1P/2P y en 400 V 3P/4P, hasta 63 A; en la L verificar el SKU, porque en algunos calibres altos baja); se cotiza el primer escalón que cubre la Icc. Criterio de la casa: mínimo 6 kA hasta 99 A y 10 kA desde 100 A, en monofásico y trifásico.' },
     { rango: 'principal', tema: 'Caída de tensión',
       cita: 'UTE, RBT Capítulo II - Anexo, numeral 8 - Caídas de Tensión: máximo 3 % en circuitos de alumbrado y 5 % en los demás usos, medidos entre el origen de la instalación y cualquier punto de utilización. Fórmulas S = 2LW/(KeV) en monofásico y S = LW/(KeV) en trifásico. Para conductores dimensionados por capacidad térmica, K a temperatura de servicio: 48,4 (Cu/PVC), 45,5 (Cu/XLPE), 29,4 (Al/PVC) y 27,6 (Al/XLPE).' },
     { rango: 'principal', tema: 'Canalizaciones',
@@ -1302,7 +1307,7 @@
     const comun = {
       aplica: true, ig, enlace, termicaCurva: 'C', termicaPolos: sistema.fases === 1 ? 2 : 4,
       diferencialSensibilidad: pgGuardada.diferencialSensibilidad || 30,
-      diferencialTipo: pgGuardada.diferencialTipo || '',
+      diferencialTipo: RANGO_DIFERENCIAL[pgGuardada.diferencialTipo] !== undefined ? pgGuardada.diferencialTipo : TIPO_DIFERENCIAL_DEFECTO,
     };
     // Si la potencia supera el mayor escalón, o ninguna térmica coordina con el
     // enlace, no se inventa una: queda marcada para resolver a mano.
@@ -1335,6 +1340,7 @@
         ib: Math.round(ib * 100) / 100,
         v: sistema.v, fases: sistema.fases, l: 15, material: 'cobre', metodo: 'embutido', aislacion: 'pvc',
         tempAmb: 30, agrupados: 1, caidaMax: CAIDA_MAX_DEFAULT[uso] || 5, cosPhi, uso,
+        equipo: c.equipo || 'comun',
       };
     });
   }
@@ -1564,6 +1570,9 @@
       if (!mapa[key]) mapa[key] = { id: 'mat-' + key.replace(/\s+/g, '-'), nombre, unidad, cantidad: 0, precioUnit: precioUnit || 0, auto: true, rubro: rubroDe(nombre) };
       mapa[key].cantidad += cantidad;
     }
+    const pgMat = calcularProteccionGeneral(draft);
+    const tipoGeneralMat = pgMat.aplica ? tipoDiferencialGeneral(pgMat) : TIPO_DIFERENCIAL_DEFECTO;
+    const rcdMat = diferencialesDedicados(circuitos, tipoGeneralMat);
     circuitos.forEach((c) => {
       const calc = calcularCircuito(c, caidaPrevia);
       if (!calc.apto) return;
@@ -1642,6 +1651,12 @@
       } else {
         add('Interruptor ' + tipoTermica + ' ' + calc.breaker + 'A (caja moldeada u otro) — elegir modelo', 'un.', 1, 0);
       }
+      // Diferencial propio cuando el general no alcanza el tipo que pide el
+      // equipo. Sin precio de catálogo: F y B se cotizan a mano.
+      const ded = rcdMat.dedicados.find((d) => d.circuito === c);
+      if (ded && calc.breaker) {
+        add('Diferencial tipo ' + ded.tipo + ' ' + (c.fases === 1 ? 2 : 4) + 'P ' + Math.max(25, calc.breaker) + 'A 30 mA — ' + (c.nombre || 'circuito'), 'un.', 1, 0);
+      }
     });
     // Puntos de luz y de toma, según la cantidad cargada en cada carga del relevamiento.
     // Quedan como cualquier otro material: editables a mano si la cantidad real difiere.
@@ -1661,7 +1676,8 @@
       // Módulos que ocupa el tablero, no cantidad de llaves: una térmica bipolar
       // ocupa 2 módulos y una tetrapolar 4. Contando llaves, el gabinete salía
       // por la mitad de lo que cuesta.
-      const modulosCircuitos = circuitos.reduce((t, c) => t + polosDe(c), 0);
+      const modulosCircuitos = circuitos.reduce((t, c) => t + polosDe(c), 0) +
+        rcdMat.dedicados.reduce((t, d) => t + (d.circuito.fases === 1 ? 2 : 4), 0);
       const sistemaTablero = (draft && SISTEMAS[draft.sistemaId]) || SISTEMAS.tri_tt;
       const modulosGeneral = (sistemaTablero.fases === 1 ? 2 : 4) * 2; // térmica + diferencial generales
       // Las borneras ocupan lugar en el riel como cualquier otra pieza: si no se
@@ -3135,6 +3151,8 @@
               // los presets de motor o bomba arrastran su uso: la térmica va
               // con curva D por el pico de arranque
               if (p.uso) c.uso = p.uso; else delete c.uso;
+              // y su electrónica, que define el tipo de diferencial
+              if (p.equipo) c.equipo = p.equipo; else delete c.equipo;
               renderCargasList(); renderPotenciaResultado();
             }
             return;
@@ -3179,16 +3197,68 @@
     return '<div class="stat-box"><div class="lbl">' + label + '</div><div class="val' + (big ? ' big' : '') + '">' + value + '</div></div>';
   }
 
-  // El tipo de diferencial depende de las cargas (electrónica, variadores,
-  // cargadores): no se asume AC. Mientras no se elija, se dice que falta.
+  // Tipo de diferencial según lo que detecta (IEC 61008/61009, IEC 62423):
+  //   AC → sólo alterna senoidal. No se propone nunca: casi todo artefacto
+  //        actual tiene electrónica. Queda como elección manual con aviso.
+  //   A  → alterna + continua pulsante. Es el de fábrica de la app.
+  //   F  → lo de A + alta frecuencia hasta 1 kHz (variadores monofásicos).
+  //   B  → lo de A y F + continua pura (cargador de auto, fotovoltaica,
+  //        variador trifásico, UPS sin aislación).
+  // La jerarquía es estricta: A no cubre a F y F no cubre a B. Además, una
+  // fuga de continua pura puede cegar a un tipo A o F aguas arriba, que deja
+  // de proteger incluso la parte de alterna.
+  const TIPO_DIFERENCIAL_DEFECTO = 'A';
+  const RANGO_DIFERENCIAL = { AC: 0, A: 1, F: 2, B: 3 };
   const TIPOS_DIFERENCIAL = [
-    { v: '', label: 'A definir según las cargas' },
-    { v: 'A', label: 'Tipo A' },
-    { v: 'F', label: 'Tipo F' },
-    { v: 'B', label: 'Tipo B' },
-    { v: 'AC', label: 'Tipo AC (sólo cargas resistivas)' },
+    { v: 'A', label: 'Tipo A (recomendado)' },
+    { v: 'F', label: 'Tipo F (variadores monofásicos)' },
+    { v: 'B', label: 'Tipo B (continua pura)' },
+    { v: 'AC', label: 'Tipo AC (sólo resistencias, no recomendado)' },
   ];
-  function textoTipoDiferencial(tipo) { return tipo ? 'tipo ' + tipo : 'tipo a definir'; }
+  // Electrónica del equipo que alimenta el circuito.
+  const EQUIPOS_CIRCUITO = [
+    { id: 'comun', label: 'Sin variador (electrónica común)', tipo: 'A' },
+    { id: 'resistiva', label: 'Sólo resistencias, sin electrónica', tipo: 'A' },
+    { id: 'variador_mono', label: 'Con variador monofásico (aire inverter, bomba, lavarropas)', tipo: 'F' },
+    { id: 'variador_tri', label: 'Con variador de frecuencia trifásico', tipo: 'B' },
+    { id: 'cargador_ve', label: 'Cargador de auto eléctrico', tipo: 'B' },
+    { id: 'fotovoltaica', label: 'Inversor fotovoltaico', tipo: 'B' },
+    { id: 'ups', label: 'UPS o rectificador sin aislación', tipo: 'B' },
+  ];
+  function tipoDiferencialGeneral(pg) {
+    return (pg && RANGO_DIFERENCIAL[pg.diferencialTipo] !== undefined) ? pg.diferencialTipo : TIPO_DIFERENCIAL_DEFECTO;
+  }
+  function textoTipoDiferencial(tipo) {
+    return 'tipo ' + (RANGO_DIFERENCIAL[tipo] !== undefined ? tipo : TIPO_DIFERENCIAL_DEFECTO);
+  }
+  // Tipo que pide el circuito y por qué. Un cargador de auto que ya trae el
+  // monitor de continua de 6 mA (IEC 62955) se conforma con un tipo A.
+  function diferencialDelCircuito(c) {
+    const eq = EQUIPOS_CIRCUITO.find((e) => e.id === c.equipo) || EQUIPOS_CIRCUITO[0];
+    if (eq.id === 'cargador_ve' && c.rdcdd6mA) {
+      return { tipo: 'A', motivo: 'cargador de auto con monitor de continua de 6 mA (IEC 62955)', equipo: eq.id };
+    }
+    return { tipo: eq.tipo, motivo: eq.label.toLowerCase(), equipo: eq.id };
+  }
+  // Diferencial dedicado cuando el general no alcanza el tipo que pide el
+  // circuito, y avisos de coordinación con el general.
+  function diferencialesDedicados(circuitos, tipoGeneral) {
+    const dedicados = [];
+    const avisos = [];
+    const rg = RANGO_DIFERENCIAL[tipoGeneral];
+    circuitos.forEach((c) => {
+      const d = diferencialDelCircuito(c);
+      if (RANGO_DIFERENCIAL[d.tipo] > rg) dedicados.push({ circuito: c, ...d });
+      if (d.tipo === 'B' && rg < RANGO_DIFERENCIAL.B) {
+        avisos.push('"' + (c.nombre || 'Circuito') + '" pide tipo B: si queda aguas abajo del diferencial general tipo ' + tipoGeneral +
+          ', una fuga de continua lo puede cegar. Alimentarlo antes del diferencial general, con su propio tipo B, o poner la cabecera en tipo B.');
+      }
+    });
+    if (tipoGeneral === 'AC') {
+      avisos.unshift('Diferencial general tipo AC: sólo detecta alterna senoidal. Casi cualquier artefacto actual tiene electrónica, así que sólo corresponde si toda la instalación son resistencias.');
+    }
+    return { dedicados, avisos };
+  }
   function proteccionGeneralHtml(pg) {
     if (pg.termicaIn === null) return '<div class="alert-error">' + escapeHtml(pg.motivo) + '</div>';
     return statBox('Térmica general', pg.termicaIn + 'A · ' + pg.termicaPolos + 'p · curva ' + pg.termicaCurva + (pg.poderCorte ? ' · ' + textoPoderCorte(pg.poderCorte) : ''), true) +
@@ -3306,6 +3376,14 @@
         '<div class="field"><label>Uso</label><select class="select" data-f="uso">' +
         USOS.map((u) => '<option value="' + u.id + '"' + ((c.uso || 'fuerza') === u.id ? ' selected' : '') + '>' + u.label + '</option>').join('') +
         '</select></div>' +
+        '<div class="field"><label>Electrónica del equipo</label><select class="select" data-f="equipo">' +
+        EQUIPOS_CIRCUITO.map((e) => '<option value="' + e.id + '"' + ((c.equipo || 'comun') === e.id ? ' selected' : '') + '>' + e.label + '</option>').join('') +
+        '</select></div>' +
+        (c.equipo === 'cargador_ve'
+          ? '<div class="field"><label>¿Trae monitor de continua 6 mA (IEC 62955)?</label><select class="select" data-f="rdcdd6mA">' +
+            '<option value="0"' + (!c.rdcdd6mA ? ' selected' : '') + '>No o no sé (tipo B)</option>' +
+            '<option value="1"' + (c.rdcdd6mA ? ' selected' : '') + '>Sí (alcanza con tipo A)</option></select></div>'
+          : '') +
         '<div class="field"><label>Aislación</label><select class="select" data-f="aislacion">' +
         '<option value="pvc"' + ((c.aislacion || 'pvc') === 'pvc' ? ' selected' : '') + '>PVC</option>' +
         '<option value="xlpe"' + (c.aislacion === 'xlpe' ? ' selected' : '') + '>XLPE</option></select></div>' +
@@ -3344,6 +3422,12 @@
             statBox('Caída del circuito', fmt(calc.dUPct) + ' %') +
             statBox('Caída desde el medidor', fmt(calc.dUPctTotal) + ' %', true) +
             statBox('Protección', calc.breaker + ' A' + (comp && comp.poderCorteKa !== null ? ' · ' + fmt(comp.poderCorteKa, 0) + ' kA' + (comp.iccFuente === 'plaza' ? ' (plaza)' : '') : ''), true) + statBox('Curva sugerida', calc.curva) +
+            statBox('Diferencial', (() => {
+              const d = diferencialDelCircuito(c);
+              const pgC = calcularProteccionGeneral(draft);
+              const tg = pgC.aplica ? tipoDiferencialGeneral(pgC) : TIPO_DIFERENCIAL_DEFECTO;
+              return RANGO_DIFERENCIAL[d.tipo] > RANGO_DIFERENCIAL[tg] ? 'Dedicado tipo ' + d.tipo : 'General tipo ' + tg;
+            })()) +
             statBox('Comprobación', comp.estado === 'cumple' ? 'Verificado' : (comp.estado === 'pendiente' ? 'Pendiente' : 'No cumple')) + '</div>' +
             (comp.causas.length || comp.pendientes.length
               ? '<ul style="margin:10px 0 0;padding-left:18px;font-size:0.8rem;color:var(--error)">' +
@@ -3359,8 +3443,8 @@
         input.addEventListener('change', () => {
           const f = input.dataset.f;
           const esTexto = f === 'nombre' || f === 'material' || f === 'metodo' || f === 'uso' || f === 'aislacion' ||
-            f === 'disposicion' || f === 'montaje' || f === 'tipoProteccion';
-          if (f === 'expuestoSol' || f === 'separados2De') c[f] = input.value === '1';
+            f === 'disposicion' || f === 'montaje' || f === 'tipoProteccion' || f === 'equipo';
+          if (f === 'expuestoSol' || f === 'separados2De' || f === 'rdcdd6mA') c[f] = input.value === '1';
           // vacío = que decida la app
           else if (f === 'inProteccion' || f === 'i2' || f === 'iccKa' || f === 'poderCorteKa' || f === 'icu60947Ka' || f === 'i2tPasante' || f === 'tiempoDespejeS') {
             c[f] = Number(input.value) > 0 ? Number(input.value) : null;
@@ -3463,7 +3547,14 @@
     if (pg.aplica) {
       $('#resumen-proteccion-general-stats').innerHTML = proteccionGeneralLightHtml(pg);
       $('#resumen-diferencial-sensibilidad').value = String(pg.diferencialSensibilidad);
-      $('#resumen-diferencial-tipo').value = pg.diferencialTipo || '';
+      $('#resumen-diferencial-tipo').value = tipoDiferencialGeneral(pg);
+      const rcd = diferencialesDedicados(draft.circuitos, tipoDiferencialGeneral(pg));
+      $('#resumen-diferenciales').innerHTML =
+        (rcd.dedicados.length
+          ? rcd.dedicados.map((d) => '<div class="light-stat-row"><span class="lbl">' + escapeHtml(d.circuito.nombre || 'Circuito') +
+              '</span><span class="val strong">Diferencial dedicado tipo ' + d.tipo + '</span></div>').join('')
+          : '<div class="light-stat-row"><span class="lbl">Diferenciales por circuito</span><span class="val">Todos quedan cubiertos por el general</span></div>') +
+        rcd.avisos.map((a) => '<div class="alert-error" style="margin-top:8px">' + escapeHtml(a) + '</div>').join('');
     }
 
     $('#resumen-materiales-count').textContent = draft.materiales.length + ' ítems';
