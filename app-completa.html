@@ -4238,6 +4238,74 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     return calcularAcometida(draft).dUPct;
   }
 
+  // Corrientes nominales en las que se fabrican los diferenciales.
+  const RCD_NOMINALES = [25, 40, 63];
+  function inDiferencial(amp) {
+    return RCD_NOMINALES.find((x) => x >= amp) || null;
+  }
+  // Tipo de diferencial según lo que detecta (IEC 61008/61009, IEC 62423):
+  //   AC → sólo alterna senoidal. No se propone nunca: casi todo artefacto
+  //        actual tiene electrónica. Queda como elección manual con aviso.
+  //   A  → alterna + continua pulsante. Es el de fábrica de la app.
+  //   F  → lo de A + alta frecuencia hasta 1 kHz (variadores monofásicos).
+  //   B  → lo de A y F + continua pura (cargador de auto, fotovoltaica,
+  //        variador trifásico, UPS sin aislación).
+  // La jerarquía es estricta: A no cubre a F y F no cubre a B. Además, una
+  // fuga de continua pura puede cegar a un tipo A o F aguas arriba, que deja
+  // de proteger incluso la parte de alterna.
+  const TIPO_DIFERENCIAL_DEFECTO = 'A';
+  const RANGO_DIFERENCIAL = { AC: 0, A: 1, F: 2, B: 3 };
+  const TIPOS_DIFERENCIAL = [
+    { v: 'A', label: 'Tipo A (recomendado)' },
+    { v: 'F', label: 'Tipo F (variadores monofásicos)' },
+    { v: 'B', label: 'Tipo B (continua pura)' },
+    { v: 'AC', label: 'Tipo AC (sólo resistencias, no recomendado)' },
+  ];
+  // Electrónica del equipo que alimenta el circuito.
+  const EQUIPOS_CIRCUITO = [
+    { id: 'comun', label: 'Sin variador (electrónica común)', tipo: 'A' },
+    { id: 'resistiva', label: 'Sólo resistencias, sin electrónica', tipo: 'A' },
+    { id: 'variador_mono', label: 'Con variador monofásico (aire inverter, bomba, lavarropas)', tipo: 'F' },
+    { id: 'variador_tri', label: 'Con variador de frecuencia trifásico', tipo: 'B' },
+    { id: 'cargador_ve', label: 'Cargador de auto eléctrico', tipo: 'B' },
+    { id: 'fotovoltaica', label: 'Inversor fotovoltaico', tipo: 'B' },
+    { id: 'ups', label: 'UPS o rectificador sin aislación', tipo: 'B' },
+  ];
+  function tipoDiferencialGeneral(pg) {
+    return (pg && RANGO_DIFERENCIAL[pg.diferencialTipo] !== undefined) ? pg.diferencialTipo : TIPO_DIFERENCIAL_DEFECTO;
+  }
+  function textoTipoDiferencial(tipo) {
+    return 'tipo ' + (RANGO_DIFERENCIAL[tipo] !== undefined ? tipo : TIPO_DIFERENCIAL_DEFECTO);
+  }
+  // Tipo que pide el circuito y por qué. Un cargador de auto que ya trae el
+  // monitor de continua de 6 mA (IEC 62955) se conforma con un tipo A.
+  function diferencialDelCircuito(c) {
+    const eq = EQUIPOS_CIRCUITO.find((e) => e.id === c.equipo) || EQUIPOS_CIRCUITO[0];
+    if (eq.id === 'cargador_ve' && c.rdcdd6mA) {
+      return { tipo: 'A', motivo: 'cargador de auto con monitor de continua de 6 mA (IEC 62955)', equipo: eq.id };
+    }
+    return { tipo: eq.tipo, motivo: eq.label.toLowerCase(), equipo: eq.id };
+  }
+  // Diferencial dedicado cuando el general no alcanza el tipo que pide el
+  // circuito, y avisos de coordinación con el general.
+  function diferencialesDedicados(circuitos, tipoGeneral) {
+    const dedicados = [];
+    const avisos = [];
+    const rg = RANGO_DIFERENCIAL[tipoGeneral];
+    circuitos.forEach((c) => {
+      const d = diferencialDelCircuito(c);
+      if (RANGO_DIFERENCIAL[d.tipo] > rg) dedicados.push({ circuito: c, ...d });
+      if (d.tipo === 'B' && rg < RANGO_DIFERENCIAL.B) {
+        avisos.push('"' + (c.nombre || 'Circuito') + '" pide tipo B: si queda aguas abajo del diferencial general tipo ' + tipoGeneral +
+          ', una fuga de continua lo puede cegar. Alimentarlo antes del diferencial general, con su propio tipo B, o poner la cabecera en tipo B.');
+      }
+    });
+    if (tipoGeneral === 'AC') {
+      avisos.unshift('Diferencial general tipo AC: sólo detecta alterna senoidal. Casi cualquier artefacto actual tiene electrónica, así que sólo corresponde si toda la instalación son resistencias.');
+    }
+    return { dedicados, avisos };
+  }
+
   // Térmica y diferencial general de toda la instalación (no de un circuito). Solo aplica
   // a instalaciones nuevas: si es una modificación/reparación sobre una instalación
   // existente, esa protección ya está puesta — no corresponde recalcularla.
@@ -4269,7 +4337,10 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     const termicaIn = enlace.termicaIn;
     // En Uruguay no suelen conseguirse diferenciales de menos de 25A: si la térmica general
     // da 16 o 20A, el diferencial general igual se sugiere en 25A.
-    const diferencialIn = Math.max(termicaIn, 25);
+    // Los diferenciales se fabrican en 25, 40 y 63 A: se toma el escalón que
+    // cubre la térmica general, con un piso de 25 A porque en plaza no se
+    // consiguen de menos.
+    const diferencialIn = inDiferencial(Math.max(termicaIn, 25)) || Math.max(termicaIn, 25);
     const ctx = contextoCortocircuito(draft);
     const poderCorte = poderCorteDe({ iccTableroKa: ctx.iccTableroKa, iccTableroOrigen: ctx.iccTableroOrigen, conSubestacion: ctx.conSubestacion, tipoProteccion: 'mcb' }, termicaIn);
     return { ...comun, termicaIn, diferencialIn, coordina: true, poderCorte };
@@ -4372,8 +4443,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     //   4P  25A MG2478N  USD 44,37     4P  63A MG2486N  USD 67,35
     // Por encima de 63 A la iC60 no llega: el tetrapolar sale de un C120N 4P
     // 100A de 10 kA (MG2874, USD 200,46), que además cumple el mínimo de
-    // 10 kA desde 100 A. El bipolar de más de 63 A no está relevado: queda en
-    // 0 y el material sale sin precio, para cotizarlo a mano.
+    // 10 kA desde 100 A. El bipolar de más de 63 A queda en 0 a propósito: a
+    // esa corriente el suministro ya es trifásico.
     termicaUnipolarBase: 481,
     termicaUnipolar63: 551,
     termicaUnipolar125: 0,
@@ -4383,11 +4454,22 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     termicaTetrapolarBase: 1785,
     termicaTetrapolar63: 2710,
     termicaTetrapolar125: 8065,
-    // Diferencial tipo A, 30 mA: Acti9 iID superinmunizado (A-SI) 2P 25A,
-    // MG1302, USD 143,77. En Fivisa no hay tetrapolar de 30 mA tipo A ni
-    // bipolares de más de 25 A tipo A: esos quedan sin precio.
-    diferencialBipolar25: 5784,
-    diferencialTetrapolarBase: 0,
+    // Diferenciales tipo A, 30 mA. Fivisa sólo tiene el Schneider Acti9 iID
+    // superinmunizado bipolar de 25 A (MG1302, USD 143,77 = $ 5.784), así que
+    // la tabla se completa con la línea Chint NL1-63 tipo A de mgi.com.uy,
+    // relevada el 17/09/2026 en USD: 2P 25A 27,43 · 2P 40A 26,84 ·
+    // 2P 63A 27,43 · 4P 25A 28,71 · 4P 40A 40,61 · 4P 63A 41,63.
+    // Por encima de 63 A no hay bipolar: a esa corriente el suministro ya es
+    // trifásico. En tetrapolar, arriba de 63 A los que hay son de 300 mA, no
+    // de 30: ese caso se cotiza a mano.
+    // Otra opción relevada, para cargar a mano: ABB SI 4P 25A 30 mA,
+    // $ 7.842 con IVA en electrouruguay.com.
+    diferencialBipolar25: 1103,
+    diferencialBipolar40: 1080,
+    diferencialBipolar63: 1103,
+    diferencialTetrapolar25: 1155,
+    diferencialTetrapolar40: 1634,
+    diferencialTetrapolar63: 1675,
     // Diferencial tipo A, 30 mA, hasta 40 A. Sin relevar: se carga en el
     // catálogo. Los tipos F, B y AC se cotizan a mano en cada presupuesto.
     cajaOctogonal: 72,
@@ -4422,7 +4504,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     { clave: 'termicaUnipolarBase' }, { clave: 'termicaUnipolar63' },
     { clave: 'termicaBipolarBase' }, { clave: 'termicaBipolar63' },
     { clave: 'termicaTetrapolarBase' }, { clave: 'termicaTetrapolar63' }, { clave: 'termicaTetrapolar125' },
-    { clave: 'diferencialBipolar25' },
+    { clave: 'diferencialBipolar25' }, { clave: 'diferencialBipolar40' }, { clave: 'diferencialBipolar63' },
+    { clave: 'diferencialTetrapolar25' }, { clave: 'diferencialTetrapolar40' }, { clave: 'diferencialTetrapolar63' },
     { clave: 'cableBajoGoma' }, { clave: 'cableBajoPlastico' },
     { clave: 'canoGalvanizado' }, { clave: 'codoGalvanizado' },
     { clave: 'bandeja', medida: 150 }, { clave: 'cajaMedidorTrifasica' },
@@ -4440,6 +4523,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     { clave: 'termicaUnipolarBase', viejo: 80, nuevo: 481 },
     { clave: 'termicaBipolarBase', viejo: 277, nuevo: 854 },
     { clave: 'termicaTetrapolarBase', viejo: 294, nuevo: 1785 },
+    // el precio del Schneider A-SI se cambia por el de la línea Chint, que
+    // tiene toda la gama de 25 a 63 A en 2P y 4P
+    { clave: 'diferencialBipolar25', viejo: 5784, nuevo: 1103 },
     { clave: 'borneraTierra', viejo: 0, nuevo: 55 },
     { clave: 'borneraNeutro', viejo: 0, nuevo: 55 },
     { clave: 'codoGalvanizado', viejo: 0, nuevo: 16 },
@@ -4497,8 +4583,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
   // cotizan a mano.
   function precioDiferencial(tipoRcd, polos, amp, precios) {
     if (tipoRcd !== 'A') return 0;
-    if (polos <= 2 && amp <= 25) return Number(precios.diferencialBipolar25) || 0;
-    return Number(precios.diferencialTetrapolarBase) || 0;
+    const escalon = inDiferencial(amp);
+    if (!escalon) return 0;
+    return Number(precios[(polos <= 2 ? 'diferencialBipolar' : 'diferencialTetrapolar') + escalon]) || 0;
   }
   // Medida de gabinete que hay que comprar para una cantidad de módulos: la
   // siguiente de la lista. No existe un gabinete de 20 módulos — se compra el de
@@ -4647,7 +4734,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       const ded = rcdMat.dedicados.find((d) => d.circuito === c);
       if (ded && calc.breaker) {
         const polosRcd = c.fases === 1 ? 2 : 4;
-        const inRcd = Math.max(25, calc.breaker);
+        const inRcd = inDiferencial(Math.max(25, calc.breaker)) || Math.max(25, calc.breaker);
         add('Diferencial tipo ' + ded.tipo + ' ' + polosRcd + 'P ' + inRcd + 'A 30 mA — ' + (c.nombre || 'circuito'), 'un.', 1,
             precioDiferencial(ded.tipo, polosRcd, inRcd, precios));
       }
@@ -4674,7 +4761,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       const baseGen = pcGen && pcGen.poderCorteKa !== null && pcGen.poderCorteKa <= Math.max(pcGen.pisoKa, NORMATIVE_PACK.parametros.iccPlazaKa);
       add('Térmica general ' + tipoGen + ' ' + pgMat.termicaIn + 'A curva ' + pgMat.termicaCurva + ' — ' + (pcGen ? textoPoderCorte(pcGen) : 'PdC a definir'),
           'un.', 1, baseGen ? precioTermica(tipoGen, pgMat.termicaIn, precios) : 0);
-      add('Diferencial general tipo ' + tipoGeneralMat + ' ' + pgMat.termicaPolos + 'P ' + pgMat.diferencialIn + 'A ' + pgMat.diferencialSensibilidad + ' mA',
+      const fueraDeGamaRcd = !inDiferencial(pgMat.diferencialIn);
+      add('Diferencial general tipo ' + tipoGeneralMat + ' ' + pgMat.termicaPolos + 'P ' + pgMat.diferencialIn + 'A ' + pgMat.diferencialSensibilidad + ' mA' +
+          (fueraDeGamaRcd ? (pgMat.termicaPolos <= 2 ? ' — revisar: a esta corriente el suministro va trifásico' : ' — sobre 63 A hay que cotizarlo a mano') : ''),
           'un.', 1, precioDiferencial(tipoGeneralMat, pgMat.termicaPolos, pgMat.diferencialIn, precios));
     }
     if (draft && draft.obra && draft.obra.naturaleza === 'Instalación nueva') {
@@ -4812,11 +4901,27 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         detalle: pg.diferencialIn + ' A · ' + pg.diferencialSensibilidad + ' mA · ' + textoTipoDiferencial(pg.diferencialTipo),
       });
     }
+    const tipoGeneralTab = pg.aplica ? tipoDiferencialGeneral(pg) : TIPO_DIFERENCIAL_DEFECTO;
+    const dedicadosTab = diferencialesDedicados(draft.circuitos || [], tipoGeneralTab).dedicados;
     (draft.circuitos || []).forEach((c, i) => {
       const calc = calcularCircuito(c);
       const polos = polosDe(c);
       const IMG_POLOS = { 1: 'thermal-1p', 2: 'thermal-2p', 3: 'thermal-4p', 4: 'thermal-4p' };
+      // El diferencial propio del circuito va antes de su llave, alimentado
+      // como cualquier circuito y con un puente hasta la térmica que protege.
+      const ded = dedicadosTab.find((d) => d.circuito === c);
+      if (ded && calc.apto) {
+        const polosRcd = c.fases === 1 ? 2 : 4;
+        const inRcd = inDiferencial(Math.max(25, calc.breaker)) || Math.max(25, calc.breaker);
+        items.push({
+          img: polosRcd === 2 ? 'rcd-2p' : 'rcd-4p', modulos: polosRcd, seccion: calc.seccionAdoptada,
+          cara: inRcd + 'A', caraChica: '30mA', rcdDe: c.id,
+          etiqueta: 'Diferencial tipo ' + ded.tipo + ' · ' + (c.nombre || ('Circuito ' + (i + 1))),
+          detalle: 'tipo ' + ded.tipo + ' · ' + inRcd + ' A · 30 mA · ' + ded.motivo,
+        });
+      }
       items.push({
+        protegidoPor: ded && calc.apto ? c.id : null,
         img: IMG_POLOS[polos], modulos: polos,
         cara: calc.apto ? calc.curva + calc.breaker : '?', caraChica: null,
         n: i + 1, etiqueta: c.nombre || ('Circuito ' + (i + 1)),
@@ -5335,6 +5440,10 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     const general = puestos.find((p) => p.it.rotulo === 'GENERAL');
     const dif = puestos.find((p) => p.it.rotulo === 'DIFERENCIAL');
     const circuitos = puestos.filter((p) => !p.it.rotulo);
+    // Los diferenciales propios de un circuito se alimentan como cualquier
+    // llave, pero no salen al troquel: su salida es la térmica que protegen.
+    const alimentados = circuitos.filter((p) => !p.it.protegidoPor);
+    const salidas = circuitos.filter((p) => !p.it.rcdDe);
     const tri = general ? general.it.modulos >= 4 : circuitos.some((p) => p.it.modulos >= 3);
     const RED = tri ? ['L1', 'L2', 'L3', 'N'] : ['L1', 'N'];
     const fuente = dif || general;
@@ -5343,8 +5452,20 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
 
     // Lo que entra por los polos de una llave de circuito. En trifásica las
     // llaves monofásicas se reparten entre las tres fases.
+    // Fases de cada llave. Una térmica con diferencial propio hereda las del
+    // diferencial, que es el que la alimenta.
+    const fasesPorPuesto = new Map();
+    let giroFase = 0;
+    alimentados.forEach((p) => {
+      fasesPorPuesto.set(p, giroFase++);
+      if (p.it.rcdDe) {
+        const prot = circuitos.find((q) => q.it.protegidoPor === p.it.rcdDe);
+        if (prot) fasesPorPuesto.set(prot, giroFase - 1);
+      }
+    });
     const conductoresDe = (p, i) => {
-      const fase = tri ? ['L1', 'L2', 'L3'][i % 3] : 'L1';
+      const giro = fasesPorPuesto.has(p) ? fasesPorPuesto.get(p) : i;
+      const fase = tri ? ['L1', 'L2', 'L3'][giro % 3] : 'L1';
       switch (p.it.modulos) {
         case 1: return [fase];
         case 2: return [fase, 'N'];
@@ -5370,13 +5491,13 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
 
     // 2) troncal a cada fila y puentes de llave en llave
     const tomas = {};
-    circuitos.forEach((p, i) => {
+    alimentados.forEach((p, i) => {
       conductoresDe(p, i).forEach((f, k) => {
         const clave = p.fila + '|' + f;
         (tomas[clave] = tomas[clave] || []).push([polo(p, k), bArriba(p), p.it.seccion]);
       });
     });
-    const filasConCircuitos = [...new Set(circuitos.map((p) => p.fila))].sort((a, b) => a - b);
+    const filasConCircuitos = [...new Set(alimentados.map((p) => p.fila))].sort((a, b) => a - b);
     RED.forEach((f, k) => {
       filasConCircuitos.forEach((fi) => {
         const lista = (tomas[fi + '|' + f] || []).sort((a, b) => a[0] - b[0]);
@@ -5418,6 +5539,19 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     };
     const desdeBorne = (fase, t) => ({ fase, x: t.h.x + t.dx, y: t.h.y, fila: t.fila, borne: t.h });
 
+    // 2b) puente del diferencial propio a la térmica que protege
+    circuitos.filter((p) => p.it.rcdDe).forEach((rcd) => {
+      const prot = circuitos.find((q) => q.it.protegidoPor === rcd.it.rcdDe);
+      if (!prot) return;
+      const fases = conductoresDe(prot, 0);
+      const yB = carrilAbajo(rcd.fila);
+      fases.forEach((f, k) => {
+        if (k >= rcd.it.modulos) return;
+        tender(f, [[polo(rcd, k), bAbajo(rcd)], [polo(rcd, k), yB], [polo(prot, k), yB], [polo(prot, k), bArriba(prot)]],
+               true, true, prot.it.seccion);
+      });
+    });
+
     // 3) alimentación de la bornera de neutro
     if (bNeutro && fuente) {
       const kN = RED.indexOf('N');
@@ -5441,7 +5575,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     // se asignan en el orden en que los mazos llegan, de izquierda a derecha,
     // para que no se crucen.
     const medio = (ranuras[0].x0 + ranuras[0].x1) / 2;
-    const grupos = circuitos.map((p, i) => {
+    const grupos = salidas.map((p, i) => {
       const hilos = conductoresDe(p, i).map((f, k) => ({ fase: f, x: polo(p, k), y: bAbajo(p), fila: p.fila }));
       if (bNeutro && neutroDeBornera(p)) hilos.push(desdeBorne('N', tomarBorne(bNeutro)));
       if (bTierra) hilos.push(desdeBorne('PE', tomarBorne(bTierra)));
@@ -6202,68 +6336,6 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     return '<div class="stat-box"><div class="lbl">' + label + '</div><div class="val' + (big ? ' big' : '') + '">' + value + '</div></div>';
   }
 
-  // Tipo de diferencial según lo que detecta (IEC 61008/61009, IEC 62423):
-  //   AC → sólo alterna senoidal. No se propone nunca: casi todo artefacto
-  //        actual tiene electrónica. Queda como elección manual con aviso.
-  //   A  → alterna + continua pulsante. Es el de fábrica de la app.
-  //   F  → lo de A + alta frecuencia hasta 1 kHz (variadores monofásicos).
-  //   B  → lo de A y F + continua pura (cargador de auto, fotovoltaica,
-  //        variador trifásico, UPS sin aislación).
-  // La jerarquía es estricta: A no cubre a F y F no cubre a B. Además, una
-  // fuga de continua pura puede cegar a un tipo A o F aguas arriba, que deja
-  // de proteger incluso la parte de alterna.
-  const TIPO_DIFERENCIAL_DEFECTO = 'A';
-  const RANGO_DIFERENCIAL = { AC: 0, A: 1, F: 2, B: 3 };
-  const TIPOS_DIFERENCIAL = [
-    { v: 'A', label: 'Tipo A (recomendado)' },
-    { v: 'F', label: 'Tipo F (variadores monofásicos)' },
-    { v: 'B', label: 'Tipo B (continua pura)' },
-    { v: 'AC', label: 'Tipo AC (sólo resistencias, no recomendado)' },
-  ];
-  // Electrónica del equipo que alimenta el circuito.
-  const EQUIPOS_CIRCUITO = [
-    { id: 'comun', label: 'Sin variador (electrónica común)', tipo: 'A' },
-    { id: 'resistiva', label: 'Sólo resistencias, sin electrónica', tipo: 'A' },
-    { id: 'variador_mono', label: 'Con variador monofásico (aire inverter, bomba, lavarropas)', tipo: 'F' },
-    { id: 'variador_tri', label: 'Con variador de frecuencia trifásico', tipo: 'B' },
-    { id: 'cargador_ve', label: 'Cargador de auto eléctrico', tipo: 'B' },
-    { id: 'fotovoltaica', label: 'Inversor fotovoltaico', tipo: 'B' },
-    { id: 'ups', label: 'UPS o rectificador sin aislación', tipo: 'B' },
-  ];
-  function tipoDiferencialGeneral(pg) {
-    return (pg && RANGO_DIFERENCIAL[pg.diferencialTipo] !== undefined) ? pg.diferencialTipo : TIPO_DIFERENCIAL_DEFECTO;
-  }
-  function textoTipoDiferencial(tipo) {
-    return 'tipo ' + (RANGO_DIFERENCIAL[tipo] !== undefined ? tipo : TIPO_DIFERENCIAL_DEFECTO);
-  }
-  // Tipo que pide el circuito y por qué. Un cargador de auto que ya trae el
-  // monitor de continua de 6 mA (IEC 62955) se conforma con un tipo A.
-  function diferencialDelCircuito(c) {
-    const eq = EQUIPOS_CIRCUITO.find((e) => e.id === c.equipo) || EQUIPOS_CIRCUITO[0];
-    if (eq.id === 'cargador_ve' && c.rdcdd6mA) {
-      return { tipo: 'A', motivo: 'cargador de auto con monitor de continua de 6 mA (IEC 62955)', equipo: eq.id };
-    }
-    return { tipo: eq.tipo, motivo: eq.label.toLowerCase(), equipo: eq.id };
-  }
-  // Diferencial dedicado cuando el general no alcanza el tipo que pide el
-  // circuito, y avisos de coordinación con el general.
-  function diferencialesDedicados(circuitos, tipoGeneral) {
-    const dedicados = [];
-    const avisos = [];
-    const rg = RANGO_DIFERENCIAL[tipoGeneral];
-    circuitos.forEach((c) => {
-      const d = diferencialDelCircuito(c);
-      if (RANGO_DIFERENCIAL[d.tipo] > rg) dedicados.push({ circuito: c, ...d });
-      if (d.tipo === 'B' && rg < RANGO_DIFERENCIAL.B) {
-        avisos.push('"' + (c.nombre || 'Circuito') + '" pide tipo B: si queda aguas abajo del diferencial general tipo ' + tipoGeneral +
-          ', una fuga de continua lo puede cegar. Alimentarlo antes del diferencial general, con su propio tipo B, o poner la cabecera en tipo B.');
-      }
-    });
-    if (tipoGeneral === 'AC') {
-      avisos.unshift('Diferencial general tipo AC: sólo detecta alterna senoidal. Casi cualquier artefacto actual tiene electrónica, así que sólo corresponde si toda la instalación son resistencias.');
-    }
-    return { dedicados, avisos };
-  }
   function proteccionGeneralHtml(pg) {
     if (pg.termicaIn === null) return '<div class="alert-error">' + escapeHtml(pg.motivo) + '</div>';
     return statBox('Térmica general', pg.termicaIn + 'A · ' + pg.termicaPolos + 'p · curva ' + pg.termicaCurva + (pg.poderCorte ? ' · ' + textoPoderCorte(pg.poderCorte) : ''), true) +
@@ -6965,15 +7037,19 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         { key: 'termicaTetrapolar63', tipo: 'plano', etiqueta: 'Térmica tetrapolar (50 a 63A)' },
         { key: 'termicaTetrapolar125', tipo: 'plano', etiqueta: 'Térmica tetrapolar (80 a 125A)' },
       ],
-      nota: 'Schneider Acti9 iC60N (6 kA), relevado en Fivisa el 17/09/2026 en USD, precio de lista. Por encima de 63A la iC60 no llega: el tetrapolar sale de un C120N de 10 kA y el bipolar quedó en 0, para cotizarlo a mano.',
+      nota: 'Schneider Acti9 iC60N (6 kA), relevado en Fivisa el 17/09/2026 en USD, precio de lista. Por encima de 63A la iC60 no llega: el tetrapolar sale de un C120N de 10 kA. El bipolar de más de 63A queda en 0 porque a esa corriente el suministro ya es trifásico.',
     },
     {
       titulo: 'Diferenciales tipo A, 30 mA ($/un.)',
       campos: [
-        { key: 'diferencialBipolar25', tipo: 'plano', etiqueta: 'Diferencial bipolar 25A (Acti9 iID A-SI)' },
-        { key: 'diferencialTetrapolarBase', tipo: 'plano', etiqueta: 'Diferencial tetrapolar' },
+        { key: 'diferencialBipolar25', tipo: 'plano', etiqueta: 'Diferencial bipolar 25A' },
+        { key: 'diferencialBipolar40', tipo: 'plano', etiqueta: 'Diferencial bipolar 40A' },
+        { key: 'diferencialBipolar63', tipo: 'plano', etiqueta: 'Diferencial bipolar 63A' },
+        { key: 'diferencialTetrapolar25', tipo: 'plano', etiqueta: 'Diferencial tetrapolar 25A' },
+        { key: 'diferencialTetrapolar40', tipo: 'plano', etiqueta: 'Diferencial tetrapolar 40A' },
+        { key: 'diferencialTetrapolar63', tipo: 'plano', etiqueta: 'Diferencial tetrapolar 63A' },
       ],
-      nota: 'En Fivisa el único tipo A de 30 mA es el iID superinmunizado (A-SI) bipolar de 25A. El tetrapolar, los bipolares de más de 25A y los tipos F, B y AC no tienen precio: quedan en 0 y se cotizan a mano.',
+      nota: 'Línea Chint NL1-63 tipo A, relevada en MGI el 17/09/2026 en USD. En Fivisa el único tipo A es el Schneider Acti9 iID A-SI bipolar de 25A ($ 5.784) y en Electro Uruguay hay un ABB SI 4P 25A ($ 7.842 con IVA): si se compran esos, hay que cargar su precio acá. No hay bipolar de más de 63A porque a esa corriente el suministro va trifásico; en tetrapolar, arriba de 63A los que se consiguen son de 300 mA. Los tipos F, B y AC se cotizan a mano.',
     },
     {
       titulo: 'Puntos de luz y de toma ($/un.)',
