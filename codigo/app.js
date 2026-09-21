@@ -1525,11 +1525,16 @@
     // consigue. Los que quedan en 0 no están en ese proveedor: se cotizan a
     // mano. WiAutomation no es distribuidor oficial y despacha desde Europa,
     // así que conviene confirmar plazo y flete antes de cerrar el precio.
+    //
+    // Tipo B bipolar — Tongou TORD4B-63 2P 40A 30mA, pensado para cargador de
+    // auto, en MercadoLibre Uruguay el 21/09/2026: USD 153,13 (lista USD 247).
+    // Es gama económica y sale bastante menos que el ABB; el de 25A toma el
+    // mismo precio, que es el tamaño que publica el vendedor.
     diferencialA2P: { 25: 1103, 40: 1080, 63: 1103 },
     diferencialA4P: { 25: 1155, 40: 1634, 63: 1675 },
     diferencialF2P: { 25: 7348, 40: 7348, 63: 0 },
     diferencialF4P: { 25: 12489, 40: 6604, 63: 0 },
-    diferencialB2P: { 25: 16592, 40: 0, 63: 0 },
+    diferencialB2P: { 25: 6160, 40: 6160, 63: 0 },
     diferencialB4P: { 25: 26660, 40: 22001, 63: 23053 },
     // Diferencial tipo A, 30 mA, hasta 40 A. Sin relevar: se carga en el
     // catálogo. Los tipos F, B y AC se cotizan a mano en cada presupuesto.
@@ -1567,6 +1572,7 @@
     { clave: 'termicaTetrapolarBase' }, { clave: 'termicaTetrapolar63' }, { clave: 'termicaTetrapolar125' },
     { clave: 'diferencialA2P', medida: 25 }, { clave: 'diferencialA2P', medida: 40 }, { clave: 'diferencialA2P', medida: 63 },
     { clave: 'diferencialA4P', medida: 25 }, { clave: 'diferencialA4P', medida: 40 }, { clave: 'diferencialA4P', medida: 63 },
+    { clave: 'diferencialB2P', medida: 25 }, { clave: 'diferencialB2P', medida: 40 },
     { clave: 'cableBajoGoma' }, { clave: 'cableBajoPlastico' },
     { clave: 'canoGalvanizado' }, { clave: 'codoGalvanizado' },
     { clave: 'bandeja', medida: 150 }, { clave: 'cajaMedidorTrifasica' },
@@ -1584,6 +1590,10 @@
     { clave: 'termicaUnipolarBase', viejo: 80, nuevo: 481 },
     { clave: 'termicaBipolarBase', viejo: 277, nuevo: 854 },
     { clave: 'termicaTetrapolarBase', viejo: 294, nuevo: 1785 },
+    // el tipo B bipolar pasa al Tongou de MercadoLibre, que es el que se
+    // consigue para cargador de auto y sale bastante menos que el ABB
+    { clave: 'diferencialB2P', medida: 25, viejo: 16592, nuevo: 6160 },
+    { clave: 'diferencialB2P', medida: 40, viejo: 0, nuevo: 6160 },
     { clave: 'borneraTierra', viejo: 0, nuevo: 55 },
     { clave: 'borneraNeutro', viejo: 0, nuevo: 55 },
     { clave: 'codoGalvanizado', viejo: 0, nuevo: 16 },
@@ -4118,7 +4128,7 @@
         { key: 'diferencialB2P', tipo: 'mapa', etiqueta: (a) => 'Bipolar ' + a + 'A' },
         { key: 'diferencialB4P', tipo: 'mapa', etiqueta: (a) => 'Tetrapolar ' + a + 'A' },
       ],
-      nota: 'ABB F202 y F204 tipo B, relevados en uy.wiautomation.com el 21/09/2026. En bipolar sólo se consigue el de 25A. Es la protección del cargador de auto y de la fotovoltaica: si el equipo ya trae el monitor de continua de 6 mA, alcanza con un tipo A y este costo no va.',
+      nota: 'Bipolar: Tongou TORD4B-63 2P 40A, de MercadoLibre (USD 153,13 el 21/09/2026), que es gama económica; el de 25A toma ese mismo precio. La alternativa relevada es el ABB F202 B-25/0.03 de WiAutomation, a $ 16.592. Tetrapolar: ABB F204 tipo B, también de WiAutomation. Es la protección del cargador de auto y de la fotovoltaica: si el equipo ya trae el monitor de continua de 6 mA, alcanza con un tipo A y este costo no va.',
     },
     {
       titulo: 'Puntos de luz y de toma ($/un.)',
