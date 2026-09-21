@@ -1506,22 +1506,31 @@
     termicaTetrapolarBase: 1785,
     termicaTetrapolar63: 2710,
     termicaTetrapolar125: 8065,
-    // Diferenciales tipo A, 30 mA. Fivisa sólo tiene el Schneider Acti9 iID
-    // superinmunizado bipolar de 25 A (MG1302, USD 143,77 = $ 5.784), así que
-    // la tabla se completa con la línea Chint NL1-63 tipo A de mgi.com.uy,
-    // relevada el 17/09/2026 en USD: 2P 25A 27,43 · 2P 40A 26,84 ·
-    // 2P 63A 27,43 · 4P 25A 28,71 · 4P 40A 40,61 · 4P 63A 41,63.
-    // Por encima de 63 A no hay bipolar: a esa corriente el suministro ya es
-    // trifásico. En tetrapolar, arriba de 63 A los que hay son de 300 mA, no
-    // de 30: ese caso se cotiza a mano.
-    // Otra opción relevada, para cargar a mano: ABB SI 4P 25A 30 mA,
-    // $ 7.842 con IVA en electrouruguay.com.
-    diferencialBipolar25: 1103,
-    diferencialBipolar40: 1080,
-    diferencialBipolar63: 1103,
-    diferencialTetrapolar25: 1155,
-    diferencialTetrapolar40: 1634,
-    diferencialTetrapolar63: 1675,
+    // Diferenciales de 30 mA, por tipo, polos y corriente nominal.
+    //
+    // Tipo A — línea Chint NL1-63 de mgi.com.uy, relevada el 17/09/2026 en
+    // USD (2P: 27,43 · 26,84 · 27,43 · 4P: 28,71 · 40,61 · 41,63). En Fivisa
+    // está el Schneider Acti9 iID A-SI 2P 25A a $ 5.784 y en Electro Uruguay
+    // un ABB SI 4P 25A a $ 7.842: si se compran esos, se cargan acá.
+    //
+    // Tipos F y B — uy.wiautomation.com, relevado el 21/09/2026 en pesos:
+    //   F 2P 40A  Schneider Resi9 R9R71240 F-SI   $ 7.348
+    //   F 4P 25A  ABB F204 F-25/0.03              $ 12.489
+    //   F 4P 40A  ABB F204 F-40/0.03              $ 6.604
+    //   B 2P 25A  ABB F202 B-25/0.03              $ 16.592
+    //   B 4P 25A  ABB F204 B-25/0.03              $ 26.660
+    //   B 4P 40A  ABB F204 B-40/0.03              $ 22.001
+    //   B 4P 63A  ABB F204 B-63/0.03              $ 23.053
+    // El F bipolar de 25A toma el precio del de 40A, que es el que se
+    // consigue. Los que quedan en 0 no están en ese proveedor: se cotizan a
+    // mano. WiAutomation no es distribuidor oficial y despacha desde Europa,
+    // así que conviene confirmar plazo y flete antes de cerrar el precio.
+    diferencialA2P: { 25: 1103, 40: 1080, 63: 1103 },
+    diferencialA4P: { 25: 1155, 40: 1634, 63: 1675 },
+    diferencialF2P: { 25: 7348, 40: 7348, 63: 0 },
+    diferencialF4P: { 25: 12489, 40: 6604, 63: 0 },
+    diferencialB2P: { 25: 16592, 40: 0, 63: 0 },
+    diferencialB4P: { 25: 26660, 40: 22001, 63: 23053 },
     // Diferencial tipo A, 30 mA, hasta 40 A. Sin relevar: se carga en el
     // catálogo. Los tipos F, B y AC se cotizan a mano en cada presupuesto.
     cajaOctogonal: 72,
@@ -1556,8 +1565,8 @@
     { clave: 'termicaUnipolarBase' }, { clave: 'termicaUnipolar63' },
     { clave: 'termicaBipolarBase' }, { clave: 'termicaBipolar63' },
     { clave: 'termicaTetrapolarBase' }, { clave: 'termicaTetrapolar63' }, { clave: 'termicaTetrapolar125' },
-    { clave: 'diferencialBipolar25' }, { clave: 'diferencialBipolar40' }, { clave: 'diferencialBipolar63' },
-    { clave: 'diferencialTetrapolar25' }, { clave: 'diferencialTetrapolar40' }, { clave: 'diferencialTetrapolar63' },
+    { clave: 'diferencialA2P', medida: 25 }, { clave: 'diferencialA2P', medida: 40 }, { clave: 'diferencialA2P', medida: 63 },
+    { clave: 'diferencialA4P', medida: 25 }, { clave: 'diferencialA4P', medida: 40 }, { clave: 'diferencialA4P', medida: 63 },
     { clave: 'cableBajoGoma' }, { clave: 'cableBajoPlastico' },
     { clave: 'canoGalvanizado' }, { clave: 'codoGalvanizado' },
     { clave: 'bandeja', medida: 150 }, { clave: 'cajaMedidorTrifasica' },
@@ -1575,9 +1584,6 @@
     { clave: 'termicaUnipolarBase', viejo: 80, nuevo: 481 },
     { clave: 'termicaBipolarBase', viejo: 277, nuevo: 854 },
     { clave: 'termicaTetrapolarBase', viejo: 294, nuevo: 1785 },
-    // el precio del Schneider A-SI se cambia por el de la línea Chint, que
-    // tiene toda la gama de 25 a 63 A en 2P y 4P
-    { clave: 'diferencialBipolar25', viejo: 5784, nuevo: 1103 },
     { clave: 'borneraTierra', viejo: 0, nuevo: 55 },
     { clave: 'borneraNeutro', viejo: 0, nuevo: 55 },
     { clave: 'codoGalvanizado', viejo: 0, nuevo: 16 },
@@ -1630,14 +1636,13 @@
     const tramo = amp <= 40 ? 'Base' : (amp <= 63 ? '63' : '125');
     return Number(precios[familia + tramo]) || 0;
   }
-  // Diferencial: sólo hay precio del tipo A bipolar de hasta 25 A (Acti9 iID
-  // A-SI). Los demás —tetrapolares, más de 25 A, y los tipos F, B y AC— se
-  // cotizan a mano.
+  // Precio del diferencial por tipo, polos y corriente. Lo que no está
+  // relevado queda en 0 y el material sale sin precio, para cargarlo a mano.
   function precioDiferencial(tipoRcd, polos, amp, precios) {
-    if (tipoRcd !== 'A') return 0;
     const escalon = inDiferencial(amp);
-    if (!escalon) return 0;
-    return Number(precios[(polos <= 2 ? 'diferencialBipolar' : 'diferencialTetrapolar') + escalon]) || 0;
+    const mapa = precios['diferencial' + tipoRcd + (polos <= 2 ? '2P' : '4P')];
+    if (!escalon || !mapa) return 0;
+    return Number(mapa[escalon]) || 0;
   }
   // Medida de gabinete que hay que comprar para una cantidad de módulos: la
   // siguiente de la lista. No existe un gabinete de 20 módulos — se compra el de
@@ -4094,14 +4099,26 @@
     {
       titulo: 'Diferenciales tipo A, 30 mA ($/un.)',
       campos: [
-        { key: 'diferencialBipolar25', tipo: 'plano', etiqueta: 'Diferencial bipolar 25A' },
-        { key: 'diferencialBipolar40', tipo: 'plano', etiqueta: 'Diferencial bipolar 40A' },
-        { key: 'diferencialBipolar63', tipo: 'plano', etiqueta: 'Diferencial bipolar 63A' },
-        { key: 'diferencialTetrapolar25', tipo: 'plano', etiqueta: 'Diferencial tetrapolar 25A' },
-        { key: 'diferencialTetrapolar40', tipo: 'plano', etiqueta: 'Diferencial tetrapolar 40A' },
-        { key: 'diferencialTetrapolar63', tipo: 'plano', etiqueta: 'Diferencial tetrapolar 63A' },
+        { key: 'diferencialA2P', tipo: 'mapa', etiqueta: (a) => 'Bipolar ' + a + 'A' },
+        { key: 'diferencialA4P', tipo: 'mapa', etiqueta: (a) => 'Tetrapolar ' + a + 'A' },
       ],
-      nota: 'Línea Chint NL1-63 tipo A, relevada en MGI el 17/09/2026 en USD. En Fivisa el único tipo A es el Schneider Acti9 iID A-SI bipolar de 25A ($ 5.784) y en Electro Uruguay hay un ABB SI 4P 25A ($ 7.842 con IVA): si se compran esos, hay que cargar su precio acá. No hay bipolar de más de 63A porque a esa corriente el suministro va trifásico; en tetrapolar, arriba de 63A los que se consiguen son de 300 mA. Los tipos F, B y AC se cotizan a mano.',
+      nota: 'Chint NL1-63 tipo A, relevado en MGI el 17/09/2026 en USD. Alternativas para cargar a mano: Schneider Acti9 iID A-SI 2P 25A ($ 5.784, Fivisa) y ABB SI 4P 25A ($ 7.842 con IVA, Electro Uruguay). No hay bipolar de más de 63A: a esa corriente el suministro va trifásico.',
+    },
+    {
+      titulo: 'Diferenciales tipo F, 30 mA ($/un.)',
+      campos: [
+        { key: 'diferencialF2P', tipo: 'mapa', etiqueta: (a) => 'Bipolar ' + a + 'A' },
+        { key: 'diferencialF4P', tipo: 'mapa', etiqueta: (a) => 'Tetrapolar ' + a + 'A' },
+      ],
+      nota: 'Relevado en uy.wiautomation.com el 21/09/2026: Schneider Resi9 R9R71240 F-SI bipolar 40A y ABB F204 F de 25 y 40A. El bipolar de 25A toma el precio del de 40A, que es el que se consigue; los que están en 0 no aparecen en ese proveedor. WiAutomation no es distribuidor oficial y despacha desde Europa: confirmar plazo y flete.',
+    },
+    {
+      titulo: 'Diferenciales tipo B, 30 mA ($/un.)',
+      campos: [
+        { key: 'diferencialB2P', tipo: 'mapa', etiqueta: (a) => 'Bipolar ' + a + 'A' },
+        { key: 'diferencialB4P', tipo: 'mapa', etiqueta: (a) => 'Tetrapolar ' + a + 'A' },
+      ],
+      nota: 'ABB F202 y F204 tipo B, relevados en uy.wiautomation.com el 21/09/2026. En bipolar sólo se consigue el de 25A. Es la protección del cargador de auto y de la fotovoltaica: si el equipo ya trae el monitor de continua de 6 mA, alcanza con un tipo A y este costo no va.',
     },
     {
       titulo: 'Puntos de luz y de toma ($/un.)',
