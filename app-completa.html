@@ -4465,15 +4465,18 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     // un ABB SI 4P 25A a $ 7.842: si se compran esos, se cargan acá.
     //
     // Tipos F y B — uy.wiautomation.com, relevado el 21/09/2026 en pesos:
+    //   F 2P 25A  ABB F202 F-25/0,03              $ 3.977
     //   F 2P 40A  Schneider Resi9 R9R71240 F-SI   $ 7.348
     //   F 4P 25A  ABB F204 F-25/0.03              $ 12.489
     //   F 4P 40A  ABB F204 F-40/0.03              $ 6.604
-    //   B 2P 25A  ABB F202 B-25/0.03              $ 16.592
-    //   B 4P 25A  ABB F204 B-25/0.03              $ 26.660
-    //   B 4P 40A  ABB F204 B-40/0.03              $ 22.001
-    //   B 4P 63A  ABB F204 B-63/0.03              $ 23.053
-    // El F bipolar de 25A toma el precio del de 40A, que es el que se
-    // consigue. Los que quedan en 0 no están en ese proveedor: se cotizan a
+    //   B 2P 63A  Schneider Acti9 A9Z61263 B-SI   $ 27.591
+    //   B 4P 25A  Schneider Acti9 A9Z61425 B-SI   $ 19.486
+    //   B 4P 40A  Schneider Acti9 A9Z61440 B-SI   $ 13.495
+    //   B 4P 63A  Schneider Acti9 A9Z61463 B-SI   $ 20.797
+    // En tipo B el Schneider salió más barato que el ABB en tetrapolar
+    // (ABB: 26.660 / 22.001 / 23.053) y en bipolar 25 y 40 A manda el Tongou.
+    // En tipo F no hay ninguno de 63 A, ni bipolar ni tetrapolar.
+    // Los que quedan en 0 no están en ese proveedor: se cotizan a
     // mano. WiAutomation no es distribuidor oficial y despacha desde Europa,
     // así que conviene confirmar plazo y flete antes de cerrar el precio.
     //
@@ -4485,10 +4488,10 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     // precio, que es el tamaño que publica el vendedor.
     diferencialA2P: { 25: 1103, 40: 1080, 63: 1103 },
     diferencialA4P: { 25: 1155, 40: 1634, 63: 1675 },
-    diferencialF2P: { 25: 7348, 40: 7348, 63: 0 },
+    diferencialF2P: { 25: 3977, 40: 7348, 63: 0 },
     diferencialF4P: { 25: 12489, 40: 6604, 63: 0 },
-    diferencialB2P: { 25: 9937, 40: 9937, 63: 0 },
-    diferencialB4P: { 25: 26660, 40: 22001, 63: 23053 },
+    diferencialB2P: { 25: 9937, 40: 9937, 63: 27591 },
+    diferencialB4P: { 25: 19486, 40: 13495, 63: 20797 },
     // Diferencial tipo A, 30 mA, hasta 40 A. Sin relevar: se carga en el
     // catálogo. Los tipos F, B y AC se cotizan a mano en cada presupuesto.
     cajaOctogonal: 72,
@@ -4550,6 +4553,13 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     // el 21/09/2026 se había cargado el precio con descuento promocional
     { clave: 'diferencialB2P', medida: 25, viejo: 6160, nuevo: 9937 },
     { clave: 'diferencialB2P', medida: 40, viejo: 6160, nuevo: 9937 },
+    // 21/09/2026: se completan los que faltaban y el tipo B tetrapolar pasa
+    // del ABB al Schneider, que en esa medida sale menos
+    { clave: 'diferencialB2P', medida: 63, viejo: 0, nuevo: 27591 },
+    { clave: 'diferencialB4P', medida: 25, viejo: 26660, nuevo: 19486 },
+    { clave: 'diferencialB4P', medida: 40, viejo: 22001, nuevo: 13495 },
+    { clave: 'diferencialB4P', medida: 63, viejo: 23053, nuevo: 20797 },
+    { clave: 'diferencialF2P', medida: 25, viejo: 7348, nuevo: 3977 },
     { clave: 'borneraTierra', viejo: 0, nuevo: 55 },
     { clave: 'borneraNeutro', viejo: 0, nuevo: 55 },
     { clave: 'codoGalvanizado', viejo: 0, nuevo: 16 },
@@ -7076,7 +7086,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         { key: 'diferencialF2P', tipo: 'mapa', etiqueta: (a) => 'Bipolar ' + a + 'A' },
         { key: 'diferencialF4P', tipo: 'mapa', etiqueta: (a) => 'Tetrapolar ' + a + 'A' },
       ],
-      nota: 'Relevado en uy.wiautomation.com el 21/09/2026: Schneider Resi9 R9R71240 F-SI bipolar 40A y ABB F204 F de 25 y 40A. El bipolar de 25A toma el precio del de 40A, que es el que se consigue; los que están en 0 no aparecen en ese proveedor. WiAutomation no es distribuidor oficial y despacha desde Europa: confirmar plazo y flete.',
+      nota: 'Relevado en uy.wiautomation.com el 21/09/2026: ABB F202 F-25 bipolar, Schneider Resi9 R9R71240 F-SI bipolar 40A y ABB F204 F de 25 y 40A. No hay ninguno de 63A, ni bipolar ni tetrapolar: ese queda a cotizar. WiAutomation no es distribuidor oficial y despacha desde Europa: confirmar plazo y flete.',
     },
     {
       titulo: 'Diferenciales tipo B, 30 mA ($/un.)',
@@ -7084,7 +7094,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
         { key: 'diferencialB2P', tipo: 'mapa', etiqueta: (a) => 'Bipolar ' + a + 'A' },
         { key: 'diferencialB4P', tipo: 'mapa', etiqueta: (a) => 'Tetrapolar ' + a + 'A' },
       ],
-      nota: 'Bipolar: Tongou TORD4B-63 2P 40A, de MercadoLibre (USD 247 de lista el 21/09/2026), que es gama económica; el de 25A toma ese mismo precio. La alternativa relevada es el ABB F202 B-25/0.03 de WiAutomation, a $ 16.592. Tetrapolar: ABB F204 tipo B, también de WiAutomation. Es la protección del cargador de auto y de la fotovoltaica: si el equipo ya trae el monitor de continua de 6 mA, alcanza con un tipo A y este costo no va.',
+      nota: 'Bipolar de 25 y 40A: Tongou TORD4B-63 2P 40A, de MercadoLibre (USD 247 de lista el 21/09/2026), que es gama económica; el de 25A toma ese mismo precio. El de 63A y los tetrapolares son Schneider Acti9 iID B-SI (A9Z612xx / A9Z614xx) de WiAutomation, que salieron menos que los ABB equivalentes. Alternativas relevadas para cargar a mano: Schneider 2P 25A $ 17.285 y 2P 40A $ 19.411, ABB F202 B-25 $ 16.592 y ABB F204 B de 25, 40 y 63A ($ 26.660 / $ 22.001 / $ 23.053). Es la protección del cargador de auto y de la fotovoltaica: si el equipo ya trae el monitor de continua de 6 mA, alcanza con un tipo A y este costo no va.',
     },
     {
       titulo: 'Puntos de luz y de toma ($/un.)',
