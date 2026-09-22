@@ -15,7 +15,10 @@ assert('D 10 A -> umbral garantizado 200 A',T.umbralMagneticoGarantizado('D',10)
 let r=T.evaluarIccMinimaYDesconexion({tipoProteccion:'mcb',v:230,iccMinFinalA:120},10,'C',10000);
 assert('C10 con Ikmin 120 A garantiza zona magnética',r.magnetico===true,JSON.stringify(r));
 assert('t térmico = I2t/Ik2',Math.abs(r.tiempoAdmisibleS-(10000/(120*120)))<1e-9,JSON.stringify(r));
-assert('cota magnética 0.1 s cumple cuando t admisible es mayor',r.tiempoActuacionS===0.1 && r.cumpleTiempo===true && r.cumpleIccMinima===true,JSON.stringify(r));
+assert('zona magnética garantizada pero sin tiempo real -> pendiente, no se asume 0.1 s',r.tiempoActuacionS===null && r.cumpleTiempo===null && r.cumpleIccMinima===null && r.pendientes.some(x=>x.includes('fabricante')),JSON.stringify(r));
+
+r=T.evaluarIccMinimaYDesconexion({tipoProteccion:'mcb',v:230,iccMinFinalA:120,tiempoDesconexionVerificadoS:0.05},10,'C',10000);
+assert('con tiempo real de fabricante sí se evalúa aunque garantice zona magnética',r.tiempoActuacionS===0.05 && r.cumpleTiempo===true && r.cumpleIccMinima===true,JSON.stringify(r));
 
 r=T.evaluarIccMinimaYDesconexion({tipoProteccion:'mcb',v:230,iccMinFinalA:80},10,'C',10000);
 assert('C10 con Ikmin 80 A no garantiza magnético',r.magnetico===false,JSON.stringify(r));

@@ -13,7 +13,7 @@ const T=global.__adonaiTest; let failed=0;
 function assert(name,ok,detail=''){console.log(ok?'PASS':'FAIL',name,detail);if(!ok)failed++;}
 function circuito(over={}){return {
  ib:10,v:230,fases:1,l:10,material:'cobre',metodo:'embutido',aislacion:'pvc',tempAmb:25,agrupados:1,cosPhi:1,caidaMax:5,uso:'fuerza',
- inProteccion:16,tipoProteccion:'mcb',iccKa:3,poderCorteKa:6,i2tPasante:10000,equipo:'comun',sistemaId:'mono',iccMinFinalA:200,continuidadPe:'si',...over
+ inProteccion:16,tipoProteccion:'mcb',iccKa:3,poderCorteKa:6,i2tPasante:10000,equipo:'comun',sistemaId:'mono',iccMinFinalA:200,tiempoDesconexionVerificadoS:0.05,continuidadPe:'si',...over
 };}
 let r=T.comprobarCircuito(circuito());
 assert('circuito completo puede cerrar verificado',r.estado==='cumple',JSON.stringify({estado:r.estado,causas:r.causas,pendientes:r.pendientes}));

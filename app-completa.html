@@ -3486,28 +3486,24 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
       out.pendientes.push('Falta el límite térmico de cortocircuito del conductor para obtener el tiempo máximo admisible a la Icc mínima.');
     }
 
+    // Criterio confirmado el 22/9/2026: no se asume una cota genérica de
+    // 0,1 s para la zona magnética, ni siquiera cuando la Icc mínima la
+    // garantiza. Siempre hace falta el tiempo real de actuación —curva del
+    // fabricante o ensayo— para cerrar esta comprobación.
     const tManual = Number(p && p.tiempoDesconexionVerificadoS);
     if (tManual > 0) {
       out.tiempoActuacionS = tManual;
       out.fuenteTiempo = 'fabricante/ensayo';
-    } else if (out.magnetico === true) {
-      // IEC 60898-1 sitúa la actuación magnética en la zona de 0,1 s. Usamos
-      // 0,1 s como cota superior conservadora, no como tiempo exacto del equipo.
-      out.tiempoActuacionS = 0.1;
-      out.fuenteTiempo = 'cota IEC 60898-1';
     }
 
     if (out.tiempoActuacionS !== null && out.tiempoAdmisibleS !== null) {
-      if (out.fuenteTiempo === 'cota IEC 60898-1' && out.tiempoAdmisibleS < 0.1) {
-        out.cumpleTiempo = null;
-        out.pendientes.push('El tiempo térmico admisible del conductor (' + fmt(out.tiempoAdmisibleS,3) + ' s) es menor que la cota genérica de 0,1 s de la zona magnética. Hace falta la curva/energía pasante específica del fabricante para cerrar esta condición.');
-      } else {
-        out.cumpleTiempo = out.tiempoActuacionS <= out.tiempoAdmisibleS;
-        if (out.cumpleTiempo) out.notas.push('Tiempo de actuación usado: ' + fmt(out.tiempoActuacionS,3) + ' s ≤ tiempo térmico admisible ' + fmt(out.tiempoAdmisibleS,3) + ' s.');
-        else out.causas.push('El tiempo de actuación documentado (' + fmt(out.tiempoActuacionS,3) + ' s) supera el tiempo térmico admisible del conductor a la Icc mínima (' + fmt(out.tiempoAdmisibleS,3) + ' s).');
-      }
-    } else if (out.iccMinA !== null && out.magnetico === false && !(tManual > 0)) {
-      out.pendientes.push('Como la Icc mínima no garantiza disparo magnético, falta leer en la curva tiempo-corriente del fabricante el tiempo de actuación a ' + fmt(out.iccMinA,0) + ' A (o medir/documentar ese tiempo).');
+      out.cumpleTiempo = out.tiempoActuacionS <= out.tiempoAdmisibleS;
+      if (out.cumpleTiempo) out.notas.push('Tiempo de actuación usado: ' + fmt(out.tiempoActuacionS,3) + ' s ≤ tiempo térmico admisible ' + fmt(out.tiempoAdmisibleS,3) + ' s.');
+      else out.causas.push('El tiempo de actuación documentado (' + fmt(out.tiempoActuacionS,3) + ' s) supera el tiempo térmico admisible del conductor a la Icc mínima (' + fmt(out.tiempoAdmisibleS,3) + ' s).');
+    } else if (out.iccMinA !== null && !(tManual > 0)) {
+      out.pendientes.push(out.magnetico === true
+        ? 'La Icc mínima garantiza la zona magnética, pero falta el tiempo real de actuación (curva tiempo-corriente del fabricante o ensayo) a ' + fmt(out.iccMinA,0) + ' A: no se asume una cota genérica.'
+        : 'Como la Icc mínima no garantiza disparo magnético, falta leer en la curva tiempo-corriente del fabricante el tiempo de actuación a ' + fmt(out.iccMinA,0) + ' A (o medir/documentar ese tiempo).');
     }
 
     if (out.iccMinA !== null) {
