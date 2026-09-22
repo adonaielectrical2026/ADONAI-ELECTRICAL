@@ -4940,7 +4940,7 @@
         '</select></div>' +
         '<div class="field"><label>Tipo de protección</label><select class="select" data-f="tipoProteccion">' +
         '<option value="mcb"' + ((c.tipoProteccion || 'mcb') === 'mcb' ? ' selected' : '') + '>Termomagnético IEC 60898</option>' +
-        '<option value="otro"' + (c.tipoProteccion === 'otro' ? ' selected' : '') + '>Caja moldeada u otro</option></select></div>' +
+        '<option value="otro"' + (c.tipoProteccion === 'otro' ? ' selected' : '') + '>Caja moldeada, fusible u otro (Icu propio)</option></select></div>' +
         ((c.tipoProteccion || 'mcb') === 'otro'
           ? '<div class="field"><label>I₂ del fabricante (A)</label><input class="input" type="number" step="0.1" min="0" data-f="i2" value="' + (Number(c.i2) || '') + '"></div>'
           : '') +
