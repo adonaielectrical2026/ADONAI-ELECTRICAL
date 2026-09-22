@@ -2461,14 +2461,18 @@
     // El bajo goma va al aire libre y el bajo plástico en bandeja.
     // Los de 4 conductores —los que pide un circuito trifásico— no están
     // relevados: salen del de 3 conductores más un 30 %. Confirmalos.
+    // 3x6 y 3x10 son cable Fustix (Funsa) extra flexible, relevados el
+    // 22/9/2026: bajo goma USD 696,68 y USD 1.198,63 el rollo de 100 m
+    // (N06146 / N06150); bajo plástico USD 705,79 y USD 1.207,00 (N04412 /
+    // N04414). Por encima de 10 mm² no está relevado en 3x.
     cableBajoGoma: {
       '2x1': 39, '2x1.5': 55, '2x2': 73, '2x2.5': 89, '2x4': 134, '2x6': 197,
-      '3x1': 54, '3x1.5': 77, '3x2': 102, '3x2.5': 125, '3x4': 192,
+      '3x1': 54, '3x1.5': 77, '3x2': 102, '3x2.5': 125, '3x4': 192, '3x6': 280, '3x10': 482,
       '4x1': 70, '4x1.5': 100, '4x2': 133, '4x2.5': 163, '4x4': 250,
     },
     cableBajoPlastico: {
       '2x1': 38, '2x1.5': 51, '2x2': 67, '2x2.5': 81, '2x4': 122, '2x6': 178,
-      '3x1': 61, '3x1.5': 82, '3x2': 106, '3x2.5': 129, '3x4': 195,
+      '3x1': 61, '3x1.5': 82, '3x2': 106, '3x2.5': 129, '3x4': 195, '3x6': 284, '3x10': 486,
       '4x1': 79, '4x1.5': 107, '4x2': 138, '4x2.5': 168, '4x4': 254,
     },
     cableUnipolar: {
