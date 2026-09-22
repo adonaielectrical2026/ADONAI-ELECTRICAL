@@ -1,0 +1,20 @@
+PASO 16 — CIERRE PROFESIONAL DE OBRA
+
+Versión de motor: 3.0.0
+Paquete normativo/documental: 2.2-cierre-profesional
+Esquema de datos: v14
+PWA cache: v16
+
+Cambios principales
+- Revisión final obligatoria antes de emitir documentación definitiva.
+- Estado documental calculado: Listo para emitir / Pendiente / No cumple.
+- Identificación del responsable técnico, categoría/habilitación y fecha de cierre.
+- Declaración expresa del responsable técnico.
+- Firma gráfica opcional incorporable al expediente (no equivale a firma digital criptográfica).
+- Hasta 6 anexos fotográficos comprimidos dentro del proyecto.
+- Generación independiente de Memoria Técnica, Protocolo de Ensayos y Esquema Unifilar.
+- Generación de Expediente Técnico completo, con portada, memoria, protocolo, unifilar, declaración/firma y anexos.
+- Los documentos con faltantes o incumplimientos se emiten marcados como BORRADOR.
+- Esquema unifilar simplificado generado automáticamente desde el suministro, protección general, RCD y circuitos.
+- Al duplicar un trabajo se reinician los datos de cierre/firma para evitar heredar una aprobación anterior.
+- Migración v14 conservadora: ninguna obra antigua se considera cerrada automáticamente.

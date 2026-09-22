@@ -312,7 +312,10 @@
   .badge-pendiente{ display:inline-flex; align-items:center; gap:6px; background:var(--warning-bg); color:var(--warning); font-weight:800; font-size:0.8rem; padding:6px 14px; border-radius:var(--radius-pill); white-space:nowrap; }
   .badge-apto svg,.badge-noapto svg{ width:15px; height:15px; }
 
-  .alert-error{ border-left:4px solid var(--error); background:var(--error-bg); border-radius:var(--radius-sm); padding:14px 16px; font-size:0.86rem; line-height:1.5; color:var(--charcoal); }
+  .alert-error,.alert-warning,.alert-success{ border-radius:var(--radius-sm); padding:14px 16px; font-size:0.86rem; line-height:1.5; color:var(--charcoal); }
+  .alert-error{ border-left:4px solid var(--error); background:var(--error-bg); }
+  .alert-warning{ border-left:4px solid var(--warning); background:var(--warning-bg); }
+  .alert-success{ border-left:4px solid var(--success); background:var(--success-bg); }
   .empty-state{ text-align:center; padding:36px 16px; color:var(--steel); font-size:0.88rem; line-height:1.5; }
 
   /* ============================================================
@@ -340,6 +343,8 @@
     padding:12px 20px; border-radius:var(--radius-pill); font-size:0.84rem; font-weight:700; box-shadow:var(--shadow-lg); opacity:0; pointer-events:none;
     transition:opacity .2s ease, transform .2s ease; z-index:100; max-width:88%; text-align:center; }
   .toast.show{ opacity:1; transform:translateX(-50%) translateY(0); }
+  .storage-alert{ position:sticky; top:58px; z-index:39; margin:0 12px 10px; box-shadow:var(--shadow-sm); }
+  @media (min-width:560px){ .storage-alert{ top:58px; } }
 
   /* ============================================================
      CATÁLOGO DE PRECIOS (details/summary nativos, sin JS de acordeón)
@@ -630,7 +635,8 @@ body{ font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","SF Pro Display
 .summary-state-select{ min-height:30px; padding:3px 27px 3px 12px; margin-top:6px; width:auto; max-width:100%; border:none; border-radius:999px; background-color:#eff0f1; font-size:.78rem; }
 .summary-circuit-card{ display:grid; grid-template-columns:48px minmax(120px,1.6fr) repeat(3,minmax(65px,.72fr)) 22px; align-items:center; gap:10px; }
 .summary-circuit-id{ width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:linear-gradient(145deg,#f1f2f3,#dfe1e3); font-weight:800; }
-.summary-circuit-name{ font-size:.88rem; font-weight:700; min-width:0; }
+.summary-circuit-name{ font-size:.88rem; font-weight:700; min-width:0; display:flex; flex-direction:column; align-items:flex-start; }
+.summary-circuit-name .badge-apto,.summary-circuit-name .badge-pendiente,.summary-circuit-name .badge-noapto{ margin-top:6px; padding:3px 8px; font-size:.68rem; }
 .summary-circuit-warning{ display:block; color:var(--error); font-size:.68rem; font-weight:600; margin-top:4px; }
 .summary-circuit-stat{ text-align:center; padding-left:10px; border-left:1px solid #e2e3e5; }
 .summary-circuit-stat b{ display:block; font-size:.84rem; white-space:nowrap; }

@@ -68,4 +68,29 @@ Todo queda guardado **solo en el dispositivo** donde se usa la app (navegador); 
 
 ## Importante sobre los cálculos
 
-Las tablas de ampacidad, factores de corrección, secciones mínimas y curvas sugeridas figuran en la app como "Pendiente de verificación". Son valores de referencia y hay que confirmarlos contra el Reglamento de Baja Tensión de UTE y las normas UNIT/IEC vigentes antes de usarlos en una instalación real.
+La app informa cada comprobación como **Verificado**, **Pendiente** o **No cumple** según los datos realmente disponibles. La memoria usa como base el Reglamento de Baja Tensión de UTE y referencias IEC complementarias donde corresponde. El estado técnico global incluye circuitos, protección general, puesta a tierra y evaluación de sobretensiones.
+
+En canalizaciones enterradas se solicita la **resistividad térmica del terreno** y la **profundidad**. Se aplica el factor complementario de IEC 60364-5-52 B.52.16 hasta 0,8 m; fuera de ese alcance la comprobación queda **Pendiente** y requiere cálculo específico.
+
+Para sobretensiones, la app registra la evaluación exigida por UTE cuando sean de temer sobretensiones atmosféricas. Si corresponde SPD, verifica su existencia, propone Tipo 1+2 cuando hay LPS y Tipo 2 en los demás casos como referencia IEC, y exige tierra inferior a 10 Ω para el descargador.
+
+En modificaciones, reparaciones y emergencias la app no supone que la protección existente es correcta: exige relevar la sección real del alimentador, la térmica general, la existencia/corriente del diferencial, la puesta a tierra y la evaluación de sobretensiones. Si falta alguno de esos datos, la memoria no se cierra como verificada.
+
+## Auditoría de circuitos — Paso 6
+
+La memoria valida la alimentación de cada circuito de forma independiente del suministro general. En suministros trifásicos, las cargas importadas no heredan automáticamente tres fases: se crean provisionalmente como 1φ/230 V y quedan **Pendientes** hasta que el técnico confirme 1φ o 3φ. Si hay circuitos monofásicos en un suministro trifásico, la protección general queda **Pendiente** hasta verificar el reparto/balance de fases.
+
+Los puntos de carga de vehículos eléctricos exigen indicar modo de carga y confirmar/proyectar un diferencial individual de hasta 30 mA. La selección propuesta del tipo diferencial considera el modo y la presencia de RDC-DD de 6 mA.
+
+Las tablas B/C del Anexo de cortocircuito se leen literalmente. Cuando la celda necesaria participa de una irregularidad no monótona de la tabla publicada, la app no la corrige por inferencia: deja la Icc **Pendiente** y solicita un valor informado/medido o cálculo específico.
+
+El PDF interno incluye ahora una sección **Causas y pendientes por circuito**, de modo que cada estado pueda auditarse sin volver a abrir el relevamiento.
+
+
+## Paso 7 — balance de fases
+La memoria asigna circuitos monofásicos a fases/conductores, calcula corrientes L1/L2/L3, contrasta el desequilibrio con UTE RBT Cap. II §9 (20 % hasta 50 kW; 15 % por encima) y usa la fase más cargada para el alimentador y la protección general.
+
+## Paso 16 — cierre profesional
+La pantalla Resumen incorpora una revisión final de obra. La aplicación no considera un expediente definitivo si quedan circuitos no conformes, verificaciones pendientes, ensayos incompletos o falta identificar al responsable técnico. Es posible emitir borradores, que quedan marcados como tales.
+
+El cierre permite generar por separado Memoria Técnica, Protocolo de Ensayos y Esquema Unifilar, o un Expediente Técnico combinado. También admite firma gráfica opcional y hasta seis anexos fotográficos comprimidos. La firma gráfica es documental y no sustituye una firma digital certificada.

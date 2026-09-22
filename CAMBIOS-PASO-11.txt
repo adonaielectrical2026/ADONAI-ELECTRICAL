@@ -1,0 +1,22 @@
+ADONAI ELECTRICAL — PASO 11
+Icc mínima al final de línea y tiempo de despeje de cortocircuito
+
+Cambios principales
+- Se separa Icc máxima (poder de corte del interruptor) de Icc mínima al final del circuito.
+- Se agrega Icc mínima final en A y, como alternativa, impedancia de lazo de cortocircuito en ohmios (Ik = U/Z).
+- Para termomagnéticos IEC 60898-1 se comprueba si Ik,min alcanza el extremo superior de la banda magnética, usado como condición conservadora de disparo magnético garantizado:
+  B: 5·In / C: 10·In / D: 20·In.
+- Si Ik,min no alcanza ese umbral, la app NO declara automáticamente incumplimiento: queda Pendiente hasta aportar el tiempo de actuación a esa corriente mediante curva tiempo-corriente del fabricante, ensayo o cálculo documentado.
+- El tiempo máximo térmicamente admisible del conductor a Ik,min se obtiene a partir de la relación de cortocircuito del Anexo del RBT-UTE (equivalente a comparar I²t con el límite térmico del conductor).
+- Si existe un tiempo de actuación documentado, se compara directamente contra el tiempo térmico admisible. Si lo supera, el circuito queda No cumple.
+- Cuando Ik,min garantiza zona magnética, se usa 0,1 s sólo como cota genérica conservadora de la región de disparo IEC 60898-1, no como tiempo exacto del equipo.
+- Si el conductor sólo admite menos de 0,1 s a Ik,min, la condición queda Pendiente hasta disponer de curva o energía pasante específica del fabricante; no se fuerza una aprobación ni un rechazo con la cota genérica.
+- La memoria PDF muestra Ik mínima, umbral magnético, tiempo térmico admisible y estado del tiempo de actuación por circuito.
+- No se mezclan en esta comprobación los tiempos de desconexión de protección contra choque por defecto a tierra de IEC 60364-4-41: este Paso 11 verifica cortocircuito L-N/L-L y solicitación térmica del conductor.
+- Migración de datos a esquema v10 sin inventar mediciones antiguas.
+- Motor 2.4.0 / paquete normativo 1.7-icc-minima-tiempo-desconexion / cache PWA v11.
+
+Referencias
+- UTE, Reglamento de Baja Tensión, Capítulo II - Anexo, §7: elevación de temperatura en caso de cortocircuito y coordinación del tiempo de actuación con el límite térmico del conductor.
+- IEC 60898-1: características tiempo-corriente de interruptores automáticos para instalaciones domésticas y análogas; bandas magnéticas B, C y D.
+- IEC 60364-4-43 / criterio de protección contra sobrecorriente: la corriente mínima de cortocircuito debe ser despejada en un tiempo compatible con la solicitación térmica del conductor.

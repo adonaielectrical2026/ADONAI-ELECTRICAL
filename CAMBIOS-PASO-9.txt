@@ -1,0 +1,19 @@
+PASO 9 — MARGEN DE TÉRMICAS Y CRITERIO IEC PARA RCD
+
+1. Selección automática de térmicas
+- Criterio interno ADONAI: Ib <= 80 % de In.
+- Se mantiene siempre la coordinación normativa Ib <= In <= Iz.
+- Ejemplo: 5,1 A ya no selecciona automáticamente 6 A; busca 10 A si Iz lo permite.
+- Si el técnico fuerza manualmente una térmica con menor margen, la memoria la admite si cumple normativamente pero deja una observación.
+
+2. Diferenciales (RCD)
+- Se verificó IEC 60364-5-53 §531.3.2.
+- NO existe un máximo general IEC de 3 circuitos por diferencial.
+- La norma exige subdividir para evitar disparos intempestivos y que la suma de corrientes de fuga aguas abajo no supere el 30 % de IΔn.
+- Por ese motivo NO se implementó una falsa regla “3 circuitos máximo”.
+- Se incorporó la referencia normativa correcta en la memoria técnica.
+
+3. Versionado
+- Motor 2.2.0
+- Paquete normativo 1.5-margen-termicas-rcd-fugas
+- PWA cache v9

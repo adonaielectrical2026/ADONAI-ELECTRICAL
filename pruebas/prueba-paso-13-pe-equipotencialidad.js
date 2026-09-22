@@ -1,0 +1,27 @@
+const fs=require('fs'),vm=require('vm');
+let src=fs.readFileSync('codigo/app.js','utf8');
+const tail=`  registrarServiceWorker();\n  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);\n  else init();\n})();`;
+src=src.replace(tail,`  globalThis.__adonaiTest={peMinimoCircuitoIEC,comprobarPeCircuito,comprobarEquipotencialidad,migrarEsquemaDB,NORMATIVE_PACK,MOTOR_VERSION,DB_SCHEMA_VERSION};\n})();`);
+const store=new Map(); global.localStorage={getItem:k=>store.has(k)?store.get(k):null,setItem:(k,v)=>store.set(k,String(v)),removeItem:k=>store.delete(k)};
+global.window=global; window.matchMedia=()=>({matches:false,addEventListener(){}}); window.addEventListener=()=>{}; window.removeEventListener=()=>{};
+global.document={documentElement:{setAttribute(){}},getElementById(){return null;},querySelector(){return null;},querySelectorAll(){return []},readyState:'complete'};
+global.navigator={}; global.Image=function(){}; global.Blob=function(){}; global.URL={createObjectURL(){return ''},revokeObjectURL(){}};
+vm.runInThisContext(src,{filename:'app.js'}); const T=global.__adonaiTest; let failed=0;
+function assert(name,ok,detail=''){console.log(ok?'PASS':'FAIL',name,detail); if(!ok)failed++;}
+assert('PE 2.5 mm² fase -> 2.5 mm²',T.peMinimoCircuitoIEC(2.5,'cobre',false,true)===2.5);
+assert('PE 25 mm² fase -> 16 mm²',T.peMinimoCircuitoIEC(25,'cobre',false,true)===16);
+assert('PE 50 mm² fase -> 25 mm²',T.peMinimoCircuitoIEC(50,'cobre',false,true)===25);
+assert('PE separado Cu protegido mínimo 2.5',T.peMinimoCircuitoIEC(1.5,'cobre',true,true)===2.5);
+assert('PE separado Cu sin protección mínimo 4',T.peMinimoCircuitoIEC(1.5,'cobre',true,false)===4);
+let pe=T.comprobarPeCircuito({material:'cobre',continuidadPe:'pendiente'},2.5);
+assert('sin ensayo continuidad queda pendiente',pe.estado==='pendiente',JSON.stringify(pe));
+pe=T.comprobarPeCircuito({material:'cobre',continuidadPe:'si',resistenciaContinuidadPeOhm:0.18},2.5);
+assert('continuidad ensayada verifica PE',pe.estado==='cumple' && pe.resistencia===0.18,JSON.stringify(pe));
+pe=T.comprobarPeCircuito({material:'cobre',peSeccion:1.5,continuidadPe:'si'},2.5);
+assert('PE menor al mínimo no cumple',pe.estado==='no_cumple',JSON.stringify(pe));
+const mig=T.migrarEsquemaDB({schemaVersion:11,trabajos:[{proteccionGeneral:{},circuitos:[{}]}],presupuestos:[],settings:{},seq:{}}).db;
+assert('migración v12 no inventa ensayos',mig.schemaVersion===14 && mig.trabajos[0].circuitos[0].continuidadPe==='pendiente' && mig.trabajos[0].proteccionGeneral.equipotencialPrincipalAplica==='pendiente',JSON.stringify(mig.trabajos[0]));
+assert('motor 2.6.0',T.MOTOR_VERSION==='3.0.0',T.MOTOR_VERSION);
+assert('pack 1.9',T.NORMATIVE_PACK.version==='2.2-cierre-profesional',T.NORMATIVE_PACK.version);
+assert('schema 12',T.DB_SCHEMA_VERSION===14,T.DB_SCHEMA_VERSION);
+process.exitCode=failed?1:0;

@@ -107,7 +107,19 @@ no hay servidor ni sincronizacion. Consecuencias a tener en cuenta:
 
 IMPORTANTE SOBRE LOS CALCULOS
 -----------------------------
-Las tablas de ampacidad, factores de correccion, secciones minimas y curvas
-sugeridas figuran en la app como "Pendiente de verificacion". Son valores de
-referencia y hay que confirmarlos contra el Reglamento de Baja Tension de UTE
-y las normas UNIT/IEC vigentes antes de usarlos en una instalacion real.
+La app informa cada comprobacion como VERIFICADO, PENDIENTE o NO CUMPLE segun
+los datos disponibles. El estado tecnico global incluye circuitos, proteccion
+general, puesta a tierra y evaluacion de sobretensiones.
+
+En canalizaciones enterradas se cargan la resistividad termica del terreno y
+la profundidad. El factor complementario IEC B.52.16 se aplica hasta 0,8 m;
+por encima de ese alcance la memoria queda PENDIENTE y pide calculo especifico.
+
+Cuando UTE exige evaluar sobretensiones atmosfericas, la app registra la
+evaluacion y el SPD instalado/proyectado. Si corresponde descargador, tambien
+verifica la medicion de tierra contra el requisito inferior a 10 ohm.
+
+En modificaciones, reparaciones y emergencias no se presume que el tablero
+existente cumple: hay que relevar alimentador, termica general, diferencial,
+tierra y sobretensiones. Si falta un dato obligatorio, la memoria no puede
+quedar VERIFICADA.

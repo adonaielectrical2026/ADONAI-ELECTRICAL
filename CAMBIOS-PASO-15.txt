@@ -1,0 +1,14 @@
+PASO 15 — MEMORIA FINAL PROFESIONAL Y TRAZABILIDAD DOCUMENTAL
+
+Base: Paso 14.
+Motor: 2.8.0
+Paquete normativo: 2.1-memoria-final-profesional
+Esquema de datos: v13 (sin cambios de estructura de datos)
+PWA cache: v15
+
+Cambios principales:
+- La copia interna del PDF incorpora al inicio un RESUMEN TÉCNICO DE LA INSTALACIÓN.
+- El resumen muestra estado técnico global, sistema eléctrico, potencia instalada, potencia demandada y conteo de circuitos Verificados/Pendientes/No cumple.
+- El PDF aclara expresamente que un estado Pendiente no debe interpretarse como cierre técnico definitivo y que un No cumple requiere corrección.
+- Todas las páginas incorporan pie documental con ADONAI ELECTRICAL, tipo de documento, versión del motor, versión del paquete normativo y numeración Página X de Y.
+- No se modifica la lógica de cálculo ni se inventan nuevos criterios normativos; el cambio es de estructura documental, trazabilidad y lectura ejecutiva de la memoria.

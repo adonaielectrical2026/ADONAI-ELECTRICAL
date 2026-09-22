@@ -1,0 +1,13 @@
+ADONAI Herramientas Técnicas — Paso 3
+Persistencia y modo offline
+
+Cambios aplicados:
+- Se incorpora schemaVersion v3 a la base local y a las copias de seguridad.
+- Se normalizan/migran bases antiguas antes de usarlas.
+- Importar y restaurar copias también pasan por la migración versionada.
+- Si localStorage falla, queda un aviso persistente visible y no sólo un toast temporal.
+- El Perfil muestra la versión del esquema de datos.
+- El service worker precarga la app, jsPDF, iconos e imágenes técnicas para abrirla offline desde la primera instalación.
+- La estrategia sigue siendo red primero, con la última copia válida como respaldo.
+
+Base utilizada: ADONAI-paso-2-sincronizacion-cargas-circuitos.zip

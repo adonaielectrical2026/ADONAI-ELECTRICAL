@@ -1,0 +1,12 @@
+PASO 14 — PROTOCOLO DE PUESTA EN SERVICIO
+
+- Motor 2.7.0 · paquete normativo 2.0-protocolo-puesta-servicio · esquema v13.
+- IEC 60364-6 como referencia complementaria de verificación inicial.
+- Aislamiento por circuito: tensión de ensayo y MΩ; hasta 500 V, 500 Vcc y mínimo 1 MΩ. Se admite 250 Vcc manteniendo 1 MΩ cuando no sea practicable desconectar SPD/electrónica sensible.
+- Polaridad en circuitos fase-neutro y secuencia de fases en circuitos trifásicos.
+- Ensayo RCD general y RCD dedicado cuando corresponde; tiempo registrado por separado.
+- Continuidad PE/equipotencialidad y resistencia de tierra reutilizan las mediciones ya incorporadas.
+- Campo de impedancia de lazo de defecto a tierra cuando el método/esquema lo requiera; no se confunde con Z de cortocircuito L-N/L-L.
+- Pruebas funcionales de aparatos, identificación de técnico, instrumento, serie y estado de calibración/verificación.
+- Estado global incluye el protocolo: faltantes => Pendiente; ensayo fallido => No cumple.
+- PDF interno incorpora hoja de PROTOCOLO DE ENSAYOS DE PUESTA EN SERVICIO por circuito.

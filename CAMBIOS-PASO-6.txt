@@ -1,0 +1,50 @@
+ADONAI ELECTRICAL — PASO 6
+AUDITORÍA INTEGRAL DE MEMORIA / CIRCUITOS
+
+Versión del motor: 1.9.0
+Paquete normativo: 1.2-auditoria-circuitos
+Esquema de datos: v6
+
+CORRECCIONES PRINCIPALES
+
+1. Alimentación 1φ / 3φ por circuito
+- Un suministro trifásico ya no convierte automáticamente todas las cargas en circuitos trifásicos.
+- Las cargas importadas se crean provisionalmente como 1φ / 230 V y quedan Pendientes hasta confirmar 1φ o 3φ.
+- Al seleccionar 3φ, la tensión se ajusta a la tensión de línea del sistema.
+- Se comprueba que tensión, número de fases y sistema de suministro sean compatibles.
+- Un circuito 3φ dentro de un suministro monofásico queda No cumple.
+- Si se cambia el sistema de suministro después de crear circuitos, las fases anteriores se invalidan de forma segura y deben confirmarse de nuevo.
+- En suministros trifásicos con circuitos monofásicos, la protección general queda Pendiente hasta verificar reparto/balance de fases. La corriente general no se presenta como cierre definitivo suponiendo equilibrio perfecto.
+
+2. Vehículos eléctricos
+- Se exige modo de carga 1 / 2 / 3 / 4.
+- Se exige confirmar/proyectar diferencial individual por punto, IΔn <= 30 mA y corte omnipolar.
+- Modo 3 sin RDC-DD 6 mA confirmado: propuesta Tipo B.
+- Modo 3 con RDC-DD 6 mA: propuesta Tipo A/F según el criterio reglamentario implementado.
+- Modos 1, 2 y 4: al menos Tipo A según el criterio implementado.
+- Los proyectos v5 migran a v6 dejando estos datos como Pendientes; nunca se inventa que ya cumplen.
+
+3. Cortocircuito — Tablas B/C UTE
+- Se eliminó la corrección automática/inferida de valores no monótonos.
+- La app conserva literalmente los valores de las tablas publicadas.
+- Si la celda requerida participa de una anomalía no monótona, la Icc queda Pendiente.
+- Se solicita Icc informada/medida o cálculo específico en esos casos.
+
+4. Integridad de datos esenciales
+- Tensión inválida: Pendiente.
+- Fases no definidas/confirmadas: Pendiente.
+- cos phi inválido: Pendiente.
+- Incompatibilidad tensión/fases/sistema: No cumple.
+- Se mantiene la regla de no completar con supuestos favorables datos necesarios para declarar Verificado.
+
+5. PDF interno
+- Se mantiene la tabla de comprobación de circuitos.
+- Se agregan detalles de enterrados y VE.
+- Nueva sección "CAUSAS Y PENDIENTES POR CIRCUITO" con las razones exactas de cada circuito Pendiente o No cumple.
+- Se muestra la alimentación 1φ/3φ y tensión dentro de esa auditoría.
+
+PRUEBAS
+- Suite Paso 4: OK.
+- Suite Paso 5: OK.
+- Nueva suite Paso 6: OK.
+- Casos cubiertos: datos completos, cos phi inválido, VE, importación 1φ/3φ, cambio de sistema, incompatibilidades de tensión/fases, balance pendiente, Tabla C normal y celda ambigua, migración v6.

@@ -1,0 +1,59 @@
+ADONAI ELECTRICAL — PASO 5
+TERRENO, SOBRETENSIONES Y PROTECCIONES EXISTENTES
+Fecha: 21/09/2026
+
+BASE
+- Se partió de ADONAI-paso-4-memoria-calculo-corregida.zip.
+- Motor de cálculo: 1.8.0.
+- Paquete normativo: 1.1-terreno-sobretensiones-existentes.
+- Esquema local: v5.
+
+CORRECCIONES PRINCIPALES
+1. Canalizaciones enterradas:
+   - se pide resistividad térmica del terreno (K·m/W);
+   - se pide profundidad de canalización;
+   - se aplica factor complementario IEC 60364-5-52 Tabla B.52.16;
+   - valores intermedios toman el escalón de resistividad superior, de modo conservador;
+   - hasta 0,8 m la comprobación puede cerrarse con la tabla; por encima queda PENDIENTE;
+   - resistividades fuera de 0,5 a 3,0 K·m/W quedan PENDIENTES de cálculo específico/fabricante.
+2. La memoria PDF interna muestra por circuito enterrado: resistividad, profundidad y factor de terreno aplicado.
+3. Sobretensiones:
+   - se registra si son de temer sobretensiones atmosféricas;
+   - se registra si existe LPS/pararrayos y si hay SPD;
+   - cuando corresponde, se propone Tipo 1+2 con LPS o Tipo 2 en los demás casos como referencia IEC;
+   - si UTE exige descargador y no existe, el estado es NO CUMPLE;
+   - cuando corresponde descargador, la puesta a tierra debe ser inferior a 10 ohm según UTE RBT Cap. V §2.
+4. Modificaciones, reparaciones y emergencias:
+   - se exige sección real del alimentador existente;
+   - se exige relevar térmica general;
+   - se exige confirmar existencia y corriente nominal del diferencial;
+   - se comprueba coordinación de la térmica existente con Ib e Iz;
+   - se comprueba corriente nominal del diferencial respecto de la térmica;
+   - se conserva la exigencia de 30 mA en instalaciones domiciliarias.
+5. La app ya no afirma que los circuitos están cubiertos por un diferencial general existente si ese dispositivo no fue confirmado o está ausente.
+6. El dibujo del tablero tampoco inventa un diferencial existente no relevado.
+7. El estado técnico global explicita circuitos, protección general, tierra y sobretensiones.
+8. Migración de datos a esquema v5: los nuevos campos se inicializan como desconocidos para evitar falsos VERIFICADO.
+9. Caché PWA actualizada a adonai-herramientas-v5.
+
+REFERENCIAS INCORPORADAS
+- UTE Reglamento de Baja Tensión, Capítulo V §2: sobretensiones atmosféricas y descargadores; tierra del descargador < 10 ohm.
+- UTE Reglamento de Baja Tensión, Capítulo V: elementos del tablero general y protección.
+- IEC 60364-5-52, Tabla B.52.16: factor de corrección por resistividad térmica del terreno para cables/canalizaciones enterradas (referencia complementaria).
+- IEC 60364-5-53 §534: referencia complementaria para selección del tipo de SPD.
+
+VERIFICACIONES REALIZADAS
+- Sintaxis de codigo/app.js con Node: OK.
+- Suite de Paso 4: OK.
+- Suite de Paso 5: OK.
+- Casos de terreno: 2,5 K·m/W -> 1,00; 3,0 K·m/W -> 0,96; >0,8 m -> PENDIENTE; sin resistividad -> PENDIENTE.
+- SPD requerido y ausente -> NO CUMPLE.
+- LPS con sólo Tipo 2 -> NO CUMPLE; propuesta Tipo 1+2.
+- SPD requerido con tierra >=10 ohm -> NO CUMPLE.
+- Modificación completa relevada -> puede CUMPLIR; sin diferencial -> NO CUMPLE; sin sección real de alimentador -> PENDIENTE.
+
+LIMITACIONES EXPLÍCITAS
+- La necesidad de SPD no se inventa por una regla automática: UTE exige evaluar si las sobretensiones atmosféricas son de temer; la app documenta esa decisión.
+- La propuesta Tipo 1+2 / Tipo 2 es referencia IEC complementaria y debe contrastarse con el equipo, coordinación y proyecto real.
+- Profundidades enterradas mayores a 0,8 m o resistividades fuera de la tabla requieren cálculo específico/dato del fabricante.
+- La resistencia de tierra siempre debe provenir de una medición real.

@@ -96,6 +96,8 @@
     </div>
   </div>
 
+  <div class="storage-alert alert-error" id="storage-alert" role="alert" aria-live="assertive" hidden></div>
+
   <!-- ============================================================
        INICIO
        ============================================================ -->
@@ -268,7 +270,9 @@
         <p style="font-size:0.78rem;color:var(--steel);margin:0">La caída de tensión se mide desde el origen de la instalación, así que lo que se pierde entre el medidor y el tablero general se le descuenta a cada circuito.</p>
         <div class="grid-2">
           <div class="field"><label>Longitud medidor → tablero (m)</label><input class="input" type="number" min="0" id="f-acom-l" value="10"></div>
-          <div class="field"><label>Sección del alimentador</label><select class="select" id="f-acom-seccion"></select></div>
+          <div class="field"><label>Sección de fase del alimentador</label><select class="select" id="f-acom-seccion"></select></div>
+          <div class="field"><label>Sección del neutro</label><select class="select" id="f-acom-neutro"></select><div class="hint">Automático = misma sección que fase. Una reducción manual exige justificación de corriente de neutro y armónicos.</div></div>
+          <div class="field"><label>Sección del conductor de protección (PE)</label><select class="select" id="f-acom-pe"></select><div class="hint">La app aplica el criterio simplificado UTE cuando corresponde; fuera de ese alcance adopta fase = PE de forma conservadora y deja pendiente la comprobación térmica específica.</div></div>
           <div class="field"><label>Icc en el tablero (kA)</label><input class="input" type="number" step="0.1" min="0" id="f-acom-icc" placeholder="Vacío: 6 kA de plaza"></div>
           <div class="field"><label>Subestación propia</label>
             <select class="select" id="f-acom-subestacion">
@@ -313,6 +317,8 @@
           </table>
         </div>
       </div>
+      <div class="card card-pad" id="circuitos-balance-fases" hidden></div>
+
       <div class="panel-dark card-pad" id="circuitos-proteccion-general" style="display:flex;flex-wrap:wrap;gap:20px" hidden></div>
       <div class="grid-2">
         <button class="btn btn-outline" data-step-prev><svg><use href="#ic-chevron-left"/></svg> Atrás</button>
@@ -327,6 +333,7 @@
           <div class="section-label" style="margin:0">Materiales sugeridos</div>
           <button class="btn btn-ghost btn-sm" id="btn-regenerar-materiales">Regenerar</button>
         </div>
+        <div class="alert-warning" id="materiales-warning" style="margin-bottom:12px" hidden><b>Los circuitos cambiaron.</b> Regenerá la lista para actualizar cables, protecciones y tablero sin perder de vista que se reemplazarán los ajustes automáticos anteriores.</div>
         <p style="font-size:0.78rem;color:var(--steel);margin:0 0 12px">Calculados a partir de los circuitos. Editá cantidades o agregá ítems manuales.</p>
         <div class="stack-sm" id="materiales-list"></div>
       </div>
@@ -353,7 +360,7 @@
       <div class="grid-2 summary-info-grid">
         <div class="card card-pad summary-info-card">
           <span class="summary-info-icon"><svg><use href="#ic-check-list"/></svg></span>
-          <div class="summary-info-body"><div class="eyebrow">Estado</div>
+          <div class="summary-info-body"><div class="eyebrow">Estado del trabajo</div>
           <select class="select summary-state-select" id="resumen-estado">
             <option value="pendiente">Pendiente</option>
             <option value="revision">En revisión</option>
@@ -362,9 +369,12 @@
         </div>
         <div class="card card-pad summary-info-card">
           <span class="summary-info-icon"><svg><use href="#ic-zap"/></svg></span>
-          <div><div class="eyebrow">Carga total</div><div class="summary-info-value summary-load" id="resumen-carga">—</div></div>
+          <div><div class="eyebrow">Potencia instalada</div><div class="summary-info-value" id="resumen-potencia-instalada">—</div>
+          <div class="eyebrow" style="margin-top:5px">Potencia de cálculo</div><div class="summary-info-value summary-load" id="resumen-carga">—</div></div>
         </div>
       </div>
+
+      <div id="resumen-estado-tecnico" style="margin-bottom:14px"></div>
 
       <div class="section-label">Circuitos</div>
       <div class="stack-sm" id="resumen-circuitos"></div>
@@ -372,6 +382,14 @@
       <div class="card card-pad" id="resumen-proteccion-general" hidden>
         <div class="section-label" style="margin-bottom:10px">Protección general</div>
         <div class="stack-sm" id="resumen-proteccion-general-stats"></div>
+        <div id="resumen-pg-existente" hidden>
+          <div class="grid-2">
+            <div class="field" style="margin-top:12px"><label>Térmica general existente (A)</label><input class="input" id="resumen-termica-existente" type="number" min="0" step="1" placeholder="Relevar en tablero"></div>
+            <div class="field" style="margin-top:12px"><label>¿Existe diferencial general?</label><select class="select" id="resumen-diferencial-existe"><option value="desconocido">Pendiente de confirmar</option><option value="si">Sí</option><option value="no">No</option></select></div>
+          </div>
+          <div class="field"><label>Corriente nominal diferencial existente (A)</label><input class="input" id="resumen-diferencial-in-existente" type="number" min="0" step="1" placeholder="Ej. 40"></div>
+          <p style="font-size:0.74rem;color:var(--steel);margin:6px 0 0">En modificaciones, reparaciones y emergencias la app no recalcula el tablero como si fuera nuevo: exige relevar la protección existente y confirmar la sección real del alimentador.</p>
+        </div>
         <div class="field" style="margin-top:12px"><label>Sensibilidad diferencial general</label>
           <select class="select" id="resumen-diferencial-sensibilidad">
             <option value="30">30 mA</option>
@@ -381,7 +399,72 @@
         <div class="field" style="margin-top:12px"><label>Tipo de diferencial general</label>
           <select class="select" id="resumen-diferencial-tipo"></select>
         </div>
-        <p style="font-size:0.76rem;color:var(--steel);margin:6px 0 0">A por defecto. Los circuitos con variador piden F y los de cargador de auto, fotovoltaica, variador trifásico o UPS piden B: si el general no alcanza, llevan su propio diferencial.</p>
+        <div class="field" style="margin-top:12px"><label>Temporización / selectividad del diferencial general</label>
+          <select class="select" id="resumen-diferencial-selectividad">
+            <option value="instantaneo">Instantáneo</option>
+            <option value="S">Selectivo tipo S / temporizado</option>
+          </select>
+          <div class="hint">Para selectividad total con RCD aguas abajo, IEC exige coordinar sensibilidad y tiempo. La app verifica la relación ≥ 3× y cabecera tipo S cuando existe un diferencial dedicado aguas abajo.</div>
+        </div>
+        <div class="field" style="margin-top:12px"><label>Condición para la tensión de contacto</label>
+          <select class="select" id="resumen-tierra-ambiente">
+            <option value="seco">Local seco / normal — 50 V</option>
+            <option value="humedo">Local húmedo, mojado o conductor — 24 V</option>
+          </select>
+        </div>
+        <div class="field" style="margin-top:12px"><label>Resistencia de puesta a tierra medida (Ω)</label>
+          <input class="input" id="resumen-tierra-resistencia" type="number" min="0" step="0.01" inputmode="decimal" placeholder="Medición con telurómetro">
+        </div>
+        <div class="section-label" style="margin-top:16px">Contactos indirectos</div>
+        <div class="light-stat-row"><span class="lbl">Esquema derivado del suministro</span><span class="val strong" id="resumen-esquema-contactos">—</span></div>
+        <div class="field" style="margin-top:10px"><label>Tiempo medido/documentado del diferencial general (s)</label>
+          <input class="input" id="resumen-tiempo-diferencial-general" type="number" min="0" step="0.001" inputmode="decimal" placeholder="Ensayo RCD; se aplica a circuitos TT sin tiempo propio">
+          <div class="hint">TT 230 V: la app compara con 0,2 s en circuitos finales dentro del alcance de IEC 60364-4-41 y 1 s en distribución/otros.</div>
+        </div>
+        <div id="resumen-it-campos" hidden>
+          <div class="grid-2">
+            <div class="field"><label>Vigilancia de aislamiento (IMD/RCM apto)</label><select class="select" id="resumen-it-imd"><option value="desconocido">Pendiente</option><option value="si">Sí</option><option value="no">No</option></select></div>
+            <div class="field"><label>Masas interconectadas por PE</label><select class="select" id="resumen-it-masas"><option value="desconocido">Pendiente</option><option value="si">Sí, colectivamente</option><option value="no">No / tierras por grupos</option></select></div>
+          </div>
+          <div class="field"><label>Corriente de primer defecto I<sub>d</sub> (mA)</label><input class="input" id="resumen-it-id" type="number" min="0" step="0.1" inputmode="decimal" placeholder="Medida o calculada"><div class="hint">IT: se verifica R<sub>A</sub>·I<sub>d</sub> ≤ U<sub>L</sub>. El segundo defecto se documenta por circuito.</div></div>
+        </div>
+        <div class="section-label" style="margin-top:16px">PE y equipotencialidad</div>
+        <div class="field"><label>¿Requiere equipotencialidad principal?</label><select class="select" id="resumen-eqp-principal-aplica"><option value="pendiente">Pendiente de evaluar</option><option value="si">Sí</option><option value="no">No aplica / sin partes conductoras extrañas</option></select></div>
+        <div class="grid-2">
+          <div class="field"><label>Sección equipotencial principal (mm² Cu)</label><input class="input" id="resumen-eqp-principal-seccion" type="number" min="0" step="0.5" placeholder="Relevar / proyectar"></div>
+          <div class="field"><label>Ensayo continuidad principal</label><select class="select" id="resumen-eqp-principal-continuidad"><option value="pendiente">Pendiente</option><option value="si">Verificada</option><option value="no">No satisfactoria</option></select></div>
+        </div>
+        <div class="field"><label>Equipotencialidad suplementaria</label><select class="select" id="resumen-eqp-suplementaria-aplica"><option value="no">No aplica</option><option value="pendiente">Pendiente de evaluar</option><option value="si">Requerida / prevista</option></select></div>
+        <div class="grid-2">
+          <div class="field"><label>Sección suplementaria (mm² Cu)</label><input class="input" id="resumen-eqp-suplementaria-seccion" type="number" min="0" step="0.5" placeholder="Si aplica"></div>
+          <div class="field"><label>Ensayo continuidad suplementaria</label><select class="select" id="resumen-eqp-suplementaria-continuidad"><option value="pendiente">Pendiente</option><option value="si">Verificada</option><option value="no">No satisfactoria</option></select></div>
+        </div>
+        <div id="resumen-eqp-verificacion"></div>
+        <p class="hint">UTE exige continuidad eléctrica del circuito de tierra. IEC 60364-5-54 se usa como referencia complementaria para dimensionar PE y equipotenciales; IEC 60364-6 para documentar el ensayo de continuidad.</p>
+        <div class="section-label" style="margin-top:16px">Protocolo de puesta en servicio</div>
+        <div class="grid-2">
+          <div class="field"><label>Fecha de ensayos</label><input class="input" id="resumen-protocolo-fecha" type="date"></div>
+          <div class="field"><label>Técnico que realiza/verifica</label><input class="input" id="resumen-protocolo-tecnico" placeholder="Nombre"></div>
+        </div>
+        <div class="grid-2">
+          <div class="field"><label>Instrumento / modelo</label><input class="input" id="resumen-protocolo-instrumento" placeholder="Multifunción, megóhmetro, telurómetro..."></div>
+          <div class="field"><label>N.º de serie</label><input class="input" id="resumen-protocolo-serie" placeholder="Opcional"></div>
+        </div>
+        <div class="grid-2">
+          <div class="field"><label>Calibración / verificación del instrumento</label><select class="select" id="resumen-protocolo-calibracion"><option value="pendiente">Pendiente</option><option value="si">Vigente / conforme</option><option value="no">No vigente / no conforme</option></select></div>
+          <div class="field"><label>Pruebas funcionales de aparatos</label><select class="select" id="resumen-prueba-funcional"><option value="pendiente">Pendiente</option><option value="si">Satisfactorias</option><option value="no">No satisfactorias</option></select></div>
+        </div>
+        <div class="field"><label>Ensayo del diferencial general</label><select class="select" id="resumen-ensayo-rcd-general"><option value="pendiente">Pendiente</option><option value="si">Satisfactorio</option><option value="no">No satisfactorio</option></select><div class="hint">El tiempo medido se registra en “Contactos indirectos”. IEC 60364-6 exige verificar la efectividad del dispositivo; no se inventa un tiempo universal fuera del ensayo aplicable.</div></div>
+        <div id="resumen-protocolo-verificacion"></div>
+        <div class="section-label" style="margin-top:16px">Sobretensiones atmosféricas</div>
+        <div class="field"><label>¿Son de temer sobretensiones atmosféricas en esta obra?</label><select class="select" id="resumen-sobretensiones-riesgo"><option value="pendiente">Pendiente de evaluar</option><option value="si">Sí</option><option value="no">No, evaluación documentada</option></select></div>
+        <div class="grid-2">
+          <div class="field"><label>Protección externa contra el rayo / pararrayos</label><select class="select" id="resumen-pararrayos-lps"><option value="desconocido">No confirmado</option><option value="si">Sí</option><option value="no">No</option></select></div>
+          <div class="field"><label>SPD instalado/proyectado</label><select class="select" id="resumen-spd-existe"><option value="desconocido">Pendiente</option><option value="si">Sí</option><option value="no">No</option></select></div>
+        </div>
+        <div class="field"><label>Tipo de SPD</label><select class="select" id="resumen-spd-tipo"><option value="">Pendiente de confirmar</option><option value="Tipo 1">Tipo 1</option><option value="Tipo 1+2">Tipo 1+2</option><option value="Tipo 2">Tipo 2</option></select></div>
+        <p style="font-size:0.76rem;color:var(--steel);margin:6px 0 0">UTE exige diferencial en el tablero general y 30 mA en instalaciones domiciliarias. La memoria comprueba R<sub>A</sub>·IΔn ≤ 50 V en local seco o ≤ 24 V en húmedo/mojado. Para sobretensiones, UTE exige descargadores cuando sean de temer fenómenos atmosféricos; la propuesta Tipo 1+2 / Tipo 2 se muestra como referencia IEC complementaria.</p>
+        <div id="resumen-proteccion-general-verificacion"></div>
         <div class="stack-sm" id="resumen-diferenciales" style="margin-top:10px"></div>
       </div>
 
@@ -396,6 +479,40 @@
       <div class="card card-pad">
         <div class="section-label">Observaciones</div>
         <textarea class="textarea" id="resumen-observaciones" placeholder="Notas técnicas del relevamiento…"></textarea>
+      </div>
+
+      <div class="card card-pad" id="cierre-profesional-card">
+        <div class="row-between" style="margin-bottom:10px">
+          <div>
+            <div class="section-label" style="margin:0">Cierre profesional de obra</div>
+            <div class="hint">Revisión obligatoria antes de emitir documentación definitiva.</div>
+          </div>
+          <span id="cierre-badge" class="badge-pendiente">Pendiente</span>
+        </div>
+        <div id="cierre-revision" style="margin-bottom:12px"></div>
+        <div class="grid-2">
+          <div class="field"><label>Responsable técnico</label><input class="input" id="cierre-responsable" placeholder="Nombre y apellido"></div>
+          <div class="field"><label>Categoría UTE / habilitación</label><input class="input" id="cierre-categoria" placeholder="Ej. Categoría C"></div>
+        </div>
+        <div class="grid-2">
+          <div class="field"><label>Fecha de cierre</label><input class="input" id="cierre-fecha" type="date"></div>
+          <div class="field"><label>Declaración del responsable</label><select class="select" id="cierre-declaracion"><option value="pendiente">Pendiente de confirmar</option><option value="si">Confirmada</option><option value="no">No confirmada</option></select></div>
+        </div>
+        <div class="field"><label>Firma (imagen opcional)</label><input class="input" id="cierre-firma" type="file" accept="image/*"><div class="hint">Se comprime y guarda dentro del proyecto. No es una firma digital criptográfica.</div></div>
+        <div id="cierre-firma-estado" class="hint"></div>
+        <div class="section-label" style="margin-top:14px">Anexos fotográficos</div>
+        <div class="field"><label>Agregar fotos de obra</label><input class="input" id="cierre-fotos" type="file" accept="image/*" multiple><div class="hint">Máximo 6 imágenes comprimidas para no sobrecargar el almacenamiento local.</div></div>
+        <div id="cierre-fotos-lista" class="stack-sm"></div>
+        <div class="section-label" style="margin-top:14px">Documentación</div>
+        <div class="grid-2">
+          <button class="btn btn-outline" type="button" id="btn-pdf-memoria"><svg><use href="#ic-calc"/></svg> Memoria técnica</button>
+          <button class="btn btn-outline" type="button" id="btn-pdf-protocolo"><svg><use href="#ic-check-list"/></svg> Protocolo de ensayos</button>
+        </div>
+        <div class="grid-2" style="margin-top:8px">
+          <button class="btn btn-outline" type="button" id="btn-pdf-unifilar"><svg><use href="#ic-zap"/></svg> Esquema unifilar</button>
+          <button class="btn btn-primary" type="button" id="btn-pdf-expediente"><svg><use href="#ic-doc"/></svg> Expediente completo</button>
+        </div>
+        <div class="hint" style="margin-top:10px">Los documentos definitivos sólo se emiten sin marca de BORRADOR cuando la revisión final está completa. El presupuesto continúa disponible por separado.</div>
       </div>
 
       <div class="grid-2">
@@ -468,7 +585,7 @@
           <summary>Condiciones avanzadas <span>temperatura, agrupamiento y caída previa</span></summary>
           <div class="advanced-fields">
             <div class="field"><label id="cond-temp-label">Temp. ambiente (°C)</label><input class="input" type="number" id="cond-temp" value="30"></div>
-            <p class="advanced-note">Se calcula a 30 °C, que es el criterio de la casa para toda la obra. Una temperatura intermedia toma el escalón superior de la Tabla XIV; fuera de la tabla, el cálculo no se puede verificar.</p>
+            <p class="advanced-note">Se calcula a 30 °C por defecto. Una temperatura intermedia toma el escalón superior de la Tabla XIV; en un circuito enterrado se propone la temperatura de terreno (25 °C, supuesto 1 UTE) y se completa además resistividad/profundidad del terreno.</p>
             <div class="grid-2">
               <div class="field"><label>Expuesto al sol</label>
                 <select class="select" id="cond-sol"><option value="0">No</option><option value="1">Sí (x 0,90)</option></select>
@@ -507,6 +624,13 @@
                 <option value="m1">Un caño por circuito, a 1 m</option>
                 <option value="libres">Un caño por circuito, a más de 1 m (sin reducción)</option>
               </select>
+            </div>
+            <div id="cond-terreno-wrap" hidden>
+              <div class="grid-2">
+                <div class="field"><label>Resistividad térmica terreno (K·m/W)</label><input class="input" type="number" min="0" step="0.1" id="cond-terreno-rho" placeholder="UTE: 1,0 en condición normal"></div>
+                <div class="field"><label>Profundidad del caño (m)</label><input class="input" type="number" min="0" step="0.05" id="cond-terreno-prof" value="0.5"></div>
+              </div>
+              <p class="hint">Referencia complementaria IEC 60364-5-52 B.52.16. Hasta 0,8 m la app aplica el factor por resistividad; a mayor profundidad deja la comprobación pendiente para cálculo específico.</p>
             </div>
           </div>
         </details>
@@ -739,6 +863,7 @@
         <div class="section-label">Datos</div>
         <div class="light-stat-row"><span class="lbl">Trabajos guardados</span><span class="val" id="perfil-count-trabajos">0</span></div>
         <div class="light-stat-row"><span class="lbl">Presupuestos</span><span class="val" id="perfil-count-presupuestos">0</span></div>
+        <div class="light-stat-row"><span class="lbl">Esquema de datos</span><span class="val" id="perfil-schema-version">—</span></div>
         <p style="font-size:0.78rem;color:var(--steel);margin:6px 0 0">Todos los datos se guardan solo en este dispositivo.</p>
         <p id="perfil-backup-estado" style="font-size:0.78rem;color:var(--steel);margin:0"></p>
         <div class="grid-2" style="margin-top:4px">

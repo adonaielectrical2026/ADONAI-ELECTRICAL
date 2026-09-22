@@ -1,0 +1,25 @@
+PASO 12 — PROTECCIÓN CONTRA CONTACTOS INDIRECTOS TT / IT
+
+- Motor: 2.5.0
+- Paquete normativo: 1.8-contactos-indirectos-tt-it
+- Esquema de datos: v11
+- PWA cache: v12
+
+Cambios principales
+1. Se separa la comprobación de contactos indirectos de la verificación de cortocircuito L-N/L-L.
+2. TT: se mantiene R_A·IΔn ≤ U_L y se agrega tiempo de desconexión documentado/medido.
+   - 230 V: 0,2 s para circuitos finales dentro del alcance de IEC 60364-4-41 411.3.2.2.
+   - 1 s para distribución/otros circuitos no comprendidos.
+3. El tiempo del diferencial general puede heredarse por los circuitos TT; un circuito puede registrar un tiempo propio.
+4. IT: se exige R_A·I_d ≤ U_L en primer defecto, corriente I_d medida/calculada y vigilancia/monitorización de aislamiento.
+5. IT: se exige confirmar si las masas están interconectadas por PE.
+   - Interconectadas: segundo defecto se evalúa con tiempos tipo TN (0,4 s final / 5 s otros a 230 V).
+   - Tierras independientes o por grupos: tiempos tipo TT (0,2 s final / 1 s otros a 230 V).
+6. En IT el segundo defecto se documenta por circuito; no se inventa un tiempo desde el interruptor general.
+7. El estado de contactos indirectos integra el estado técnico global y aparece en la memoria PDF.
+8. Migración v11: ningún ensayo, I_d, IMD ni condición de masas se da por supuesto en proyectos anteriores.
+
+Referencias
+- UTE RBT Cap. VI y XXIII: tensión de contacto y puesta a tierra.
+- IEC 60364-4-41, Tabla 41.1 / 411.3.2: tiempos máximos de desconexión.
+- IEC 60364-4-41 §411.6: sistemas IT, primer defecto, monitorización y segundo defecto.

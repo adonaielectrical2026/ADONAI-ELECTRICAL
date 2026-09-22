@@ -1,0 +1,11 @@
+ADONAI Herramientas Técnicas — Paso 8
+
+Auditoría del alimentador general completo
+
+- Se separa el dimensionado de fase, neutro y PE.
+- El neutro automático adopta la misma sección que fase; se estima la componente fundamental por suma vectorial del balance L1/L2/L3. Los armónicos triples no se modelan, por lo que toda reducción manual del neutro queda Pendiente de justificación específica.
+- En sistema trifásico IT 230 V no se inventa neutro y la térmica general pasa a 3 polos.
+- Para pequeños/medianos suministros individuales se aplica el criterio de UTE RBT Cap. XXIII §4 y §10 al PE. Fuera de ese alcance se adopta S_PE = S_fase conservadoramente, pero la comprobación térmica específica frente a falta queda Pendiente.
+- El estado del alimentador combina sección de fase, coordinación Ib ≤ In ≤ Iz, caída, neutro y PE.
+- La copia interna del PDF incorpora una sección ALIMENTADOR GENERAL con causas exactas de Pendiente / No cumple.
+- Esquema de datos v8, motor 2.1.0, paquete normativo 1.4-alimentador-neutro-pe.

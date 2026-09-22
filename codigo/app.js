@@ -123,6 +123,9 @@
   // En monofásica todo va bipolar menos iluminación, que va unipolar con el
   // neutro a bornera. En trifásica, tetrapolar.
   function polosPorDefecto(circuito) {
+    // En IT 230 V no se presupone neutro: un circuito monofásico usa dos
+    // conductores activos y debe cortarlos ambos; uno trifásico usa 3 polos.
+    if (circuito.sistemaId === 'tri_it') return circuito.fases === 1 ? 2 : 3;
     if (circuito.fases !== 1) return 4;
     return circuito.uso === 'iluminacion' ? 1 : 2;
   }
@@ -132,15 +135,19 @@
     return polosPorDefecto(circuito);
   }
   function opcionesPolos(circuito) {
+    if (circuito.sistemaId === 'tri_it') {
+      return circuito.fases === 1
+        ? [{ v: 2, label: 'Bipolar — corta los dos conductores activos' }]
+        : [{ v: 3, label: 'Tripolar — corta las tres fases' }];
+    }
     return circuito.fases === 1
       ? [{ v: 1, label: 'Unipolar — corta la fase' }, { v: 2, label: 'Bipolar — corta fase y neutro' }]
       : [{ v: 3, label: 'Tripolar — corta las fases' }, { v: 4, label: 'Tetrapolar — fases y neutro' }];
   }
-  // El tablero lleva bornera de neutro sólo si alguna llave deja el neutro
-  // afuera; la de tierra va siempre.
+  // El tablero lleva bornera de neutro sólo en sistemas que realmente lo
+  // tienen y si alguna llave deja ese neutro fuera de la protección.
   function necesitaBorneraNeutro(circuitos, sistema) {
-    const general = (sistema && sistema.fases === 1) ? 2 : 4;
-    if (general === 2 || general === 4) { /* la general siempre corta el neutro */ }
+    if (sistema && sistema.id === 'tri_it') return false;
     return (circuitos || []).some((c) => polosDe(c) === 1 || polosDe(c) === 3);
   }
 
@@ -149,6 +156,13 @@
     tri_it: { id: 'tri_it', label: 'Trifásico 230V (sistema IT)', v: 230, fases: 3 },
     tri_tt: { id: 'tri_tt', label: 'Trifásico 400V (sistema TT)', v: 400, fases: 3 },
   };
+  function tensionDeCircuito(sistema, fasesCircuito) {
+    // En los tres sistemas de la app, un circuito monofásico se calcula a
+    // 230 V: fase-neutro en TT 400/230 y entre dos conductores activos en IT
+    // 230 V. Un circuito trifásico usa la tensión de línea del suministro.
+    return Number(fasesCircuito) === 3 ? sistema.v : 230;
+  }
+
   // Potencias normalizadas de uso general publicadas por UTE. Los escalones de
   // 1,4 / 2,0 / 2,5 / 3,0 kW existen, pero son para destinos específicos: no se
   // sugieren automáticamente para una instalación general.
@@ -308,13 +322,14 @@
   // ninguna otra.
   const TEMP_AMBIENTE_DEFECTO = 30;
   // Caño enterrado (supuesto 1, cerrado el 22/9/2026): UTE y el Reglamento de
-  // Baja Tensión toman como condición normal de diseño una resistividad
-  // térmica de terreno de 1,0 °C·m/W y una temperatura de terreno de 25 °C a
-  // 0,5-0,7 m de profundidad. Esa resistividad es la misma que ya asumen las
-  // Tablas X a XIII que la app reutiliza para el enterrado bajo tubo, así que
-  // no hace falta un factor aparte: alcanza con calcular a 25 °C en vez de los
-  // 30 °C del resto de los métodos.
+  // Baja Tensión toman como condición normal de diseño una temperatura de
+  // terreno de 25 °C a 0,5-0,7 m de profundidad y una resistividad térmica de
+  // 1,0 K·m/W. La temperatura se propone acá; la resistividad alimenta además
+  // el factor de la Tabla B.52.16 (factorTerrenoEnterrado), donde 1,0 K·m/W da
+  // 1,18 — una condición más favorable que la referencia de 2,5 de la tabla.
+  // Ambos valores quedan editables si hay un estudio de suelo real.
   const TEMP_TERRENO_ENTERRADO_DEFECTO = 25;
+  const RESISTIVIDAD_TERRENO_UTE_DEFECTO = 1.0;
 
   const METODO_LABEL = {
     embutido: 'Embutido en pared',
@@ -332,11 +347,95 @@
   //      electrodoméstico, y las cargas fijas tipo lavarropas, heladera o aire.
   //   D: cargas inductivas con picos fuertes de arranque — motores y bombas.
   const CURVA_SUGERIDA = { iluminacion: 'B', tomacorrientes: 'C', fuerza: 'C', motor: 'D' };
+  // IEC 60898-1: banda de disparo magnético instantáneo aproximada por curva.
+  // Se usa para informar/validar la elección, no para afirmar selectividad entre
+  // interruptores; esa verificación requiere curvas/tablas del fabricante.
+  const CURVA_MAGNETICA_IEC = {
+    B: { min: 3, max: 5, uso: 'cargas con bajo pico de arranque / circuitos largos o Icc mínima baja' },
+    C: { min: 5, max: 10, uso: 'uso general' },
+    D: { min: 10, max: 20, uso: 'motores, transformadores y cargas con fuerte corriente de arranque' },
+  };
+  function curvaProteccionDe(p) {
+    const manual = String((p && p.curvaProteccion) || '').toUpperCase();
+    if (CURVA_MAGNETICA_IEC[manual]) return manual;
+    return CURVA_SUGERIDA[(p && p.uso) || 'fuerza'] || 'C';
+  }
   const CURVA_DESCRIPCION = {
     B: 'Cargas resistivas, de arranque suave: iluminación.',
     C: 'Cargas inductivas moderadas: tomacorrientes de uso general, lavarropas, heladera, aire acondicionado.',
     D: 'Cargas inductivas con pico fuerte de arranque: motores y bombas.',
   };
+
+  // Paso 11: cortocircuito mínimo al final de línea y tiempo de desconexión.
+  // Para afirmar disparo magnético garantizado se usa el extremo superior de
+  // la banda IEC 60898-1: B=5·In, C=10·In, D=20·In.
+  function umbralMagneticoGarantizado(curva, inA) {
+    const r = CURVA_MAGNETICA_IEC[String(curva || '').toUpperCase()];
+    const inNom = Number(inA);
+    return r && inNom > 0 ? r.max * inNom : null;
+  }
+  function evaluarIccMinimaYDesconexion(p, inA, curva, i2tAdmisible) {
+    const out = { iccMinA:null, fuente:null, umbralMagneticoA:null, relacionIn:null, magnetico:null,
+      tiempoAdmisibleS:null, tiempoActuacionS:null, fuenteTiempo:null, cumpleTiempo:null, cumpleIccMinima:null,
+      notas:[], pendientes:[], causas:[] };
+    const manualI = Number(p && p.iccMinFinalA);
+    const z = Number(p && p.zCortoFinalOhm);
+    const v = Number(p && p.v) || 230;
+    if (manualI > 0) { out.iccMinA = manualI; out.fuente = 'informada'; }
+    else if (z > 0) { out.iccMinA = v / z; out.fuente = 'impedancia'; }
+
+    const umbral = umbralMagneticoGarantizado(curva, inA);
+    out.umbralMagneticoA = umbral;
+    if (out.iccMinA !== null && Number(inA) > 0) out.relacionIn = out.iccMinA / Number(inA);
+
+    if (out.iccMinA !== null && umbral !== null) {
+      out.magnetico = out.iccMinA >= umbral;
+      if (out.magnetico) {
+        out.notas.push('La Icc mínima alcanza ' + fmt(out.relacionIn,1) + '·In y supera el extremo superior de la banda ' + curva + ' (' + fmt(umbral,0) + ' A): se garantiza entrada en la zona magnética IEC 60898-1.');
+      } else {
+        out.notas.push('La Icc mínima al final (' + fmt(out.iccMinA,0) + ' A) queda por debajo de ' + fmt(umbral,0) + ' A (' + (CURVA_MAGNETICA_IEC[curva] ? CURVA_MAGNETICA_IEC[curva].max : '?') + '·In): no se garantiza la zona magnética; puede actuar la zona térmica según la curva del fabricante.');
+      }
+    } else if ((p && p.tipoProteccion || 'mcb') === 'mcb') {
+      out.pendientes.push('Falta la Icc mínima al final del circuito o la impedancia de lazo de cortocircuito para comprobar el despeje en el punto más desfavorable.');
+    }
+
+    const adm = Number(i2tAdmisible);
+    if (out.iccMinA !== null && adm > 0) {
+      out.tiempoAdmisibleS = adm / Math.pow(out.iccMinA, 2);
+      out.notas.push('Por UTE RBT Cap. II - Anexo §7, el conductor admite aproximadamente hasta ' + fmt(out.tiempoAdmisibleS,3) + ' s a esa Icc mínima antes de alcanzar su límite térmico de cortocircuito.');
+    } else if (out.iccMinA !== null && !(adm > 0)) {
+      out.pendientes.push('Falta el límite térmico de cortocircuito del conductor para obtener el tiempo máximo admisible a la Icc mínima.');
+    }
+
+    const tManual = Number(p && p.tiempoDesconexionVerificadoS);
+    if (tManual > 0) {
+      out.tiempoActuacionS = tManual;
+      out.fuenteTiempo = 'fabricante/ensayo';
+    } else if (out.magnetico === true) {
+      // IEC 60898-1 sitúa la actuación magnética en la zona de 0,1 s. Usamos
+      // 0,1 s como cota superior conservadora, no como tiempo exacto del equipo.
+      out.tiempoActuacionS = 0.1;
+      out.fuenteTiempo = 'cota IEC 60898-1';
+    }
+
+    if (out.tiempoActuacionS !== null && out.tiempoAdmisibleS !== null) {
+      if (out.fuenteTiempo === 'cota IEC 60898-1' && out.tiempoAdmisibleS < 0.1) {
+        out.cumpleTiempo = null;
+        out.pendientes.push('El tiempo térmico admisible del conductor (' + fmt(out.tiempoAdmisibleS,3) + ' s) es menor que la cota genérica de 0,1 s de la zona magnética. Hace falta la curva/energía pasante específica del fabricante para cerrar esta condición.');
+      } else {
+        out.cumpleTiempo = out.tiempoActuacionS <= out.tiempoAdmisibleS;
+        if (out.cumpleTiempo) out.notas.push('Tiempo de actuación usado: ' + fmt(out.tiempoActuacionS,3) + ' s ≤ tiempo térmico admisible ' + fmt(out.tiempoAdmisibleS,3) + ' s.');
+        else out.causas.push('El tiempo de actuación documentado (' + fmt(out.tiempoActuacionS,3) + ' s) supera el tiempo térmico admisible del conductor a la Icc mínima (' + fmt(out.tiempoAdmisibleS,3) + ' s).');
+      }
+    } else if (out.iccMinA !== null && out.magnetico === false && !(tManual > 0)) {
+      out.pendientes.push('Como la Icc mínima no garantiza disparo magnético, falta leer en la curva tiempo-corriente del fabricante el tiempo de actuación a ' + fmt(out.iccMinA,0) + ' A (o medir/documentar ese tiempo).');
+    }
+
+    if (out.iccMinA !== null) {
+      out.cumpleIccMinima = out.cumpleTiempo === true ? true : (out.causas.length ? false : null);
+    }
+    return out;
+  }
   // Secciones minimas por resistencia mecanica, RBT-UTE Anexo S9: derivacion para
   // alumbrado 0,75mm2; derivacion para tomacorrientes "en salto" 1,5mm2 (mas conservador
   // que 1mm2 para un solo tomacorriente); derivacion para otros usos 1mm2.
@@ -410,20 +509,20 @@
      explícito. No se edita a mano: reemplazar este objeto entero
      es "instalar" un paquete nuevo.
      ============================================================ */
-  const MOTOR_VERSION = '1.6.0';
+  const MOTOR_VERSION = '3.0.0';
   const NORMATIVE_PACK = {
     id: 'rbt-ute-interiores-2001-rev-2026',
-    nombre: 'Reglamento de Baja Tensión UTE — instalaciones interiores (Caps. II, IV y V)',
-    fuente: 'RBT-UTE: Capítulo II "Instalaciones Interiores o Receptoras" y su Anexo (Tablas I a XVI), Capítulo IV (conductos protectores) y Capítulo V (protecciones), edición N.5 / Junio 2001, ute.com.uy',
-    version: '0.10-terreno-enterrado',
+    nombre: 'Reglamento de Baja Tensión UTE — instalaciones interiores y protecciones',
+    fuente: 'RBT-UTE: Caps. II, IV, V, VI, VIII, XXIII, XXVI y XXX; Comunicado Normativa Técnico Comercial UTE Nro. 26002 (19/02/2026); Norma de Instalaciones de Enlace de BT versión agosto 2026 (vigente 13/08/2026), ute.com.uy.',
+    version: '2.2-cierre-profesional',
     estado: 'pendiente', // 'pendiente' | 'verificado' | 'personalizado'
     vigenteDesde: null,
-    actualizadoEl: '2026-09-22',
+    actualizadoEl: '2026-09-21',
     // Supuesto 2, pendiente de confirmación. El contraste numérico de las
     // Tablas VI a IX (llevando la IEC B.52.2 de 30 a 25 °C con 1,06) cae
     // entre los métodos E y F, que son un circuito al aire separado de la
     // pared: la interacción con circuitos vecinos queda fuera y por eso se
-    // aplica la B.52.17. Cuando el matriculado lo confirme o lo descarte se
+    // aplica la B.52.17. Cuando el técnico instalador autorizado por UTE lo confirme o lo descarte se
     // cambia acá, sin tocar el cálculo.
     parametros: {
       // Criterio de la casa: al aire libre nunca va un circuito en contacto
@@ -433,17 +532,23 @@
       fuenteFactoresAire: 'IEC-B.52.17',
       aplicarAgrupamientoEnterrado: true,
       fuenteFactoresEnterrado: 'IEC-B.52.19',
+      // Corrección adicional del terreno para conductos enterrados. Se usa como
+      // referencia técnica complementaria la IEC 60364-5-52 Tabla B.52.16. La
+      // tabla declara aplicabilidad hasta 0,8 m de profundidad; más abajo se
+      // deja pendiente un cálculo específico (IEC 60287 / fabricante).
+      fuenteResistividadTerreno: 'IEC-B.52.16',
+      profundidadMaxTablaTerrenoM: 0.8,
+      // Supuesto 1 (caño enterrado), cerrado el 22/9/2026: valores estándar de
+      // diseño de UTE, confirmados por el usuario. Alimentan la temperatura de
+      // terreno (Tabla XIV) y la resistividad por defecto de la Tabla B.52.16.
+      tempTerrenoEnterrado: 25,
+      resistividadTerrenoEnterrado: 1.0,
+      profundidadReferenciaEnterradoM: [0.5, 0.7],
       // Aprobación del supuesto 2 (B.52.17 y B.52.19) por el técnico
       // instalador. En Uruguay no hay matrícula sino categoría UTE; figura en
       // el listado de técnicos instaladores de UTE, Salto, Categoría C. Con
       // null, los circuitos que usan esos factores salen como pendientes.
       aprobacionSupuesto2: { nombre: 'Claudio Rodríguez', categoria: 'C', fecha: '2026-09-17' },
-      // Supuesto 1 (caño enterrado): valores estándar de diseño de UTE,
-      // confirmados por el usuario el 22/9/2026. Con esto la app calcula el
-      // enterrado a la temperatura de terreno, no a la de aire.
-      tempTerrenoEnterrado: 25,
-      resistividadTerrenoEnterrado: 1.0,
-      profundidadReferenciaEnterradoM: [0.5, 0.7],
       // Cortocircuito. El Anexo da el método (Tabla A por potencia del
       // transformador, Tablas B a E por el cable) pero no un valor por
       // defecto, y en vivienda casi nunca se conocen esos datos. Sin Icc real
@@ -472,7 +577,7 @@
       ],
       gamaHastaA: 63,
     },
-    notas:'Ampacidades (Tablas VI-XIII), temperatura (Tabla XIV, escalón inmediato superior), sol (§3.3.2), caída de tensión con conductividad de servicio (§8) medida desde el medidor, caños por Tablas II y III del Capítulo IV, protección contra sobrecargas y cortocircuitos (Cap. V §1.a y §1.b; Anexo §7). Criterios de la casa, más exigentes que el reglamento: agrupamiento contando neutro y tierra, reducción al aire y en bandeja con factores de referencia IEC, 30 °C y mínimos de 1 / 1,5 mm². Al aire libre sin reducción por agrupamiento (criterio de la casa: nunca un circuito en contacto con otro). En bandeja, IEC 60364-5-52 Tabla B.52.17 según el montaje (manojo, capa sobre pared, capa sobre bandeja perforada), sin reducción si entre circuitos hay más de 2·De; enterrados por separación entre caños (Tabla B.52.19: en contacto, 0,25, 0,5 y 1 m; más de 1 m sin reducción). Factores IEC de agrupamiento (B.52.17 y B.52.19): Aprobado el 17/09/2026 por Claudio Rodríguez, técnico instalador UTE Categoría C (supuesto 2), con respaldo en el contraste de las Tablas VI a IX con los métodos E y F de la IEC. Cortocircuito en tres niveles: Icc informada (se verifica), subestación propia (se exige la Icc, Tabla A) o 6 kA de plaza (no verificado); poder de corte por Icn IEC 60898-1 con la gama iC60 N/H/L. 6 kA de plaza confirmados para monofásico y trifásico, con mínimo de 10 kA en térmicas desde 100 A; gama iC60 confirmada. Caño enterrado (supuesto 1, cerrado 22/09/2026): valores estándar de diseño de UTE — resistividad térmica de terreno 1,0 °C·m/W (la misma que ya asumen las Tablas X a XIII) y temperatura de terreno 25 °C a 0,5-0,7 m de profundidad; el enterrado se calcula a esa temperatura en vez de los 30 °C del resto de los métodos, sin factor de corrección adicional.',
+    notas:'Ampacidades (Tablas VI-XIII), temperatura (Tabla XIV, escalón inmediato superior), sol (§3.3.2), caída de tensión con conductividad de servicio (§8) medida desde el medidor, caños por Tablas II y III del Capítulo IV, protección contra sobrecargas y cortocircuitos (Cap. V §1.a y §1.b; Anexo §7). La memoria incorpora la protección general y la puesta a tierra: diferencial obligatorio en el tablero general; en instalaciones domiciliarias, 30 mA; y verificación R_A·IΔn ≤ 50 V en local seco o ≤ 24 V en local húmedo/mojado (RBT Caps. VI, VIII y XXIII; Comunicado UTE 26002 de 19/02/2026). Criterios de la casa, más exigentes que el reglamento: agrupamiento contando neutro y tierra, reducción al aire y en bandeja con factores de referencia IEC, 30 °C y mínimos de 1 / 1,5 mm². Al aire libre sin reducción por agrupamiento (criterio de la casa: nunca un circuito en contacto con otro). En bandeja, IEC 60364-5-52 Tabla B.52.17 según el montaje, sin reducción si entre circuitos hay más de 2·De; enterrados por separación entre caños (Tabla B.52.19). Factores IEC de agrupamiento (B.52.17 y B.52.19): aprobados el 17/09/2026 por Claudio Rodríguez, técnico instalador UTE Categoría C (supuesto 2). Cortocircuito en tres niveles: Icc informada (se verifica), subestación propia (se exige la Icc, Tabla A) o 6 kA de plaza (no verificado); poder de corte por Icn IEC 60898-1 con la gama iC60 N/H/L. Canalizaciones enterradas: la app aplica además un factor por resistividad térmica del terreno (IEC 60364-5-52 B.52.16, referencia complementaria) y sólo cierra esa comprobación hasta 0,8 m de profundidad; por encima exige cálculo específico. La memoria también evalúa sobretensiones atmosféricas y verifica la protección general existente en modificaciones/reparaciones. Auditoría v1.3: validación estricta de datos esenciales, protección diferencial individual de puntos de carga VE, uso literal de las Tablas B/C de cortocircuito y balance real de fases. En suministros trifásicos cada circuito monofásico se asigna a fase (TT) o par de conductores (IT), se calculan las corrientes de línea, se compara el desequilibrio con la Tabla I del Capítulo II (20 % hasta 50 kW; 15 % por encima) y la fase más cargada entra en el dimensionado del alimentador y la protección general. Para operacionalizar el porcentaje, la app documenta como criterio técnico la máxima desviación de corriente respecto del promedio dividida por el promedio. Auditoría v1.5: selección de curvas B/C/D según IEC 60898-1 y coordinación/selectividad de protecciones. La selectividad entre interruptores no se presume por relación de In: queda pendiente hasta respaldarla con tablas/curvas del fabricante y la Icc del punto; para RCD en cascada se verifica como referencia IEC la relación IΔn aguas arriba ≥ 3× aguas abajo y cabecera selectiva tipo S/temporizada. Auditoría v1.8: protección contra contactos indirectos TT/IT, con R_A·IΔn o R_A·I_d, tiempos IEC 60364-4-41 y vigilancia de primer defecto en IT. Auditoría v1.9: PE de cada circuito, continuidad eléctrica y equipotencialidad principal/suplementaria según UTE Cap. XXIII e IEC 60364-5-54/-6 como referencia complementaria. Auditoría v2.0: protocolo de puesta en servicio según IEC 60364-6 como referencia complementaria: aislamiento, polaridad, secuencia de fases, continuidad PE, RCD, tierra, pruebas funcionales y registro de resultados; en circuitos hasta 500 V se usa 500 Vcc y 1 MΩ mínimo, admitiendo 250 Vcc con mínimo 1 MΩ cuando no sea practicable desconectar SPD/electrónica sensible. Auditoría v1.7: la Icc mínima al final del circuito se contrasta contra el extremo superior de la banda magnética IEC 60898-1 (B 5·In, C 10·In, D 20·In). El tiempo térmico admisible del conductor a esa Icc mínima se calcula a partir del criterio de UTE RBT Cap. II - Anexo §7; si no se garantiza la zona magnética, la app exige leer/documentar el tiempo de actuación en la curva del fabricante y compararlo con dicho límite, sin confundir este análisis con los tiempos de protección contra choque eléctrico. Auditoría v1.4: el alimentador se descompone en fase, neutro y PE; el neutro se adopta por defecto con la misma sección que fase porque la app no modela armónicos de orden triple, y una reducción manual queda pendiente de justificación específica. Para pequeños/medianos suministros individuales, el PE sigue el criterio del Cap. XXIII §4 y §10; fuera de ese alcance se adopta S_PE = S_fase como criterio conservador, pero la comprobación térmica específica frente a falta queda explicitada como pendiente si no existe dato de energía/tiempo de despeje.',
   };
   // Referencias que respaldan cada paso del motor. El reglamento que rige en
   // Uruguay es el de UTE: es la referencia principal y es la que manda. La IEC
@@ -489,14 +594,54 @@
       cita: 'UTE, RBT Capítulo II - Anexo §3.3.2: si los conductores están expuestos al sol, la corriente admisible se afecta por un factor 0,90.' },
     { rango: 'principal', tema: 'Protección contra sobrecargas',
       cita: 'UTE, RBT Capítulo V - Agrupamiento de accesorios de protección - Tableros, numeral 1.a: el dispositivo de protección debe garantizar el límite de corriente admisible del conductor.' },
+    { rango: 'complementaria', tema: 'Curvas B/C/D de interruptores modulares',
+      cita: 'IEC 60898-1: bandas de disparo magnético instantáneo utilizadas por la app como referencia de selección: B 3–5·In, C 5–10·In y D 10–20·In. La elección final debe considerar corriente de arranque e Icc mínima del circuito.' },
+    { rango: 'complementaria', tema: 'Selectividad entre interruptores',
+      cita: 'IEC 60364: la selectividad puede ser total o parcial y debe verificarse con las características tiempo-corriente/energía y los límites declarados por el fabricante; la app no la presume por una simple relación entre corrientes nominales.' },
+    { rango: 'complementaria', tema: 'Icc mínima y tiempo de desconexión',
+      cita: 'UTE RBT Cap. II - Anexo §7 exige que el tiempo de actuación de la protección limite la temperatura del conductor durante el cortocircuito. IEC 60898-1: bandas magnéticas B 3–5·In, C 5–10·In y D 10–20·In; la app usa el extremo superior (5/10/20·In) para afirmar que la zona magnética está garantizada. Si no se alcanza, se exige el tiempo de actuación de la curva del fabricante y se compara con el tiempo térmico admisible del conductor a Ik,min.' },
+    { rango: 'complementaria', tema: 'Selectividad entre diferenciales',
+      cita: 'IEC 60364-5-53: para selectividad total entre RCD en cascada se coordina sensibilidad y tiempo; como regla de referencia, IΔn aguas arriba ≥ 3·IΔn aguas abajo y dispositivo aguas arriba selectivo tipo S (o temporizado compatible).' },
+    { rango: 'principal', tema: 'Reparto y balance de cargas monofásicas',
+      cita: 'UTE, RBT Capítulo II numeral 9 y Tabla I: en instalaciones trifásicas las cargas monofásicas deben repartirse entre las fases o conductores polares para mantener el mayor equilibrio posible. Se admite hasta 20 % de desequilibrio con potencia contratada de hasta 50 kW y hasta 15 % por encima de 50 kW. El Reglamento no explicita en ese numeral la fórmula porcentual; la app documenta y aplica como criterio técnico la máxima desviación de las corrientes de línea respecto de su promedio, dividida por ese promedio.' },
+    { rango: 'principal', tema: 'Distribución de carga en el tablero',
+      cita: 'UTE, RBT Capítulo V numeral 1.4.6: las cargas deben distribuirse equilibradamente en las tres fases; cuando no sea posible se admite únicamente el desequilibrio indicado por la Tabla I del Capítulo II.' },
+    { rango: 'principal', tema: 'Neutro del alimentador',
+      cita: 'UTE, RBT Capítulo II §3.1 considera al neutro conductor activo. En cargas específicas con armónicos, como alumbrado de descarga, el Capítulo XVII exige que el neutro tenga la misma sección que fase. La app adopta S_N = S_fase por defecto y no permite declarar como verificada una reducción sin una justificación específica de corriente de neutro/armónicos.' },
+    { rango: 'principal', tema: 'Conductor de protección del alimentador',
+      cita: 'UTE, RBT Capítulo XXIII §4 remite, para viviendas, pequeños comercios o industrias individuales hasta 15 kW en 220 V o 20 kW en 380 V, a las secciones del numeral 10. El §10.1 fija 16 mm² Cu para la línea principal de tierra, salvo líneas repartidoras de menor sección, en cuyo caso se adopta igual sección que fase; además exige soportar la corriente de falta durante el tiempo de despeje. Fuera de ese alcance la app usa S_PE = S_fase como criterio conservador y deja explícita la necesidad de comprobación térmica específica.' },
+    { rango: 'principal', tema: 'Separación neutro - tierra',
+      cita: 'UTE, RBT Capítulo XXIII §5.4 y Capítulo VI: en suministros UTE de baja tensión el neutro no debe unirse en ningún punto con la red de puesta a tierra del cliente; el sistema interior adoptado es TT.' },
     { rango: 'principal', tema: 'Protección contra cortocircuitos',
       cita: 'UTE, RBT Capítulo V numeral 1.b: en el origen de todo circuito debe haber una protección con capacidad de corte acorde a la corriente de cortocircuito prevista. El Anexo del Capítulo II §7 permite verificar térmicamente el conductor frente al cortocircuito, y su Tabla A (con las Tablas B a E para el tramo de cable) da la corriente de cortocircuito según la potencia del transformador, calculada con 500 MVA aguas arriba.' },
+    { rango: 'principal', tema: 'Protección diferencial del tablero general',
+      cita: 'UTE, Comunicado Normativa Técnico Comercial Nro. 26002 (19/02/2026): en todos los tableros generales de los clientes se debe instalar interruptor diferencial; para instalaciones domiciliarias es obligatorio el diferencial de alta sensibilidad de 30 mA. El tablero general incluye además interruptor general automático, protecciones de circuitos y bornera de conductores de protección.' },
+    { rango: 'principal', tema: 'Diferencial interior vs. PDIE de la instalación de enlace',
+      cita: 'UTE, Norma de Instalaciones de Enlace de BT versión agosto 2026, §4.4 y §4.4.1: la Protección Diferencial de la Instalación de Enlace (PDIE) es un dispositivo distinto del diferencial general interior; se instala excepcionalmente cuando UTE lo disponga y su suministro e instalación están a cargo de UTE. La app no la incluye como material del cliente.' },
+    { rango: 'principal', tema: 'Diferencial y resistencia de puesta a tierra',
+      cita: 'UTE, RBT Capítulo VI: la sensibilidad del diferencial debe coordinar con la resistencia a tierra de las masas, cumpliendo R ≤ 50/I en locales secos y R ≤ 24/I en locales húmedos o mojados, con I en amperios. La app muestra el valor máximo de R y exige cargar una medición para cerrar la verificación.' },
+    { rango: 'principal', tema: 'Puesta a tierra y tensión de contacto',
+      cita: 'UTE, RBT Capítulo XXIII §9: la resistencia de tierra debe impedir tensiones de contacto superiores a 24 V en local o emplazamiento conductor y 50 V en los demás casos, para corrientes de defecto eliminadas en menos de 5 s. En suministros UTE de baja tensión es obligatorio el interruptor diferencial en el tablero general.' },
+    { rango: 'complementaria', tema: 'Contactos indirectos en TT: tiempos de desconexión',
+      cita: 'IEC 60364-4-41, Tabla 41.1 y 411.3.2: a 230 V, en TT se usan 0,2 s para circuitos finales dentro del alcance indicado por la norma y 1 s para circuitos de distribución u otros no comprendidos. La app exige tiempo de ensayo/documentado; no presume que un RCD cumple sólo por su IΔn.' },
+    { rango: 'complementaria', tema: 'Contactos indirectos en IT: primer y segundo defecto',
+      cita: 'IEC 60364-4-41 §411.6: en primer defecto se comprueba R_A·I_d ≤ U_L y debe detectarse/señalizarse el defecto cuando se mantiene la continuidad de servicio. Ante segundo defecto, con masas interconectadas se aplican condiciones equivalentes a TN; con masas en grupos o tierras independientes se aplican condiciones tipo TT.' },
+    { rango: 'principal', tema: 'Protección contra sobretensiones',
+      cita: 'UTE, RBT Capítulo V numeral 2 y Comunicado Normativa Técnico Comercial Nro. 26002 (19/02/2026): cuando sean de temer sobretensiones de origen atmosférico deben instalarse descargadores a tierra lo más cerca posible del origen. La puesta a tierra de los descargadores debe ser aislada y su resistencia inferior a 10 Ω.' },
     { rango: 'principal', tema: 'Cálculo de la corriente de cortocircuito',
       cita: 'UTE, RBT Capítulo II - Anexo §7, Tabla A (Icc en bornes del transformador según su potencia, 500 MVA aguas arriba) y Tablas B (220 V) y C (380 V) (Icc al extremo de un cable según sección y longitud). La app aplica la Tabla A y luego las Tablas B o C al tramo de red y acometida y al alimentador. Criterios del lado seguro: transformador y fila de Icc inmediatos superiores, sección inmediata superior, longitud inmediata inferior, y ante erratas del Anexo, el valor que da mayor Icc. Las Tablas D y E son una lectura simplificada de las B y C para Icc de hasta 20 kA y no se usan.' },
     { rango: 'principal', tema: 'Corriente de cortocircuito por defecto',
       cita: 'El Anexo da el método pero no un valor por defecto. Con la Icc informada por UTE o medida, se verifica. Con subestación propia (más de 50 kW, Anexo §10) no hay default: la instalación está casi en bornes del transformador y se toma la Tabla A sin atenuar por cable. En suministro estándar sin dato se toma 6 kA de plaza, que es el valor del ejemplo del propio Anexo (20 kA pasan a 6 kA tras 5 m de 6 mm²); la térmica se cotiza con ese poder de corte y el cortocircuito queda marcado como no verificado.' },
-    { rango: 'complementaria', tema: 'Tipo de diferencial',
-      cita: 'IEC 61008-1 / 61009-1 (tipos AC, A y F) e IEC 62423 (tipos F y B): AC sólo detecta alterna senoidal; A agrega continua pulsante; F agrega componentes de hasta 1 kHz; B agrega continua pura. La app propone A por defecto, F para variadores monofásicos y B para cargador de auto, fotovoltaica, variador trifásico y UPS sin aislación; un cargador con monitor de continua de 6 mA según IEC 62955 se conforma con A. AC no se propone: sólo como elección manual con aviso. Una fuga de continua pura puede cegar a un tipo A o F aguas arriba, por eso un circuito tipo B no debe quedar debajo de un diferencial general A o F.' },
+    { rango: 'complementaria', tema: 'Cantidad de circuitos por diferencial y disparos intempestivos',
+      cita: 'IEC 60364-5-53 §531.3.2 no establece un máximo general de 3 circuitos por RCD. Exige seleccionar y subdividir los circuitos para limitar disparos intempestivos y establece que la suma de corrientes de fuga/protección aguas abajo no supere el 30 % de la corriente diferencial asignada IΔn. Por ello la app no usa “3 circuitos máximo” como requisito IEC; cuando se disponga de corrientes de fuga medidas o de fabricante, debe comprobarse ΣI_fuga ≤ 0,30·IΔn.' },
+    { rango: 'criterio-casa', tema: 'Margen de selección automática de térmicas',
+      cita: 'Criterio interno ADONAI ELECTRICAL, no exigencia textual IEC/UTE: la selección automática procura Ib ≤ 0,80·In, manteniendo simultáneamente Ib ≤ In ≤ Iz. Ejemplo: Ib = 5,1 A no selecciona automáticamente 6 A; pasa al siguiente calibre normalizado que cumpla el margen y la capacidad del conductor.' },
+    { rango: 'complementaria', tema: 'Tipo de diferencial y cargas electrónicas',
+      cita: 'IEC 61008-1 / 61009-1 son normas de producto para RCCB/RCBO; IEC 62423 agrega requisitos para diferenciales tipo F y B, e IEC 62955 para RDC-DD de carga de vehículos eléctricos. La app propone A por defecto y adopta F/B de forma conservadora según la electrónica, pero la selección final debe contrastarse con el equipo y su fabricante. Para VE manda además UTE RBT Capítulo XXX §9.4.2: cada punto de conexión ≤ 30 mA; en modo 3, tipo B o tipo A/F combinado con RDC-DD de 6 mA; en modo 4, al menos tipo A.' },
+    { rango: 'principal', tema: 'Protección diferencial individual para VE',
+      cita: 'UTE, RBT Capítulo XXX §9.4.2: cada Punto de Conexión debe protegerse individualmente mediante un sistema diferencial de sensibilidad no superior a 30 mA y corte de todos los conductores activos incluido el neutro. Modos 1 y 2: al menos tipo A. Modo 3: tipo B, o tipo A/F combinado con RDC-DD de 6 mA. Modo 4: al menos tipo A.' },
+    { rango: 'principal', tema: 'Tablas B y C de cortocircuito',
+      cita: 'UTE, RBT Capítulo II - Anexo §7, Tablas B y C. La app conserva los valores publicados literalmente. Si la celda necesaria participa de una anomalía no monótona impresa en la tabla, no la corrige por inferencia: deja la Icc pendiente y exige dato informado/medido o cálculo específico.' },
     { rango: 'complementaria', tema: 'Poder de corte de los termomagnéticos',
       cita: 'IEC 60898-1: poder de corte asignado Icn, el que se compara con la Icc en termomagnéticos de uso doméstico y análogo (ensayo O-CO-CO). El Icu de la IEC 60947-2 que traen las fichas es otro ensayo y no se usa en la comparación. Gama que se cotiza, confirmada: Schneider Acti9 iC60 (N 6 kA, H 10 kA, L 15 kA, iguales en 230 V 1P/2P y en 400 V 3P/4P, hasta 63 A; en la L verificar el SKU, porque en algunos calibres altos baja); se cotiza el primer escalón que cubre la Icc. Criterio de la casa: mínimo 6 kA hasta 99 A y 10 kA desde 100 A, en monofásico y trifásico.' },
     { rango: 'principal', tema: 'Caída de tensión',
@@ -506,17 +651,29 @@
     { rango: 'complementaria', tema: 'Coordinación conductor - protección',
       cita: 'IEC 60364-4-43:2023, numeral 431.4.2 - Coordination between conductors and overload protective devices: Ib <= In <= Iz y, además, I2 <= 1,45·Iz. Es la formulación explícita de lo que el Capítulo V numeral 1.a de UTE exige.' },
     { rango: 'complementaria', tema: 'Corriente convencional de actuación (I2)',
-      cita: 'Los interruptores termomagnéticos según IEC 60898-1 tienen corriente convencional de disparo I2 = 1,45·In, de modo que I2 <= 1,45·Iz queda garantizado cuando In <= Iz. En baja tensión en Uruguay ya no se instalan fusibles.' },
+      cita: 'Los interruptores termomagnéticos según IEC 60898-1 tienen corriente convencional de disparo I2 = 1,45·In, de modo que I2 <= 1,45·Iz queda garantizado cuando In <= Iz. UTE admite como dispositivos de protección contra sobrecorrientes interruptores automáticos o fusibles con características adecuadas (Comunicado 26002, 19/02/2026).' },
     { rango: 'complementaria', tema: 'Energía pasante en cortocircuito',
       cita: 'Un termomagnético limita la corriente de cortocircuito: para verificar térmicamente el conductor se compara la energía que deja pasar (I²t, dato del fabricante) con la que el conductor admite, (k·S)². Calcular con la corriente plena durante todo el tiempo de despeje sobrestima esa energía y rechaza circuitos que cumplen.' },
     { rango: 'complementaria', tema: 'Agrupamiento al aire y en bandeja',
       cita: 'El Anexo de UTE sólo da factores de agrupamiento para conductos (§5.1). Al aire y en bandeja se usa IEC 60364-5-52, Tabla B.52.17, por cantidad de circuitos y con una fila por montaje: en manojo o haz (1,00 · 0,80 · 0,70 · 0,65 · 0,60 · 0,57 · 0,54 · 0,52 · 0,50; 12 circuitos 0,45, 16 → 0,41, 20 → 0,38), capa única sobre pared, piso o bandeja no perforada (1,00 · 0,85 · 0,79 · 0,75 · 0,73 · 0,72 · 0,72 · 0,71 · 0,70) y capa única sobre bandeja perforada (1,00 · 0,88 · 0,82 · 0,77 · 0,75 · 0,73 · 0,73 · 0,72 · 0,72). Con una cantidad intermedia se toma la columna inmediata superior. El criterio de separación es un umbral (IEC 60364-5-52 y REBT ITC-BT-19): si la distancia entre las superficies de un circuito y el vecino supera 2·De no se corrige (factor 1,00); en contacto o más cerca, el factor de la fila. Se mide entre superficies y entre circuitos. Por defecto se toma en contacto. Las Tablas VI a IX, llevadas a la misma temperatura, caen entre los métodos E y F de la IEC (un circuito al aire), por lo que aplicarles la B.52.17 es el uso previsto. Aprobado el 17/09/2026 por Claudio Rodríguez, técnico instalador UTE Categoría C (supuesto 2).' },
     { rango: 'complementaria', tema: 'Agrupamiento de caños enterrados',
       cita: 'Si los circuitos enterrados comparten caño, rige el §5.1 del Anexo de UTE. Si cada circuito va en su propio caño, se aplica además el factor por separación entre caños de IEC 60364-5-52, Tabla B.52.19 (en contacto, 0,25 m, 0,5 m y 1 m); a partir de 1 m la influencia térmica mutua es despreciable y el factor se toma 1. Aprobado el 17/09/2026 por Claudio Rodríguez, técnico instalador UTE Categoría C (supuesto 2).' },
+    { rango: 'complementaria', tema: 'Terreno en canalizaciones enterradas',
+      cita: 'IEC 60364-5-52, Tabla B.52.16: referencia complementaria para corregir la capacidad de cables en conductos enterrados cuando la resistividad térmica del suelo difiere de 2,5 K·m/W. Los factores de esa tabla son aplicables hasta 0,8 m de profundidad; para mayor profundidad o condiciones de secado no uniforme se requiere un método específico, por ejemplo IEC 60287.' },
+    { rango: 'complementaria', tema: 'Selección del descargador de sobretensión',
+      cita: 'IEC 60364-5-53, sección 534, se usa sólo como referencia de selección del SPD: cuando existe sistema externo de protección contra el rayo o riesgo de corriente de rayo se propone Tipo 1+2 en el origen; para sobretensiones inducidas/transmitidas sin ese riesgo se propone Tipo 2. La necesidad del SPD la determina el criterio de UTE indicado arriba.' },
     { rango: 'complementaria', tema: 'Separación entre potencia y datos',
       cita: 'EN 50174-2 fija distancias entre cables de potencia y de datos (del orden de 30 a 200 mm según la potencia y si hay tabique metálico). Es un criterio de compatibilidad electromagnética, no térmico: no modifica la corriente admisible ni el factor de agrupamiento.' },
     { rango: 'complementaria', tema: 'Sistemas de cableado',
       cita: 'IEC 60364-5-52:2009 + AMD1:2024 - Wiring systems, criterios generales de selección de sistemas de cableado, incluido el numeral 525 sobre caída de tensión.' },
+    { rango: 'principal', tema: 'Continuidad de los conductores de protección',
+      cita: 'UTE, RBT Capítulo XXIII §5.4, §6 y §10.5: los PE unen las masas a la línea principal de tierra; el circuito de tierra debe formar una línea eléctricamente continua, las masas se conectan por derivaciones y no pueden intercalarse seccionadores, fusibles ni interruptores.' },
+    { rango: 'complementaria', tema: 'Sección de PE y equipotencialidad',
+      cita: 'IEC 60364-5-54: método simplificado para PE del mismo material que fase (S_PE=S_fase hasta 16 mm²; 16 mm² entre 16 y 35 mm²; S_fase/2 por encima de 35 mm²). Si el PE va separado, mínimo 2,5 mm² Cu con protección mecánica o 4 mm² Cu sin ella. Conductor equipotencial principal: al menos la mitad del mayor PE, mínimo 6 mm² Cu y no necesita exceder 25 mm² Cu. La equipotencial suplementaria se coordina con el PE asociado.' },
+    { rango: 'complementaria', tema: 'Ensayo de continuidad del PE',
+      cita: 'IEC 60364-6: antes de la puesta en servicio se verifica la continuidad de los conductores de protección y de las uniones equipotenciales. La app registra el resultado del ensayo; no inventa un límite universal de ohmios porque la norma exige continuidad y el valor aceptable depende de longitud, sección y conexiones.' },
+    { rango: 'complementaria', tema: 'Verificación inicial y protocolo de ensayos',
+      cita: 'IEC 60364-6:2016 §6.4 exige inspección y ensayos antes de la puesta en servicio: continuidad de conductores de protección y equipotenciales, resistencia de aislamiento, polaridad, protección por desconexión automática, protección adicional, secuencia de fases, pruebas funcionales y verificación de caída de tensión, con informe de resultados. Tabla 6.1: hasta 500 V, ensayo de aislamiento a 500 Vcc y mínimo 1 MΩ; si no es practicable desconectar SPD/electrónica sensible, puede usarse 250 Vcc manteniendo 1 MΩ.' },
   ];
   const ESTADO_PACK_LABEL = { pendiente: 'Pendiente de verificación', verificado: 'Verificado', personalizado: 'Personalizado (no verificado)' };
   const ESTADO_PACK_CLASS = { pendiente: 'status-pending', verificado: 'status-approved', personalizado: 'status-review' };
@@ -628,6 +785,41 @@
   ];
   function disposicionEnterrado(disposicion) {
     return DISPOSICIONES_ENTERRADO.some((d) => d.id === disposicion) ? disposicion : 'mismo';
+  }
+
+  // IEC 60364-5-52 B.52.16 — referencia complementaria para conductos
+  // enterrados. Para un valor intermedio se toma el escalón de resistividad
+  // inmediatamente superior: es conservador porque una resistividad mayor
+  // disipa peor y da un factor igual o menor. El factor 1,00 corresponde a la
+  // referencia de 2,5 K·m/W. La tabla se declara aplicable hasta 0,8 m.
+  const TERRENO_B5216 = [
+    { rho: 0.5, f: 1.28 }, { rho: 0.7, f: 1.20 }, { rho: 1.0, f: 1.18 },
+    { rho: 1.5, f: 1.10 }, { rho: 2.0, f: 1.05 }, { rho: 2.5, f: 1.00 },
+    { rho: 3.0, f: 0.96 },
+  ];
+  function factorTerrenoEnterrado(p) {
+    if (!p || p.metodo !== 'enterrado') return { aplica: false, factor: 1, estado: 'no_aplica' };
+    const rho = Number(p.resistividadTerreno);
+    const profundidad = Number(p.profundidadEnterrado);
+    const limite = NORMATIVE_PACK.parametros.profundidadMaxTablaTerrenoM || 0.8;
+    const pendientes = [];
+    if (!(rho > 0)) pendientes.push('Falta la resistividad térmica del terreno (K·m/W).');
+    if (!(profundidad > 0)) pendientes.push('Falta la profundidad de la canalización enterrada.');
+    if (profundidad > limite) pendientes.push('La profundidad (' + fmt(profundidad) + ' m) supera ' + fmt(limite) + ' m: la Tabla B.52.16 no cierra esta condición; requiere cálculo específico o dato del fabricante.');
+    let factor = 1;
+    let fueraRango = false;
+    if (rho > 0) {
+      const fila = TERRENO_B5216.find((x) => x.rho >= rho);
+      if (fila) factor = fila.f;
+      else { factor = TERRENO_B5216[TERRENO_B5216.length - 1].f; fueraRango = true; }
+      if (rho < TERRENO_B5216[0].rho || rho > TERRENO_B5216[TERRENO_B5216.length - 1].rho) {
+        fueraRango = true;
+        pendientes.push('La resistividad térmica (' + fmt(rho) + ' K·m/W) queda fuera del rango tabulado de 0,5 a 3,0 K·m/W; confirmar por cálculo específico o fabricante.');
+      }
+    }
+    return { aplica: true, factor, rho: rho > 0 ? rho : null, profundidad: profundidad > 0 ? profundidad : null,
+             limiteProfundidad: limite, fueraRango, pendientes,
+             estado: pendientes.length ? 'pendiente' : 'cumple' };
   }
   // Toma la columna de la tabla igual o inmediatamente superior a la cantidad
   // de circuitos, que es la más desfavorable (10 circuitos en manojo → la de
@@ -759,23 +951,20 @@
     ],
   };
 
-  // Las tablas del Anexo traen algunas erratas (en la C, por ejemplo, 27 m
-  // donde la progresión pide unos 57, o 25 kA entre 40 y 27). Antes de usarlas
-  // se toma siempre el valor más desfavorable, es decir, la Icc más alta:
-  //   - las longitudes de una fila no pueden bajar al avanzar las columnas;
-  //   - la Icc abajo no puede subir al avanzar las columnas ni bajar al subir
-  //     la Icc arriba.
-  function anexoCorregida(t) {
-    if (t.corregida) return t.corregida;
-    const secciones = t.secciones.map((f) => {
-      let max = 0;
-      return { ...f, l: f.l.map((x) => (x === null ? null : (max = Math.max(max, x)))) };
-    });
-    const icc = t.icc.map((f) => ({ ...f, abajo: f.abajo.slice() }));
-    for (const f of icc) for (let j = f.abajo.length - 2; j >= 0; j--) f.abajo[j] = Math.max(f.abajo[j], f.abajo[j + 1]);
-    for (let r = 1; r < icc.length; r++) for (let j = 0; j < icc[r].abajo.length; j++) icc[r].abajo[j] = Math.max(icc[r].abajo[j], icc[r - 1].abajo[j]);
-    t.corregida = { secciones, icc };
-    return t.corregida;
+  // Las Tablas B y C publicadas por UTE contienen algunos valores que rompen la
+  // progresión esperable (por ejemplo, en la Tabla C aparecen secuencias no
+  // monótonas). La app NO los corrige por inferencia. Se usan los valores
+  // impresos literalmente y, si la celda requerida participa de una anomalía,
+  // la Icc queda pendiente para evitar una falsa precisión normativa.
+  function celdaTablaAnexoAmbigua(filaLongitudes, filaIcc, col) {
+    const l = filaLongitudes || [];
+    const i = (filaIcc && filaIcc.abajo) || [];
+    const indices = new Set([col - 1, col, col + 1].filter((x) => x >= 0));
+    for (const j of indices) {
+      if (j > 0 && l[j] !== null && l[j - 1] !== null && l[j] < l[j - 1]) return true;
+      if (j > 0 && i[j] !== undefined && i[j - 1] !== undefined && i[j] > i[j - 1]) return true;
+    }
+    return false;
   }
   function tablaAnexoPorRed(red) { return Number(red) === 220 ? ANEXO_TABLA_B : ANEXO_TABLA_C; }
   function redAnexoPorDefecto(draft) { return draft && draft.sistemaId === 'tri_it' ? 220 : 380; }
@@ -800,17 +989,20 @@
   //   usa la de 15 y el resultado nunca supera la Icc de arriba.
   function iccPorTramoAnexo(red, iccArribaKa, seccion, material, largo) {
     const t = tablaAnexoPorRed(red);
-    const c = anexoCorregida(t);
     const mat = material === 'aluminio' ? 'al' : 'cu';
-    const filas = c.secciones.filter((f) => f[mat] !== null);
+    const filas = t.secciones.filter((f) => f[mat] !== null);
     const fila = filas.find((f) => f[mat] >= Number(seccion)) || filas[filas.length - 1];
     const L = Number(largo) || 0;
     let col = -1;
     fila.l.forEach((x, j) => { if (x !== null && x <= L) col = j; });
     const base = { tabla: t.tabla, seccionFila: fila[mat], largo: L };
     if (col < 0) return { ...base, ka: iccArribaKa, atenua: false };
-    const arriba = c.icc.find((f) => f.arriba >= iccArribaKa);
+    const arriba = t.icc.find((f) => f.arriba >= iccArribaKa);
     if (!arriba) return { ...base, ka: null, fueraDeTabla: true };
+    if (celdaTablaAnexoAmbigua(fila.l, arriba, col)) {
+      return { ...base, ka: null, ambigua: true, filaArriba: arriba.arriba, largoColumna: fila.l[col],
+        error: 'La celda necesaria de la Tabla ' + t.tabla + ' participa de una anomalía no monótona en la publicación UTE; no se corrige por inferencia.' };
+    }
     return { ...base, ka: Math.min(iccArribaKa, arriba.abajo[col]), atenua: true, filaArriba: arriba.arriba, largoColumna: fila.l[col] };
   }
 
@@ -833,6 +1025,7 @@
       if (!(Number(tr.l) > 0) || !(Number(tr.s) > 0)) continue;
       const r = iccPorTramoAnexo(red, ka, tr.s, tr.m, tr.l);
       if (r.fueraDeTabla) return { ka: null, red, pasos, error: 'La Icc de ' + fmt(ka) + ' kA supera la mayor fila de la Tabla ' + r.tabla + ' (100 kA).' };
+      if (r.ambigua) return { ka: null, red, pasos, error: r.error + ' Cargá una Icc informada/medida o realizá un cálculo específico.' };
       pasos.push('Tabla ' + r.tabla + ', ' + tr.nombre + ' ' + fmt(tr.l, 0) + ' m de ' + fmt(tr.s, tr.s < 10 ? 1 : 0).replace(/,0$/, '') + ' mm² ' +
         (tr.m === 'aluminio' ? 'Al' : 'Cu') + ' → ' + fmt(r.ka) + ' kA' + (r.atenua ? '' : ' (tramo más corto que la tabla: sin atenuar)'));
       ka = r.ka;
@@ -926,8 +1119,16 @@
     const mat = cat[material === 'aluminio' ? 'aluminio' : 'cobre'];
     return mat[aislacion === 'xlpe' ? 'xlpe' : 'pvc'];
   }
+  const MARGEN_TERMICA_CASA = 0.80;
+  // Criterio ADONAI de diseño (no requisito IEC/UTE): en selección automática
+  // se procura que Ib no supere el 80 % de In. Así se evita dejar una térmica
+  // trabajando demasiado cerca de su corriente nominal y se conserva margen
+  // razonable para pequeñas ampliaciones/variaciones de carga. Siempre manda
+  // además la condición normativa Ib <= In <= Iz.
   function nearestBreaker(ib, iz) {
-    for (const b of BREAKER_RATINGS) if (b >= ib && b <= iz) return b;
+    for (const b of BREAKER_RATINGS) {
+      if (ib <= b * MARGEN_TERMICA_CASA && b <= iz) return b;
+    }
     return null;
   }
   // Diámetro de caño por las tablas del Capítulo IV, contando los conductores
@@ -996,6 +1197,164 @@
     return { potenciaInstalada, pDemandTotal, qDemandTotal, sDemandTotal, cosPhiEq, corriente, suministroSugerido, minimoDiseno, fueraRango };
   }
 
+
+  // ---------- Balance de fases ----------
+  // UTE Cap. II §9 obliga a repartir las cargas monofásicas en suministros
+  // trifásicos y su Tabla I limita el desequilibrio a 20 % hasta 50 kW y 15 %
+  // por encima. Ese numeral no explicita la fórmula porcentual; para hacer la
+  // comprobación reproducible la app usa como criterio técnico:
+  //   100 · max(|I_fase - I_promedio|) / I_promedio
+  // Las corrientes se obtienen de la demanda de cada carga cuando existe el
+  // vínculo carga→circuito; en circuitos manuales se usa Ib.
+  function cpx(re, im) { return { re, im }; }
+  function cpxAdd(a, b) { return { re: a.re + b.re, im: a.im + b.im }; }
+  function cpxPolar(mag, deg) {
+    const a = deg * Math.PI / 180;
+    return { re: mag * Math.cos(a), im: mag * Math.sin(a) };
+  }
+  function cpxNeg(a) { return { re: -a.re, im: -a.im }; }
+  function cpxMag(a) { return Math.sqrt(a.re * a.re + a.im * a.im); }
+
+  function demandaCircuitoParaBalance(c, draft) {
+    const cargas = (draft && draft.cargas) || [];
+    const factores = (draft && draft.factores) || {};
+    const carga = c.cargaId ? cargas.find((x) => x.id === c.cargaId) : null;
+    let cosPhi = Number(c.cosPhi);
+    if (!(cosPhi > 0 && cosPhi <= 1)) cosPhi = carga && Number(carga.cosPhi) > 0 ? Number(carga.cosPhi) : 1;
+    let sVA = 0;
+    let fuente = 'Ib del circuito';
+    if (carga) {
+      const pTotal = (Number(carga.potenciaW) || 0) * (Number(carga.cantidad) || 0);
+      const factor = factores[carga.categoria] ?? 1;
+      const pDemanda = pTotal * factor;
+      if (pDemanda > 0) {
+        sVA = pDemanda / cosPhi;
+        fuente = 'carga vinculada con factor de demanda';
+      }
+    }
+    const fases = Number(c.fases);
+    const v = Number(c.v) || 230;
+    if (!(sVA > 0) && Number(c.ib) > 0) {
+      sVA = fases === 3 ? SQRT3 * v * Number(c.ib) : v * Number(c.ib);
+    }
+    const ibDemanda = sVA > 0 ? (fases === 3 ? sVA / (SQRT3 * v) : sVA / v) : 0;
+    const phiDeg = Math.acos(Math.min(1, Math.max(0, cosPhi))) * 180 / Math.PI;
+    return { sVA, ibDemanda, cosPhi, phiDeg, fuente };
+  }
+
+  function opcionesFaseCircuito(sistema) {
+    if (!sistema || sistema.fases !== 3) return [];
+    if (sistema.id === 'tri_it') {
+      return [
+        { v: 'L1-L2', label: 'L1–L2' },
+        { v: 'L2-L3', label: 'L2–L3' },
+        { v: 'L3-L1', label: 'L3–L1' },
+      ];
+    }
+    return [
+      { v: 'L1', label: 'L1' },
+      { v: 'L2', label: 'L2' },
+      { v: 'L3', label: 'L3' },
+    ];
+  }
+
+  function faseAsignadaValida(c, sistema) {
+    if (!sistema || sistema.fases !== 3 || Number(c.fases) !== 1) return true;
+    return opcionesFaseCircuito(sistema).some((x) => x.v === c.faseAsignada);
+  }
+
+  function calcularBalanceFases(draft) {
+    const sistema = (draft && SISTEMAS[draft.sistemaId]) || SISTEMAS.tri_tt;
+    if (sistema.fases !== 3) {
+      return { aplica: false, estado: 'no_aplica', corrientes: [0,0,0], promedio: 0, desequilibrioPct: 0, limitePct: null, faseMax: null, corrienteMax: 0, pendientes: [], causas: [], notas: [] };
+    }
+    const corr = [cpx(0,0), cpx(0,0), cpx(0,0)];
+    const pendientes = [], causas = [], notas = [];
+    const detalles = [];
+    const circuitos = (draft && draft.circuitos) || [];
+    const angFase = [0, -120, 120];
+    const angPar = { 'L1-L2': 30, 'L2-L3': -90, 'L3-L1': 150 };
+    const indicesPar = { 'L1-L2': [0,1], 'L2-L3': [1,2], 'L3-L1': [2,0] };
+
+    circuitos.forEach((c) => {
+      if (c.cargaDesvinculada) return;
+      const fases = Number(c.fases);
+      if (c.fasesConfirmadas === false || !(fases === 1 || fases === 3)) {
+        pendientes.push('"' + (c.nombre || 'Circuito') + '": falta confirmar si es monofásico o trifásico.');
+        return;
+      }
+      const d = demandaCircuitoParaBalance(c, draft);
+      if (!(d.ibDemanda > 0)) {
+        pendientes.push('"' + (c.nombre || 'Circuito') + '": no hay corriente/potencia válida para el balance.');
+        return;
+      }
+      if (fases === 3) {
+        for (let i=0;i<3;i++) corr[i] = cpxAdd(corr[i], cpxPolar(d.ibDemanda, angFase[i] - d.phiDeg));
+        detalles.push({ id:c.id, nombre:c.nombre || 'Circuito', fases:3, asignacion:'L1-L2-L3', corriente:d.ibDemanda, fuente:d.fuente });
+        return;
+      }
+      if (!faseAsignadaValida(c, sistema)) {
+        pendientes.push('"' + (c.nombre || 'Circuito') + '": falta asignar la fase' + (sistema.id === 'tri_it' ? ' o par de conductores' : '') + '.');
+        return;
+      }
+      if (sistema.id === 'tri_it') {
+        const par = indicesPar[c.faseAsignada];
+        const iPar = cpxPolar(d.ibDemanda, angPar[c.faseAsignada] - d.phiDeg);
+        corr[par[0]] = cpxAdd(corr[par[0]], iPar);
+        corr[par[1]] = cpxAdd(corr[par[1]], cpxNeg(iPar));
+      } else {
+        const idx = { L1:0, L2:1, L3:2 }[c.faseAsignada];
+        corr[idx] = cpxAdd(corr[idx], cpxPolar(d.ibDemanda, angFase[idx] - d.phiDeg));
+      }
+      detalles.push({ id:c.id, nombre:c.nombre || 'Circuito', fases:1, asignacion:c.faseAsignada, corriente:d.ibDemanda, fuente:d.fuente });
+    });
+
+    const corrientes = corr.map(cpxMag);
+    const promedio = (corrientes[0] + corrientes[1] + corrientes[2]) / 3;
+    const corrienteMax = Math.max(...corrientes);
+    const idxMax = corrientes.indexOf(corrienteMax);
+    const desequilibrioPct = promedio > 0 ? Math.max(...corrientes.map((x) => Math.abs(x - promedio))) / promedio * 100 : 0;
+    const pot = calcularPotencia((draft && draft.cargas) || [], sistema, (draft && draft.factores) || {});
+    const guardado = draft && draft.balanceFases ? Number(draft.balanceFases.potenciaContratadaKw) : 0;
+    const potenciaContratadaKw = guardado > 0 ? guardado : pot.suministroSugerido;
+    const fuentePotencia = guardado > 0 ? 'ingresada' : (pot.suministroSugerido !== null ? 'suministro sugerido' : 'pendiente');
+    const limitePct = potenciaContratadaKw !== null && Number(potenciaContratadaKw) > 0 ? (Number(potenciaContratadaKw) <= 50 ? 20 : 15) : null;
+    if (limitePct === null) pendientes.push('Falta definir la potencia contratada/proyectada para aplicar el límite de desequilibrio de UTE.');
+    if (!pendientes.length && limitePct !== null && desequilibrioPct > limitePct + 1e-9) {
+      causas.push('Desequilibrio de fases de ' + fmt(desequilibrioPct) + ' %, superior al máximo de ' + fmt(limitePct,0) + ' % para ' + fmt(potenciaContratadaKw,1) + ' kW de potencia contratada/proyectada.');
+    }
+    notas.push('Corrientes de línea para balance: L1 ' + fmt(corrientes[0]) + ' A · L2 ' + fmt(corrientes[1]) + ' A · L3 ' + fmt(corrientes[2]) + ' A.');
+    notas.push('Índice aplicado = máxima desviación respecto de la corriente media / corriente media × 100. Es el criterio técnico documentado de la app para operacionalizar la Tabla I de UTE; el numeral 9 fija los límites pero no explicita la fórmula.');
+    return {
+      aplica:true, estado: causas.length ? 'no_cumple' : (pendientes.length ? 'pendiente' : 'cumple'),
+      corrientes, promedio, desequilibrioPct, limitePct, faseMax:['L1','L2','L3'][idxMax], corrienteMax,
+      potenciaContratadaKw: potenciaContratadaKw || null, fuentePotencia, pendientes, causas, notas, detalles,
+    };
+  }
+
+  function autoBalancearFases(draft) {
+    const sistema = (draft && SISTEMAS[draft.sistemaId]) || SISTEMAS.tri_tt;
+    if (sistema.fases !== 3) return;
+    const candidatos = opcionesFaseCircuito(sistema).map((x) => x.v);
+    const monos = ((draft && draft.circuitos) || []).filter((c) => Number(c.fases) === 1 && c.fasesConfirmadas !== false && !c.cargaDesvinculada);
+    monos.sort((a,b) => demandaCircuitoParaBalance(b,draft).ibDemanda - demandaCircuitoParaBalance(a,draft).ibDemanda);
+    monos.forEach((c) => {
+      let mejor = candidatos[0], mejorIdx = Infinity, mejorMax = Infinity;
+      candidatos.forEach((fase) => {
+        const anterior = c.faseAsignada;
+        c.faseAsignada = fase;
+        const b = calcularBalanceFases(draft);
+        const idx = Number.isFinite(b.desequilibrioPct) ? b.desequilibrioPct : Infinity;
+        if (idx < mejorIdx - 1e-9 || (Math.abs(idx-mejorIdx) < 1e-9 && b.corrienteMax < mejorMax)) {
+          mejor = fase; mejorIdx = idx; mejorMax = b.corrienteMax;
+        }
+        c.faseAsignada = anterior;
+      });
+      c.faseAsignada = mejor;
+      c.faseManual = false;
+    });
+  }
+
   // Núcleo común: dada una corriente de diseño Ib, busca la sección mínima
   // que cumple corriente admisible + caída de tensión + mínimo reglamentario.
   function calcularSeccion(p) {
@@ -1010,7 +1369,7 @@
     const tabla = tablaAmpacidad(categoria, material, aislacion);
     const uso = p.uso || 'fuerza';
     const minimo = Math.max(MINIMOS_REGLAMENTARIOS[uso] ?? 1, MINIMOS_COMERCIALES[uso] ?? 1.5);
-    const curva = CURVA_SUGERIDA[uso] || 'C';
+    const curva = curvaProteccionDe(p);
     const tempF = getTempFactorUTE(aislacion, p.tempAmb ?? TEMP_AMBIENTE_DEFECTO);
     if (tempF === null) {
       return {
@@ -1028,6 +1387,8 @@
     const nConductores = (Number(p.agrupados) || 1) * conductoresPorCircuito;
     const groupF = getGroupFactorUTE(p, nConductores, conductoresPorCircuito);
     const solarF = getSolarFactorUTE(Boolean(p.expuestoSol));
+    const terreno = factorTerrenoEnterrado(p);
+    const terrenoF = terreno.factor || 1;
     const k = getConductividadUTE(material, aislacion);
     // Límite: el de UTE para el uso, o el de proyecto si es más exigente.
     const caidaUTE = limiteCaidaUTE(uso);
@@ -1043,7 +1404,7 @@
     for (const row of tabla) {
       if (row.s < minimo) continue;
       const izBase = fases === 1 ? row.c2 : row.c3;
-      const iz = izBase * tempF * groupF * solarF;
+      const iz = izBase * tempF * groupF * solarF * terrenoF;
       if (seccionCapacidad === null && iz >= ib) seccionCapacidad = row.s;
       const dU = caidaVolt(fases, l, ib, cosPhi, k, row.s);
       const dUPct = (dU / v) * 100;
@@ -1059,7 +1420,7 @@
         if (breaker !== null) elegido = { seccion: row.s, iz, dUPct, dUPctTotal, breaker };
       }
     }
-    const factores = { ft: tempF, fa: groupF, fs: solarF, k, caidaUTE, caidaProyecto, caidaMax, caidaPrevia };
+    const factores = { ft: tempF, fa: groupF, fs: solarF, fr: terrenoF, terreno, k, caidaUTE, caidaProyecto, caidaMax, caidaPrevia };
     if (!elegido) return { apto: false, ib, seccionCapacidad, seccionCaida, minimo, curva, ...factores };
     return {
       apto: true, ib, seccionCapacidad, seccionCaida, minimo, curva, ...factores,
@@ -1128,8 +1489,10 @@
     }
     r.fa = getGroupFactorUTE(p, (Number(p.agrupados) || 1) * (fases === 1 ? 3 : 5), fases === 1 ? 3 : 5);
     r.fs = getSolarFactorUTE(Boolean(p.expuestoSol));
+    r.terreno = factorTerrenoEnterrado(p);
+    r.fr = r.terreno.factor || 1;
     r.izTabla = fila ? (fases === 1 ? fila.c2 : fila.c3) : 0;
-    r.iz = r.izTabla * r.ft * r.fa * r.fs;
+    r.iz = r.izTabla * r.ft * r.fa * r.fs * r.fr;
     r.k = getConductividadUTE(material, aislacion);
     r.dU = caidaVolt(fases, Number(p.l) || 0, ib, Number(p.cosPhi) || 1, r.k, seccion);
     r.dUPct = (r.dU / v) * 100;
@@ -1140,6 +1503,9 @@
     r.cumpleIbIn = inProt !== null && ib <= inProt;
     r.cumpleInIz = inProt !== null && inProt <= r.iz;
     r.tipoProteccion = o.tipoProteccion || p.tipoProteccion || 'mcb';
+    r.curvaProteccion = curvaProteccionDe(p);
+    r.curvaSugerida = CURVA_SUGERIDA[uso] || 'C';
+    r.rangoMagnetico = CURVA_MAGNETICA_IEC[r.curvaProteccion] || CURVA_MAGNETICA_IEC.C;
     const i2Manual = Number(o.i2 || p.i2 || 0);
     r.i2 = inProt === null ? null
       : (r.tipoProteccion === 'mcb' ? inProt * FACTOR_I2_MCB : (i2Manual > 0 ? i2Manual : null));
@@ -1148,9 +1514,8 @@
     // 3: caída
     r.cumpleCaida = r.dUPctTotal <= caidaMax;
 
-    // Cortocircuito (Cap. V §1.b y Anexo §7). Casi nunca se conoce la corriente
-    // de cortocircuito en el tablero, así que la falta de datos no frena la
-    // verificación: se informa como "sin datos". Si se cargan, sí se exigen.
+    // Cortocircuito (Cap. V §1.b y Anexo §7). Cuando falta un dato necesario la
+    // comprobación queda pendiente: nunca se presenta el circuito como verificado.
     const pc = poderCorteDe(p, inProt);
     r.iccFuente = pc.fuente;
     r.iccOrigen = pc.origen || null;
@@ -1179,10 +1544,34 @@
     }
     r.cumpleTermicaCorto = r.i2tExigido !== null ? r.i2tExigido <= r.i2tAdmisible : null;
 
+    // Icc mínima en el extremo más alejado y tiempo de desconexión. Esta
+    // comprobación es distinta del poder de corte (Icc máxima en origen).
+    r.desconexion = evaluarIccMinimaYDesconexion(p, inProt, r.curvaProteccion, r.i2tAdmisible);
+    r.iccMinFinalA = r.desconexion.iccMinA;
+    r.umbralMagneticoA = r.desconexion.umbralMagneticoA;
+    r.cumpleDisparoMagnetico = r.desconexion.magnetico;
+    r.tiempoAdmisibleIccMinS = r.desconexion.tiempoAdmisibleS;
+    r.tiempoDesconexionVerificadoS = r.desconexion.tiempoActuacionS;
+    r.cumpleTiempoDesconexion = r.desconexion.cumpleTiempo;
+    r.cumpleIccMinima = r.desconexion.cumpleIccMinima;
+
     if (!r.cumpleCapacidad) r.causas.push('Sección insuficiente por capacidad térmica: la corriente admisible corregida (' + fmt(r.iz) + ' A) no llega a la corriente de diseño (' + fmt(ib) + ' A).');
     if (inProt === null) r.causas.push('No hay una protección de catálogo que coordine con este conductor.');
     if (inProt !== null && !r.cumpleIbIn) r.causas.push('La protección seleccionada es inferior a la corriente de diseño del circuito. Seleccione una corriente nominal superior.');
     if (inProt !== null && !r.cumpleInIz) r.causas.push('La corriente nominal de la protección supera la capacidad admisible del conductor. Aumente la sección del conductor o seleccione una protección adecuada.');
+    if (inProt !== null && r.cumpleIbIn && r.cumpleInIz) {
+      r.cargaTermicaPct = inProt > 0 ? (ib / inProt) * 100 : null;
+      if (r.cargaTermicaPct > MARGEN_TERMICA_CASA * 100) {
+        r.notas.push('La protección cumple Ib ≤ In ≤ Iz, pero la corriente de diseño utiliza ' + fmt(r.cargaTermicaPct, 0) + '% de In. Criterio ADONAI: en selección automática se busca Ib ≤ 80% de In; si fue selección manual, conviene revisar el margen disponible.');
+      }
+    }
+    if (r.tipoProteccion === 'mcb') {
+      r.notas.push('Curva ' + r.curvaProteccion + ': disparo magnético IEC 60898-1 aprox. entre ' + r.rangoMagnetico.min + '·In y ' + r.rangoMagnetico.max + '·In.');
+      if (r.curvaProteccion !== r.curvaSugerida) {
+        r.notas.push('La curva fue fijada distinta de la sugerida (' + r.curvaSugerida + '). Verificar corriente de arranque e Icc mínima al final del circuito.');
+      }
+      if (r.curvaProteccion === 'D' && uso !== 'motor') r.notas.push('Curva D fuera de un circuito identificado como motor: justificar el pico de arranque de la carga y verificar la Icc mínima necesaria para disparo magnético.');
+    }
     if (r.cumpleI2 === false) r.causas.push('La corriente convencional de actuación I2 supera 1,45 · Iz.');
     if (r.cumpleI2 === null && inProt !== null) r.pendientes.push('Falta la I2 del fabricante para completar la comprobación de sobrecarga de este dispositivo.');
     if (!r.cumpleCaida) r.causas.push('Caída de tensión superior al límite: ' + fmt(r.dUPctTotal) + ' % desde el medidor' +
@@ -1203,7 +1592,12 @@
     if (r.factorReferencia) {
       const aprobado = textoAprobacionSupuesto2();
       r.notas.push('Factor de agrupamiento ' + fmt(r.fa) + ': valor de referencia (' + r.factorReferencia + '), ' +
-        (aprobado ? 'criterio ' + aprobado + ' (supuesto 2).' : 'pendiente de confirmación por electricista matriculado (supuesto 2).'));
+        (aprobado ? 'criterio ' + aprobado + ' (supuesto 2).' : 'pendiente de confirmación por técnico instalador autorizado por UTE (supuesto 2).'));
+    }
+    if (!(ib > 0)) r.pendientes.push('Falta la corriente de diseño o la carga del circuito.');
+    if (!(Number(p.l) > 0)) r.pendientes.push('Falta la longitud eléctrica del circuito.');
+    if (r.cumplePoderCorte === null) {
+      r.pendientes.push('La comprobación del poder de corte está incompleta: falta una Icc real o un dato de protección verificable.');
     }
     if (r.poderCorteKa === null && !pc.mcb && pc.fuente !== 'subestacion') {
       r.notas.push('Poder de corte sin verificar: falta el Icu (IEC 60947-2) del dispositivo' +
@@ -1218,11 +1612,78 @@
     } else if (pc.fuente === 'real' && r.poderCorteKa === null && !pc.fueraDeGama) {
       r.notas.push('Poder de corte sin verificar: falta el Icu (IEC 60947-2) del dispositivo.');
     }
+    r.desconexion.causas.forEach((x) => r.causas.push(x));
+    r.desconexion.pendientes.forEach((x) => r.pendientes.push(x));
+    r.desconexion.notas.forEach((x) => r.notas.push(x));
     if (material === 'aluminio') r.notas.push('La verificación térmica en cortocircuito del aluminio requiere un cálculo específico: UTE advierte una reducción del tiempo admisible.');
     else if (r.cumpleTermicaCorto === false) r.causas.push('El conductor no soporta la energía del cortocircuito: ' + fmt(r.i2tExigido / 1000, 0) + ' kA²s contra ' + fmt(r.i2tAdmisible / 1000, 0) + ' kA²s admisibles.');
-    else if (r.cumpleTermicaCorto === null) r.notas.push(r.tipoProteccion === 'mcb'
-      ? 'Cortocircuito térmico sin verificar: falta la energía pasante I²t del termomagnético (dato del fabricante).'
-      : 'Cortocircuito térmico sin verificar: falta la corriente de cortocircuito o el tiempo de despeje.');
+    else if (r.cumpleTermicaCorto === null) {
+      r.pendientes.push(r.tipoProteccion === 'mcb'
+        ? 'Cortocircuito térmico pendiente: falta la energía pasante I²t del termomagnético (dato del fabricante).'
+        : 'Cortocircuito térmico pendiente: falta la corriente de cortocircuito o el tiempo de despeje.');
+    }
+
+    // En enterrados la memoria sólo cierra si se declararon las condiciones
+    // térmicas del terreno dentro del campo de aplicación de la referencia.
+    if (r.terreno && r.terreno.aplica) {
+      r.terreno.pendientes.forEach((x) => r.pendientes.push(x));
+      if (r.terreno.rho !== null) r.notas.push('Terreno: ρt = ' + fmt(r.terreno.rho) + ' K·m/W; factor adicional = ' + fmt(r.fr, 2) + ' (IEC 60364-5-52 B.52.16, referencia complementaria).' +
+        (r.terreno.rho === RESISTIVIDAD_TERRENO_UTE_DEFECTO ? ' Valor de condición normal de UTE (supuesto 1); reemplazar por un estudio de suelo real si se cuenta con uno.' : ''));
+      if (r.terreno.profundidad !== null && r.terreno.profundidad <= r.terreno.limiteProfundidad) r.notas.push('Profundidad enterrada = ' + fmt(r.terreno.profundidad) + ' m, dentro del alcance tabulado hasta ' + fmt(r.terreno.limiteProfundidad) + ' m.');
+    }
+    if (p.cargaDesvinculada) {
+      r.pendientes.push('El circuito ya no tiene una carga vinculada: revisar o eliminar manualmente.');
+    }
+
+    // Auditoría de integridad de datos: no se completa un dato inválido con un
+    // valor favorable por defecto cuando de él depende un "Verificado".
+    const cosPhiIngresado = Number(p.cosPhi);
+    if (!(Number(p.v) > 0)) r.pendientes.push('Falta una tensión válida del circuito.');
+    if (!(p.fases === 1 || p.fases === 3)) r.pendientes.push('Cantidad de fases inválida o no definida.');
+    if (p.fasesConfirmadas === false) r.pendientes.push('Falta confirmar si el circuito es monofásico o trifásico; en un suministro trifásico no se heredan automáticamente las fases del suministro.');
+    if (p.sistemaId && SISTEMAS[p.sistemaId]) {
+      const sistemaCircuito = SISTEMAS[p.sistemaId];
+      if (sistemaCircuito.fases === 1 && p.fases === 3) {
+        r.causas.push('El circuito está definido como trifásico pero el suministro del proyecto es monofásico.');
+      }
+      if (p.fases === 1 || p.fases === 3) {
+        const tensionEsperada = tensionDeCircuito(sistemaCircuito, p.fases);
+        if (Number(p.v) > 0 && Math.abs(Number(p.v) - tensionEsperada) > 1) {
+          r.causas.push('La tensión del circuito (' + fmt(Number(p.v), 0) + ' V) no coincide con la alimentación ' + p.fases + 'φ prevista para ' + sistemaCircuito.label + ' (' + fmt(tensionEsperada, 0) + ' V).');
+        }
+      }
+    }
+    if (!(cosPhiIngresado > 0 && cosPhiIngresado <= 1)) r.pendientes.push('Falta un cos φ válido (mayor que 0 y menor o igual a 1).');
+    if (p.iccAnexoError && !(Number(p.iccKa) > 0) && !(Number(p.iccTableroKa) > 0)) {
+      r.pendientes.push('Icc calculada con el Anexo pendiente: ' + p.iccAnexoError);
+    }
+
+    // VE: la protección diferencial individual forma parte de la comprobación
+    // del circuito, no sólo de una sugerencia de materiales.
+    if (p.equipo === 'cargador_ve') {
+      const modo = String(p.modoCargaVe || '');
+      if (!['1','2','3','4'].includes(modo)) {
+        r.pendientes.push('VE: falta indicar el modo de carga (1, 2, 3 o 4) para verificar la protección diferencial del punto de conexión.');
+      }
+      const difInd = p.diferencialIndividualVe || 'desconocido';
+      if (difInd === 'no') {
+        r.causas.push('VE: el punto de conexión no tiene protección diferencial individual. UTE Cap. XXX §9.4.2 la exige para cada punto, con IΔn ≤ 30 mA y corte omnipolar.');
+      } else if (difInd !== 'si') {
+        r.pendientes.push('VE: falta confirmar/proyectar la protección diferencial individual de IΔn ≤ 30 mA y corte de todos los conductores activos.');
+      }
+      if (modo === '3' && p.rdcdd6mA !== true) {
+        r.notas.push('VE modo 3 sin RDC-DD de 6 mA confirmado: la solución propuesta debe usar diferencial tipo B ≤ 30 mA.');
+      } else if (modo === '3' && p.rdcdd6mA === true) {
+        r.notas.push('VE modo 3 con RDC-DD de 6 mA: UTE admite diferencial tipo A o F ≤ 30 mA.');
+      } else if (modo === '1' || modo === '2' || modo === '4') {
+        r.notas.push('VE modo ' + modo + ': protección diferencial individual al menos tipo A y ≤ 30 mA.');
+      }
+    }
+
+    r.pe = comprobarPeCircuito(p, seccion);
+    r.pe.causas.forEach((x)=>r.causas.push(x));
+    r.pe.pendientes.forEach((x)=>r.pendientes.push(x));
+    r.pe.notas.forEach((x)=>r.notas.push(x));
 
     r.estado = r.causas.length ? 'no_cumple' : (r.pendientes.length ? 'pendiente' : 'cumple');
     r.verificado = r.estado === 'cumple';
@@ -1241,18 +1702,162 @@
     return p.fases === 1 ? sVA / p.v : sVA / (SQRT3 * p.v);
   }
 
+  function siguienteSeccionNormalizada(minimo) {
+    const m = Number(minimo) || 0;
+    const normalizadas=[1,1.5,2.5,4,6,10,16,25,35,50,70,95,120,150,185,240,300,400];
+    return normalizadas.find((x) => x >= m) || m || null;
+  }
+  function peMinimoCircuitoIEC(seccionFase, material, separado, protegidoMec) {
+    const sf = Number(seccionFase) || 0;
+    if (!(sf > 0)) return null;
+    let base = sf <= 16 ? sf : (sf <= 35 ? 16 : sf / 2);
+    if (separado) {
+      const mec = material === 'aluminio' ? 16 : (protegidoMec ? 2.5 : 4);
+      base = Math.max(base, mec);
+    }
+    return siguienteSeccionNormalizada(base);
+  }
+  function comprobarPeCircuito(p, seccionFase) {
+    const separado = p.peSeparado === true;
+    const protegido = p.peProteccionMecanica !== false;
+    const minimo = peMinimoCircuitoIEC(seccionFase, p.material || 'cobre', separado, protegido);
+    const seccion = Number(p.peSeccion) > 0 ? Number(p.peSeccion) : minimo;
+    const ensayo = p.continuidadPe || 'pendiente';
+    const tieneR = p.resistenciaContinuidadPeOhm !== null && p.resistenciaContinuidadPeOhm !== undefined && p.resistenciaContinuidadPeOhm !== '' && Number(p.resistenciaContinuidadPeOhm) >= 0;
+    const resistencia = tieneR ? Number(p.resistenciaContinuidadPeOhm) : null;
+    const causas=[], pendientes=[], notas=[];
+    if (!(seccion > 0)) pendientes.push('PE: falta definir la sección del conductor de protección.');
+    else if (minimo && seccion < minimo) causas.push('PE: sección ' + fmt(seccion) + ' mm² menor que el mínimo adoptado de ' + fmt(minimo) + ' mm².');
+    if (ensayo === 'no') causas.push('PE: el ensayo de continuidad indicó circuito de protección abierto/no continuo.');
+    else if (ensayo !== 'si') pendientes.push('PE: falta ensayar y documentar la continuidad del conductor de protección hasta la masa del circuito.');
+    if (ensayo === 'si') notas.push('PE: continuidad ensayada' + (resistencia !== null ? ' · R=' + fmt(resistencia,3) + ' Ω' : '') + '. IEC 60364-6 no se sustituye por un límite fijo universal de resistencia; se conserva el valor medido para trazabilidad.');
+    notas.push('PE mínimo por referencia IEC 60364-5-54: ' + (minimo ? fmt(minimo) + ' mm²' : 'pendiente') + (separado ? (protegido ? ' · separado con protección mecánica' : ' · separado sin protección mecánica') : ' · en la misma canalización/cable que los conductores activos') + '.');
+    return {seccion,minimo,separado,protegido,ensayo,resistencia,causas,pendientes,notas,estado:causas.length?'no_cumple':(pendientes.length?'pendiente':'cumple')};
+  }
+
+  function comprobarEquipotencialidad(draft) {
+    const pg=(draft&&draft.proteccionGeneral)||{};
+    const acom=calcularAcometida(draft);
+    const caida=caidaPreviaDe(draft);
+    let mayorPe=Number(acom.peSeccion)||0;
+    ((draft&&draft.circuitos)||[]).forEach((c)=>{ const calc=calcularCircuito(c,caida); if(calc.apto){ const pe=comprobarPeCircuito(c,calc.seccionAdoptada); mayorPe=Math.max(mayorPe,Number(pe.seccion)||0); } });
+    const minPrincipal=siguienteSeccionNormalizada(Math.max(6,Math.min(25,mayorPe/2||6)));
+    const aplica=pg.equipotencialPrincipalAplica||'pendiente';
+    const sec=Number(pg.equipotencialPrincipalSeccion)>0?Number(pg.equipotencialPrincipalSeccion):null;
+    const cont=pg.equipotencialPrincipalContinuidad||'pendiente';
+    const causas=[],pendientes=[],notas=[];
+    if(aplica==='pendiente') pendientes.push('Falta evaluar si existen partes conductoras extrañas que deban incorporarse a la equipotencialidad principal.');
+    if(aplica==='si'){
+      if(!sec) pendientes.push('Falta definir/relevar la sección de la equipotencial principal.');
+      else if(sec<minPrincipal) causas.push('Equipotencial principal: ' + fmt(sec) + ' mm² es menor que el mínimo adoptado de ' + fmt(minPrincipal) + ' mm² Cu.');
+      if(cont==='no') causas.push('Equipotencial principal: el ensayo de continuidad no fue satisfactorio.');
+      else if(cont!=='si') pendientes.push('Falta ensayar la continuidad de la equipotencial principal.');
+    }
+    const sup=pg.equipotencialSuplementariaAplica||'no';
+    const supSec=Number(pg.equipotencialSuplementariaSeccion)>0?Number(pg.equipotencialSuplementariaSeccion):null;
+    const supCont=pg.equipotencialSuplementariaContinuidad||'pendiente';
+    const supProt=pg.equipotencialSuplementariaProtegida!==false;
+    const minSup=siguienteSeccionNormalizada(Math.max(supProt?2.5:4, mayorPe/2||2.5));
+    if(sup==='pendiente') pendientes.push('Falta definir si la obra requiere equipotencialidad suplementaria por local/condición especial.');
+    if(sup==='si'){
+      if(!supSec) pendientes.push('Falta definir/relevar la sección de la equipotencial suplementaria.');
+      else if(supSec<minSup) causas.push('Equipotencial suplementaria: ' + fmt(supSec) + ' mm² es menor que el mínimo conservador adoptado de ' + fmt(minSup) + ' mm² Cu.');
+      if(supCont==='no') causas.push('Equipotencial suplementaria: el ensayo de continuidad no fue satisfactorio.');
+      else if(supCont!=='si') pendientes.push('Falta ensayar la continuidad de la equipotencial suplementaria.');
+    }
+    notas.push('UTE Cap. XXIII exige continuidad del circuito de tierra y conexiones por derivación; IEC 60364-5-54 se usa como referencia complementaria para dimensionar PE y equipotenciales.');
+    return {mayorPe,minPrincipal,aplica,seccion:sec,continuidad:cont,suplementariaAplica:sup,suplementariaSeccion:supSec,minSuplementaria:minSup,causas,pendientes,notas,estado:causas.length?'no_cumple':(pendientes.length?'pendiente':'cumple')};
+  }
+
+  function requisitosAislamientoIEC(c) {
+    const v = Number(c && c.v) || 0;
+    if (!(v > 0)) return { tensionEnsayoV: null, minimoMohm: null };
+    if (v <= 500) return { tensionEnsayoV: 500, minimoMohm: 1 };
+    return { tensionEnsayoV: 1000, minimoMohm: 1 };
+  }
+  function comprobarEnsayoCircuito(c, draft) {
+    const req = requisitosAislamientoIEC(c);
+    const causas=[], pendientes=[], notas=[];
+    const riso = Number(c.aislamientoMohm);
+    const vtest = Number(c.aislamientoEnsayoV);
+    if (!(riso > 0)) pendientes.push('Aislamiento: falta medir y registrar la resistencia de aislamiento.');
+    else if (req.minimoMohm !== null && riso < req.minimoMohm) causas.push('Aislamiento: ' + fmt(riso,2) + ' MΩ es menor que el mínimo IEC de ' + fmt(req.minimoMohm,1) + ' MΩ.');
+    if (!(vtest > 0)) pendientes.push('Aislamiento: falta registrar la tensión de ensayo utilizada.');
+    else if (req.tensionEnsayoV && vtest !== req.tensionEnsayoV && !(vtest===250 && req.tensionEnsayoV===500)) causas.push('Aislamiento: tensión de ensayo ' + fmt(vtest,0) + ' Vcc no corresponde al criterio IEC adoptado para este circuito.');
+    else if (vtest===250 && req.tensionEnsayoV===500) notas.push('Aislamiento ensayado a 250 Vcc: sólo válido cuando no resulta practicable desconectar SPD/electrónica sensible; se mantiene mínimo 1 MΩ.');
+
+    const sistema = SISTEMAS[(draft&&draft.sistemaId)||c.sistemaId] || SISTEMAS.tri_tt;
+    const polaridadAplica = Number(c.fases)===1 && sistema.id !== 'tri_it';
+    if (polaridadAplica) {
+      if (c.polaridad==='no') causas.push('Polaridad: el ensayo no fue satisfactorio.');
+      else if (c.polaridad!=='si') pendientes.push('Polaridad: falta verificar fase/neutro y dispositivos unipolares.');
+    }
+    const secuenciaAplica = Number(c.fases)===3;
+    if (secuenciaAplica) {
+      if (c.secuenciaFases==='no') causas.push('Secuencia de fases: el orden medido no es el previsto/documentado.');
+      else if (c.secuenciaFases!=='si') pendientes.push('Secuencia de fases: falta verificar el orden de fases.');
+    }
+
+    const pg=(draft&&draft.proteccionGeneral)||{};
+    const d=diferencialDelCircuito(c);
+    const tg=tipoDiferencialGeneral(calcularProteccionGeneral(draft||{proteccionGeneral:pg,circuitos:[]}));
+    const rcdDedicado = c.equipo==='cargador_ve' || RANGO_DIFERENCIAL[d.tipo] > RANGO_DIFERENCIAL[tg];
+    if (rcdDedicado) {
+      if (c.ensayoRcd==='no') causas.push('RCD dedicado: el ensayo funcional/desconexión no fue satisfactorio.');
+      else if (c.ensayoRcd!=='si') pendientes.push('RCD dedicado: falta ejecutar y documentar el ensayo del dispositivo.');
+      if (c.ensayoRcd==='si' && !(Number(c.tiempoRcdS)>0)) pendientes.push('RCD dedicado: falta registrar el tiempo de actuación medido.');
+    }
+
+    const lazo = Number(c.impedanciaLazoTierraOhm)>0 ? Number(c.impedanciaLazoTierraOhm) : null;
+    const esquema=esquemaContactosIndirectos(draft||{});
+    const lazoAplica = esquema==='IT' && pg.masasInterconectadasIt===true;
+    if (lazoAplica && lazo===null && !(Number(c.tiempoDefectoTierraS)>0)) pendientes.push('IT segundo defecto: falta documentar impedancia de lazo o tiempo de desconexión equivalente.');
+    if (lazo!==null) notas.push('Impedancia de lazo de defecto a tierra registrada: ' + fmt(lazo,3) + ' Ω.');
+    return {req,polaridadAplica,secuenciaAplica,rcdDedicado,lazoAplica,lazo,causas,pendientes,notas,estado:causas.length?'no_cumple':(pendientes.length?'pendiente':'cumple')};
+  }
+  function comprobarProtocoloEnsayos(draft) {
+    const pg=(draft&&draft.proteccionGeneral)||{};
+    const proto=(draft&&draft.protocoloEnsayos)||{};
+    const causas=[],pendientes=[],notas=[],circuitos=[];
+    ((draft&&draft.circuitos)||[]).forEach((c,i)=>{const r=comprobarEnsayoCircuito(c,draft); circuitos.push({indice:i,circuito:c,resultado:r}); r.causas.forEach(x=>causas.push('C'+(i+1)+' '+(c.nombre||'Circuito')+': '+x)); r.pendientes.forEach(x=>pendientes.push('C'+(i+1)+' '+(c.nombre||'Circuito')+': '+x));});
+    if (pg.ensayoRcdGeneral==='no') causas.push('RCD general: el ensayo funcional/desconexión no fue satisfactorio.');
+    else if (pg.ensayoRcdGeneral!=='si') pendientes.push('Falta documentar el ensayo funcional del diferencial general.');
+    if (pg.ensayoRcdGeneral==='si' && !(Number(pg.tiempoDiferencialGeneralS)>0)) pendientes.push('RCD general: falta registrar el tiempo de actuación medido.');
+    if (pg.ensayoFuncionalProtecciones==='no') causas.push('Pruebas funcionales: interruptores/aparamenta no funcionaron satisfactoriamente.');
+    else if (pg.ensayoFuncionalProtecciones!=='si') pendientes.push('Falta ejecutar/documentar las pruebas funcionales de interruptores y aparatos de mando/protección.');
+    if (!(Number(pg.resistenciaTierraOhm)>0)) pendientes.push('Falta medición de resistencia de puesta a tierra para el protocolo.');
+    const eq=comprobarEquipotencialidad(draft); if(eq.estado==='no_cumple') causas.push('Continuidad/equipotencialidad: existen incumplimientos.'); else if(eq.estado==='pendiente') pendientes.push('Continuidad/equipotencialidad: quedan ensayos pendientes.');
+    if (!proto.fecha) pendientes.push('Protocolo: falta fecha de ensayos.');
+    if (!String(proto.tecnico||'').trim()) pendientes.push('Protocolo: falta identificar al técnico que realizó/verificó los ensayos.');
+    if (!String(proto.instrumento||'').trim()) pendientes.push('Protocolo: falta identificar instrumento/equipo de medida.');
+    if ((proto.calibracion||'pendiente')==='no') causas.push('Protocolo: instrumento declarado con calibración no vigente/no conforme.');
+    else if ((proto.calibracion||'pendiente')!=='si') pendientes.push('Protocolo: falta confirmar calibración/verificación vigente del instrumento cuando corresponda.');
+    notas.push('IEC 60364-6 se usa como referencia complementaria para la verificación inicial y el informe de ensayos. Los requisitos particulares de UTE y de instalaciones especiales prevalecen cuando correspondan.');
+    return {circuitos,causas,pendientes,notas,estado:causas.length?'no_cumple':(pendientes.length?'pendiente':'cumple')};
+  }
+
   // Todo lo que el motor necesita de un circuito guardado. Un solo lugar, así
   // la pantalla, la planilla y el PDF calculan exactamente lo mismo.
   function datosCircuito(c, caidaPrevia, ctx) {
     return {
       iccTableroKa: ctx ? ctx.iccTableroKa : null, iccTableroOrigen: ctx ? ctx.iccTableroOrigen : null,
+      iccAnexoError: ctx && ctx.anexo && ctx.anexo.error ? ctx.anexo.error : null,
       conSubestacion: ctx ? ctx.conSubestacion : false,
       icu60947Ka: c.icu60947Ka,
-      ib: c.ib, v: c.v, fases: c.fases, l: c.l, material: c.material, metodo: c.metodo, aislacion: c.aislacion,
-      tempAmb: c.tempAmb, agrupados: c.agrupados, disposicion: c.disposicion, montaje: c.montaje, separados2De: c.separados2De, cosPhi: c.cosPhi,
+      ib: c.ib, v: c.v, fases: c.fases, fasesConfirmadas: c.fasesConfirmadas !== false, sistemaId: c.sistemaId || null,
+      l: c.l, material: c.material, metodo: c.metodo, aislacion: c.aislacion,
+      tempAmb: c.tempAmb, agrupados: c.agrupados, disposicion: c.disposicion, montaje: c.montaje, separados2De: c.separados2De,
+      resistividadTerreno: c.resistividadTerreno, profundidadEnterrado: c.profundidadEnterrado, cosPhi: c.cosPhi,
       caidaMax: c.caidaMax, caidaPrevia, uso: c.uso || 'fuerza', expuestoSol: c.expuestoSol,
-      inProteccion: c.inProteccion, tipoProteccion: c.tipoProteccion || 'mcb', i2: c.i2,
+      inProteccion: c.inProteccion, tipoProteccion: c.tipoProteccion || 'mcb', curvaProteccion: c.curvaProteccion || '', i2: c.i2,
+      selectividadFabricante: c.selectividadFabricante || 'pendiente', selectividadLimiteKa: c.selectividadLimiteKa,
       iccKa: c.iccKa, poderCorteKa: c.poderCorteKa, i2tPasante: c.i2tPasante, tiempoDespejeS: c.tiempoDespejeS,
+      iccMinFinalA: c.iccMinFinalA, zCortoFinalOhm: c.zCortoFinalOhm, tiempoDesconexionVerificadoS: c.tiempoDesconexionVerificadoS,
+      cargaDesvinculada: c.cargaDesvinculada,
+      equipo: c.equipo || 'comun', modoCargaVe: c.modoCargaVe || '', rdcdd6mA: Boolean(c.rdcdd6mA),
+      diferencialIndividualVe: c.diferencialIndividualVe || 'desconocido',
+      peSeccion: c.peSeccion, peSeparado: c.peSeparado === true, peProteccionMecanica: c.peProteccionMecanica !== false,
+      continuidadPe: c.continuidadPe || 'pendiente', resistenciaContinuidadPeOhm: c.resistenciaContinuidadPeOhm,
     };
   }
   function calcularCircuito(c, caidaPrevia) {
@@ -1267,20 +1872,36 @@
    * La corriente es la demanda calculada de toda la instalación; la sección,
    * la que se cargue a mano o la que sale de proteger la térmica general.
    */
-  const ACOMETIDA_DEFECTO = { l: 10, seccion: null };
+  const ACOMETIDA_DEFECTO = { l: 10, seccion: null, neutroSeccion: null, peSeccion: null };
+  function corrienteNeutroFundamental(balance, sistema, ibDiseno) {
+    if (sistema.id === 'tri_it') return { aplica:false, corriente:0, estado:'no_aplica', nota:'Sistema IT 230 V de 3 hilos: no se presupone conductor neutro.' };
+    if (sistema.fases === 1) return { aplica:true, corriente:ibDiseno, estado:'calculado', nota:'Monofásico: por el neutro circula la corriente del circuito de alimentación.' };
+    if (!balance || balance.estado === 'pendiente' || !Array.isArray(balance.corrientes)) {
+      return { aplica:true, corriente:null, estado:'pendiente', nota:'Falta cerrar el balance de fases para estimar la componente fundamental de corriente por el neutro.' };
+    }
+    const [i1,i2,i3] = balance.corrientes.map((x)=>Math.max(0,Number(x)||0));
+    // Suma vectorial de tres corrientes separadas 120°. Es una estimación de la
+    // componente fundamental. No incluye armónicos triples, que se suman en N.
+    const rad = Math.max(0, i1*i1 + i2*i2 + i3*i3 - i1*i2 - i2*i3 - i3*i1);
+    return { aplica:true, corriente:Math.sqrt(rad), estado:'calculado', nota:'Componente fundamental estimada por suma vectorial L1/L2/L3; los armónicos triples no están modelados.' };
+  }
+  function peMinimoPequenoSuministro(seccionFase) {
+    const sf = Number(seccionFase) || 0;
+    if (!(sf > 0)) return null;
+    return sf < 16 ? sf : 16;
+  }
   function calcularAcometida(draft) {
     const acom = (draft && draft.acometida) || ACOMETIDA_DEFECTO;
     const sistema = (draft && SISTEMAS[draft.sistemaId]) || SISTEMAS.tri_tt;
     const l = Number(acom.l) || 0;
     const r = calcularPotencia((draft && draft.cargas) || [], sistema, (draft && draft.factores) || {});
-    // La corriente de diseño del enlace es la del suministro que se solicita
-    // ante UTE, no la demanda instantánea. Además la general nunca puede quedar
-    // por debajo de la mayor térmica de circuito, o cortaría antes que ella.
     const fueraRango = r.suministroSugerido === null;
     const pW = (r.suministroSugerido || 0) * 1000;
     const ig = sistema.fases === 1 ? pW / sistema.v : pW / (SQRT3 * sistema.v);
     const maxCircuito = Math.max(0, ...(((draft && draft.circuitos) || []).map((c) => calcularCircuito(c).breaker || 0)));
-    const ibDiseno = Math.max(ig, maxCircuito + 0.01);
+    const balance = sistema.fases === 3 ? calcularBalanceFases(draft) : { aplica:false, estado:'no_aplica', corrienteMax:0 };
+    const ibFaseMax = balance.aplica && balance.estado !== 'pendiente' ? balance.corrienteMax : 0;
+    const ibDiseno = Math.max(ig, ibFaseMax, maxCircuito + 0.01);
     const datos = {
       ib: ibDiseno, v: sistema.v, fases: sistema.fases, l,
       material: 'cobre', metodo: 'embutido', aislacion: 'pvc', tempAmb: TEMP_AMBIENTE_DEFECTO,
@@ -1288,21 +1909,128 @@
     };
     const auto = calcularSeccion(datos);
     const seccion = Number(acom.seccion) || auto.seccionAdoptada || null;
-    // Iz del enlace con la sección que finalmente se use, y la térmica que
-    // coordina con él: mismo criterio que cualquier circuito, Ib <= In <= Iz.
     const comp = seccion ? comprobarCircuito(datos, { seccion }) : null;
     const iz = comp ? comp.iz : 0;
-    const termicaIn = seccion ? (BREAKER_RATINGS.find((b) => b >= ibDiseno && b <= iz) ?? null) : null;
-    // La caída se mide con la corriente de demanda real de la instalación.
-    const dU = seccion ? caidaVolt(sistema.fases, l, r.corriente, r.cosPhiEq || 1, getConductividadUTE('cobre', 'pvc'), seccion) : 0;
+    const termicaIn = seccion ? nearestBreaker(ibDiseno, iz) : null;
+
+    const hayMono = sistema.fases === 3 && ((draft && draft.circuitos) || []).some((c) => Number(c.fases) === 1);
+    const iCaida = balance.aplica && balance.estado !== 'pendiente' && balance.corrienteMax > 0 ? balance.corrienteMax : r.corriente;
+    const fasesCaida = hayMono && balance.aplica && balance.estado !== 'pendiente' ? 1 : sistema.fases;
+    const vCaida = fasesCaida === 1 ? 230 : sistema.v;
+    const dU = seccion ? caidaVolt(fasesCaida, l, iCaida, r.cosPhiEq || 1, getConductividadUTE('cobre', 'pvc'), seccion) : 0;
+    const dUPct = vCaida ? (dU / vCaida) * 100 : 0;
+
+    // NEUTRO. Por defecto se adopta la misma sección que fase: además de ser
+    // conservador, evita subdimensionarlo cuando existan armónicos triples no
+    // modelados. Una reducción manual se deja como pendiente de justificación.
+    const neutroCalc = corrienteNeutroFundamental(balance, sistema, ibDiseno);
+    const tieneNeutro = neutroCalc.aplica;
+    const neutroSeccion = tieneNeutro ? (Number(acom.neutroSeccion) || seccion) : null;
+    let neutroIz = null;
+    if (tieneNeutro && neutroSeccion && neutroCalc.corriente !== null) {
+      const dn = { ...datos, fases:1, v:230, ib:Math.max(neutroCalc.corriente,0.01), caidaMax:100 };
+      const cn = comprobarCircuito(dn, { seccion: neutroSeccion });
+      neutroIz = cn ? cn.iz : null;
+    }
+    const neutroCausas = [], neutroPendientes = [];
+    if (tieneNeutro) {
+      if (!neutroSeccion) neutroPendientes.push('Falta definir la sección del neutro del alimentador.');
+      if (neutroCalc.estado === 'pendiente') neutroPendientes.push(neutroCalc.nota);
+      if (neutroCalc.corriente !== null && neutroIz !== null && neutroIz < neutroCalc.corriente) neutroCausas.push('La capacidad admisible del neutro (' + fmt(neutroIz) + ' A) es menor que la corriente fundamental estimada (' + fmt(neutroCalc.corriente) + ' A).');
+      if (seccion && neutroSeccion && neutroSeccion < seccion) neutroPendientes.push('El neutro es menor que fase. La app no modela armónicos triples: justificar la reducción con cálculo específico antes de declararlo verificado.');
+    }
+
+    // PE. Para pequeños/medianos suministros individuales se aplica el criterio
+    // explícito del Cap. XXIII §4/§10. Fuera de ese alcance se adopta S_PE=S_fase
+    // como criterio conservador, pero se mantiene pendiente la comprobación
+    // térmica específica por corriente de falta/tiempo de despeje.
+    const potenciaRefKw = Number(r.suministroSugerido) || (pW/1000) || 0;
+    const alcancePe = sistema.fases === 1 ? potenciaRefKw <= 15 : (sistema.id === 'tri_tt' ? potenciaRefKw <= 20 : false);
+    const peMin = alcancePe ? peMinimoPequenoSuministro(seccion) : seccion;
+    const peSeccion = Number(acom.peSeccion) || peMin || null;
+    const peCausas = [], pePendientes = [];
+    if (!peSeccion) pePendientes.push('Falta definir la sección del conductor de protección (PE) del alimentador.');
+    if (peMin && peSeccion < peMin) peCausas.push('El PE (' + fmt(peSeccion) + ' mm²) es menor que el mínimo adoptado (' + fmt(peMin) + ' mm²).');
+    if (!alcancePe && peSeccion) pePendientes.push('Fuera del alcance simplificado del Cap. XXIII §4: falta documentar la comprobación térmica del PE frente a la máxima corriente de falta y el tiempo de despeje. Se adopta S_PE = S_fase como criterio conservador.');
+
+    const causas = [], pendientes = [];
+    if (!seccion) pendientes.push('No se pudo determinar la sección de fase del alimentador.');
+    if (termicaIn === null && !fueraRango) causas.push('No hay una protección general normalizada que cumpla Ib ≤ In ≤ Iz con la sección de fase adoptada.');
+    if (dUPct > 3) causas.push('La caída del alimentador supera el criterio de proyecto de 3 % reservado para poder alimentar circuitos de iluminación.');
+    neutroCausas.forEach((x)=>causas.push('Neutro: '+x)); neutroPendientes.forEach((x)=>pendientes.push('Neutro: '+x));
+    peCausas.forEach((x)=>causas.push('PE: '+x)); pePendientes.forEach((x)=>pendientes.push('PE: '+x));
+    if (balance.aplica && balance.estado === 'pendiente') pendientes.push('Falta cerrar el balance de fases para validar corriente máxima de fase y neutro.');
+
     return {
-      l, ib: r.corriente, ig, maxCircuito, ibDiseno, seccion, iz, termicaIn: fueraRango ? null : termicaIn, fueraRango,
-      automatica: !acom.seccion, dU, dUPct: sistema.v ? (dU / sistema.v) * 100 : 0, datos,
+      l, ib: r.corriente, ig, maxCircuito, ibFaseMax, ibDiseno, balance, seccion, iz,
+      termicaIn: fueraRango ? null : termicaIn, fueraRango, automatica: !acom.seccion,
+      dU, dUPct, datos, caidaConFaseMax: fasesCaida === 1 && sistema.fases === 3,
+      tieneNeutro, neutroCorriente:neutroCalc.corriente, neutroNota:neutroCalc.nota,
+      neutroSeccion, neutroAutomatica: tieneNeutro && !acom.neutroSeccion, neutroIz,
+      peSeccion, peMin, peAutomatica: !acom.peSeccion, peAlcanceSimplificado:alcancePe,
+      causas, pendientes, estado: causas.length ? 'no_cumple' : (pendientes.length ? 'pendiente' : 'cumple'),
     };
   }
   function caidaPreviaDe(draft) {
     if (!draft || !draft.acometida || !(Number(draft.acometida.l) > 0)) return 0;
     return calcularAcometida(draft).dUPct;
+  }
+
+  // ---------- Selectividad / coordinación de protecciones ----------
+  // IEC 60364 trata la selectividad como coordinación entre dispositivos. Para
+  // interruptores automáticos no basta comparar In: la selectividad total o
+  // parcial debe respaldarse con curvas/tablas del fabricante y la Icc del punto.
+  function comprobarSelectividadTermicas(draft) {
+    const pg = calcularProteccionGeneral(draft);
+    if (!pg.aplica || !(Number(pg.termicaIn) > 0)) return { estado:'pendiente', detalles:[], notas:['Falta definir/relevar la térmica general.'] };
+    const detalles=[]; let hayPendiente=false, hayNo=false;
+    const ctx=contextoCortocircuito(draft);
+    const caida=caidaPreviaDe(draft);
+    ((draft&&draft.circuitos)||[]).forEach((c)=>{
+      const calc=calcularCircuito(c,caida);
+      if (!calc.apto) return;
+      const inDown=Number(c.inProteccion)||calc.breaker;
+      const estadoFab=c.selectividadFabricante||'pendiente';
+      const lim=Number(c.selectividadLimiteKa)>0?Number(c.selectividadLimiteKa):null;
+      const comp=comprobarCircuito(datosCircuito(c,caida,ctx));
+      let estado='pendiente', motivo='Falta tabla/curva de selectividad del fabricante para la pareja cabecera–circuito.';
+      if (estadoFab==='total') { estado='cumple'; motivo='Selectividad total declarada según tabla/curva del fabricante.'; }
+      else if (estadoFab==='no') { estado='no_selectiva'; motivo='El fabricante indica que esta combinación no es selectiva.'; }
+      else if (estadoFab==='parcial') {
+        if (lim===null) { estado='pendiente'; motivo='Selectividad parcial declarada, pero falta el límite de selectividad Is (kA).'; }
+        else if (!(Number(comp.iccKa)>0) || comp.iccFuente==='plaza') { estado='pendiente'; motivo='Falta Icc real/calculada para comparar con el límite de selectividad ' + fmt(lim) + ' kA.'; }
+        else if (comp.iccKa<=lim) { estado='cumple'; motivo='Selectividad parcial válida hasta ' + fmt(lim) + ' kA; Icc del circuito ' + fmt(comp.iccKa) + ' kA.'; }
+        else { estado='no_selectiva'; motivo='Icc ' + fmt(comp.iccKa) + ' kA supera el límite de selectividad ' + fmt(lim) + ' kA.'; }
+      }
+      if (Number(pg.termicaIn)<=inDown && estadoFab==='pendiente') motivo += ' Además, In general ('+fmt(pg.termicaIn,0)+' A) no es mayor que In del circuito ('+fmt(inDown,0)+' A), por lo que no hay escalonamiento por corriente.';
+      if (estado==='pendiente') hayPendiente=true;
+      if (estado==='no_selectiva') hayNo=true;
+      detalles.push({ circuito:c.nombre||'Circuito', inGeneral:Number(pg.termicaIn), inCircuito:inDown, curvaCircuito:curvaProteccionDe(c), estado, motivo, limiteKa:lim });
+    });
+    return { estado:hayNo?'no_selectiva':(hayPendiente?'pendiente':'cumple'), detalles, notas:['La selectividad entre interruptores no se declara por simple relación de corrientes: requiere datos del fabricante y la Icc del punto.'] };
+  }
+
+  function comprobarSelectividadDiferenciales(draft) {
+    const pg=calcularProteccionGeneral(draft);
+    if (!pg.aplica || !diferencialGeneralDisponible(pg)) return {estado:'pendiente', detalles:[], notas:['Falta confirmar/instalar el diferencial general.']};
+    const tipoGen=tipoDiferencialGeneral(pg);
+    const sensUp=Number(pg.diferencialSensibilidad)||30;
+    const retardo=((draft.proteccionGeneral||{}).diferencialSelectividad||'instantaneo');
+    const dedicados=[];
+    ((draft&&draft.circuitos)||[]).forEach((c)=>{
+      const d=diferencialDelCircuito(c);
+      const requiereTipo=RANGO_DIFERENCIAL[d.tipo]>RANGO_DIFERENCIAL[tipoGen];
+      const ve=c.equipo==='cargador_ve' && c.diferencialIndividualVe==='si';
+      if (requiereTipo||ve) dedicados.push({c,tipo:d.tipo,sens:30});
+    });
+    if (!dedicados.length) return {estado:'no_aplica',detalles:[],notas:['No hay RCD dedicado aguas abajo que requiera coordinación en cascada.']};
+    const detalles=dedicados.map((x)=>{
+      const ratio=sensUp/x.sens;
+      const sensibilidadOk=ratio>=3;
+      const tiempoOk=retardo==='S';
+      return {circuito:x.c.nombre||'Circuito',sensUp,sensDown:x.sens,ratio,tipoUp:tipoGen,tipoDown:x.tipo,retardo,estado:(sensibilidadOk&&tiempoOk)?'cumple':'no_selectiva',motivo:(sensibilidadOk&&tiempoOk)?'Cumple criterio IEC de selectividad total: IΔn aguas arriba ≥ 3× aguas abajo y cabecera tipo S.':'No se demuestra selectividad total IEC: se requiere IΔn aguas arriba ≥ 3× aguas abajo y dispositivo aguas arriba selectivo tipo S/temporizado.'};
+    });
+    return {estado:detalles.every(x=>x.estado==='cumple')?'cumple':'no_selectiva',detalles,notas:['La falta de selectividad no elimina por sí sola la protección diferencial; afecta principalmente continuidad de servicio y localización de la falla.']};
   }
 
   // Corrientes nominales en las que se fabrican los diferenciales.
@@ -1341,15 +2069,27 @@
   function tipoDiferencialGeneral(pg) {
     return (pg && RANGO_DIFERENCIAL[pg.diferencialTipo] !== undefined) ? pg.diferencialTipo : TIPO_DIFERENCIAL_DEFECTO;
   }
+  function diferencialGeneralDisponible(pg) {
+    if (!pg || !pg.aplica) return false;
+    // En obra nueva el diferencial forma parte de la solución proyectada. En
+    // una instalación existente sólo puede declararse cobertura cuando el
+    // técnico confirmó que el dispositivo realmente está instalado.
+    return pg.modo !== 'existente' || pg.diferencialExiste === true;
+  }
   function textoTipoDiferencial(tipo) {
     return 'tipo ' + (RANGO_DIFERENCIAL[tipo] !== undefined ? tipo : TIPO_DIFERENCIAL_DEFECTO);
   }
-  // Tipo que pide el circuito y por qué. Un cargador de auto que ya trae el
-  // monitor de continua de 6 mA (IEC 62955) se conforma con un tipo A.
+  // Tipo propuesto para el circuito y por qué. En VE no se afirma que "todo
+  // cargador pide B": UTE Cap. XXX distingue el modo de carga. Como la app no
+  // pide el modo, adopta B de forma conservadora si no consta un RDC-DD de 6 mA.
   function diferencialDelCircuito(c) {
     const eq = EQUIPOS_CIRCUITO.find((e) => e.id === c.equipo) || EQUIPOS_CIRCUITO[0];
-    if (eq.id === 'cargador_ve' && c.rdcdd6mA) {
-      return { tipo: 'A', motivo: 'cargador de auto con monitor de continua de 6 mA (IEC 62955)', equipo: eq.id };
+    if (eq.id === 'cargador_ve') {
+      const modo = String(c.modoCargaVe || '');
+      if (modo === '3' && c.rdcdd6mA) return { tipo: 'A', motivo: 'VE modo 3 con RDC-DD de 6 mA: tipo A/F permitido por UTE Cap. XXX §9.4.2', equipo: eq.id };
+      if (modo === '3') return { tipo: 'B', motivo: 'VE modo 3 sin RDC-DD de 6 mA declarado: tipo B según UTE Cap. XXX §9.4.2', equipo: eq.id };
+      if (modo === '1' || modo === '2' || modo === '4') return { tipo: 'A', motivo: 'VE modo ' + modo + ': al menos tipo A según UTE Cap. XXX §9.4.2', equipo: eq.id };
+      return { tipo: 'B', motivo: 'Modo de carga VE pendiente: se muestra tipo B de forma conservadora hasta definirlo', equipo: eq.id };
     }
     return { tipo: eq.tipo, motivo: eq.label.toLowerCase(), equipo: eq.id };
   }
@@ -1363,7 +2103,7 @@
       const d = diferencialDelCircuito(c);
       if (RANGO_DIFERENCIAL[d.tipo] > rg) dedicados.push({ circuito: c, ...d });
       if (d.tipo === 'B' && rg < RANGO_DIFERENCIAL.B) {
-        avisos.push('"' + (c.nombre || 'Circuito') + '" pide tipo B: si queda aguas abajo del diferencial general tipo ' + tipoGeneral +
+        avisos.push('"' + (c.nombre || 'Circuito') + '" tiene configurado/propuesto tipo B: si queda aguas abajo del diferencial general tipo ' + tipoGeneral +
           ', una fuga de continua lo puede cegar. Alimentarlo antes del diferencial general, con su propio tipo B, o poner la cabecera en tipo B.');
       }
     });
@@ -1373,44 +2113,216 @@
     return { dedicados, avisos };
   }
 
-  // Térmica y diferencial general de toda la instalación (no de un circuito). Solo aplica
-  // a instalaciones nuevas: si es una modificación/reparación sobre una instalación
-  // existente, esa protección ya está puesta — no corresponde recalcularla.
+  // Protección general de toda la instalación. En obra nueva se propone y
+  // dimensiona; en modificación/reparación/emergencia se verifica la existente.
+  // Un trámite administrativo sin intervención física no fuerza esta comprobación.
   function calcularProteccionGeneral(draft) {
-    if (!draft || draft.obra.naturaleza !== 'Instalación nueva') return { aplica: false };
+    if (!draft || !draft.obra || draft.obra.naturaleza === 'Trámite') return { aplica: false };
     const sistema = SISTEMAS[draft.sistemaId] || SISTEMAS.tri_tt;
-    // La general se calcula como cualquier otra protección: Ib <= In <= Iz, con
-    // la corriente admisible del conductor de enlace entre el medidor y el
-    // tablero. La corriente de diseño es la del suministro a solicitar ante UTE
-    // (no la demanda instantánea), y nunca menor que la mayor térmica de
-    // circuito.
+    const nueva = draft.obra.naturaleza === 'Instalación nueva';
     const enlace = calcularAcometida(draft);
-    const ig = enlace.ig;
-    const maxCircuito = enlace.maxCircuito;
     const pgGuardada = draft.proteccionGeneral || {};
     const comun = {
-      aplica: true, ig, enlace, termicaCurva: 'C', termicaPolos: sistema.fases === 1 ? 2 : 4,
-      diferencialSensibilidad: pgGuardada.diferencialSensibilidad || 30,
+      aplica: true, modo: nueva ? 'nueva' : 'existente', enlace,
+      termicaCurva: 'C', termicaPolos: sistema.fases === 1 ? 2 : (sistema.id === 'tri_it' ? 3 : 4),
+      diferencialSensibilidad: Number(pgGuardada.diferencialSensibilidad) || 30,
       diferencialTipo: RANGO_DIFERENCIAL[pgGuardada.diferencialTipo] !== undefined ? pgGuardada.diferencialTipo : TIPO_DIFERENCIAL_DEFECTO,
+      diferencialSelectividad: pgGuardada.diferencialSelectividad === 'S' ? 'S' : 'instantaneo',
+      ambienteTierra: pgGuardada.ambienteTierra === 'humedo' ? 'humedo' : 'seco',
+      resistenciaTierraOhm: Number(pgGuardada.resistenciaTierraOhm) > 0 ? Number(pgGuardada.resistenciaTierraOhm) : null,
+      sobretensionesRiesgo: ['si','no'].includes(pgGuardada.sobretensionesRiesgo) ? pgGuardada.sobretensionesRiesgo : 'pendiente',
+      pararrayosLps: pgGuardada.pararrayosLps === 'si' ? 'si' : (pgGuardada.pararrayosLps === 'no' ? 'no' : 'desconocido'),
+      spdExiste: pgGuardada.spdExiste === 'si' ? 'si' : (pgGuardada.spdExiste === 'no' ? 'no' : 'desconocido'),
+      spdTipo: pgGuardada.spdTipo || '',
+      tiempoDiferencialGeneralS: Number(pgGuardada.tiempoDiferencialGeneralS) > 0 ? Number(pgGuardada.tiempoDiferencialGeneralS) : null,
+      monitorAislamientoIt: pgGuardada.monitorAislamientoIt === 'si' ? true : (pgGuardada.monitorAislamientoIt === 'no' ? false : null),
+      masasInterconectadasIt: pgGuardada.masasInterconectadasIt === 'si' ? true : (pgGuardada.masasInterconectadasIt === 'no' ? false : null),
+      corrientePrimerDefectoMa: Number(pgGuardada.corrientePrimerDefectoMa) > 0 ? Number(pgGuardada.corrientePrimerDefectoMa) : null,
     };
-    // Si la potencia supera el mayor escalón, o ninguna térmica coordina con el
-    // enlace, no se inventa una: queda marcada para resolver a mano.
+
+    if (!nueva) {
+      const termicaIn = Number(pgGuardada.termicaExistenteA) > 0 ? Number(pgGuardada.termicaExistenteA) : null;
+      const diferencialIn = Number(pgGuardada.diferencialExistenteA) > 0 ? Number(pgGuardada.diferencialExistenteA) : null;
+      const diferencialExiste = pgGuardada.diferencialExiste === 'si' ? true : (pgGuardada.diferencialExiste === 'no' ? false : null);
+      const coordina = termicaIn !== null ? (termicaIn >= enlace.ibDiseno && termicaIn <= enlace.iz) : null;
+      return { ...comun, termicaIn, diferencialIn, diferencialExiste, coordina,
+               alimentadorConfirmado: Number(draft.acometida && draft.acometida.seccion) > 0,
+               fueraRango: enlace.fueraRango };
+    }
+
     if (enlace.fueraRango || enlace.termicaIn === null) {
-      return { ...comun, termicaIn: null, diferencialIn: null, coordina: false, fueraRango: enlace.fueraRango,
+      return { ...comun, termicaIn: null, diferencialIn: null, diferencialExiste: true, coordina: false, fueraRango: enlace.fueraRango,
                motivo: enlace.fueraRango
                  ? 'La demanda supera el mayor escalón de potencia cargado: requiere trámite y selección específicos.'
                  : 'Ninguna térmica de catálogo coordina con el conductor de enlace: subí la sección del alimentador.' };
     }
     const termicaIn = enlace.termicaIn;
-    // En Uruguay no suelen conseguirse diferenciales de menos de 25A: si la térmica general
-    // da 16 o 20A, el diferencial general igual se sugiere en 25A.
-    // Los diferenciales se fabrican en 25, 40 y 63 A: se toma el escalón que
-    // cubre la térmica general, con un piso de 25 A porque en plaza no se
-    // consiguen de menos.
     const diferencialIn = inDiferencial(Math.max(termicaIn, 25)) || Math.max(termicaIn, 25);
     const ctx = contextoCortocircuito(draft);
     const poderCorte = poderCorteDe({ iccTableroKa: ctx.iccTableroKa, iccTableroOrigen: ctx.iccTableroOrigen, conSubestacion: ctx.conSubestacion, tipoProteccion: 'mcb' }, termicaIn);
-    return { ...comun, termicaIn, diferencialIn, coordina: true, poderCorte };
+    return { ...comun, termicaIn, diferencialIn, diferencialExiste: true, coordina: true, poderCorte };
+  }
+
+  // UTE determina la necesidad: si son de temer sobretensiones atmosféricas,
+  // hay que colocar descargadores cerca del origen. La app no reemplaza esa
+  // evaluación por una regla inventada. Una vez marcada la necesidad, sí
+  // propone el tipo con IEC 60364-5-53 §534 como referencia complementaria.
+  function evaluarSobretensiones(draft, pg) {
+    const g = (draft && draft.proteccionGeneral) || {};
+    const riesgo = ['si','no'].includes(g.sobretensionesRiesgo) ? g.sobretensionesRiesgo : 'pendiente';
+    const lps = g.pararrayosLps === 'si';
+    const spdExiste = g.spdExiste === 'si' ? true : (g.spdExiste === 'no' ? false : null);
+    const tipoDeclarado = String(g.spdTipo || '');
+    const requerido = lps ? true : (riesgo === 'si' ? true : (riesgo === 'no' ? false : null));
+    const tipoPropuesto = requerido ? (lps ? 'Tipo 1+2' : 'Tipo 2') : null;
+    const causas = [], pendientes = [], notas = [];
+    if (requerido === null) pendientes.push('Falta evaluar si son de temer sobretensiones atmosféricas según UTE RBT Cap. V §2.');
+    if (requerido === true) {
+      if (spdExiste === false) causas.push('Se determinó riesgo de sobretensiones atmosféricas pero no hay descargador instalado/proyectado.');
+      if (spdExiste === null) pendientes.push('Falta confirmar si el descargador de sobretensión está instalado o incluido en el proyecto.');
+      if (spdExiste === true && !tipoDeclarado) pendientes.push('Falta confirmar el tipo del SPD instalado/proyectado.');
+      if (spdExiste === true && lps && tipoDeclarado && !/1/.test(tipoDeclarado)) causas.push('Con sistema externo de protección contra el rayo se propone SPD Tipo 1+2 en el origen; el tipo declarado no incluye Tipo 1.');
+      const ra = Number(g.resistenciaTierraOhm);
+      if (!(ra > 0)) pendientes.push('Falta la medición de tierra para comprobar el requisito de los descargadores.');
+      else if (ra >= 10) causas.push('Para los descargadores UTE exige resistencia de tierra inferior a 10 Ω; la medición cargada es ' + fmt(ra) + ' Ω.');
+      notas.push('SPD propuesto: ' + tipoPropuesto + ' en el origen, como referencia de selección IEC 60364-5-53 §534.');
+    } else if (requerido === false) {
+      notas.push('El proyecto declara que no son de temer sobretensiones atmosféricas; UTE no obliga al descargador por ese criterio. Documentar la evaluación de obra.');
+    }
+    return { requerido, riesgo, lps, spdExiste, tipoDeclarado, tipoPropuesto,
+             estado: causas.length ? 'no_cumple' : (pendientes.length ? 'pendiente' : 'cumple'),
+             causas, pendientes, notas };
+  }
+
+  function esquemaContactosIndirectos(draft) {
+    const sistema = SISTEMAS[(draft && draft.sistemaId) || 'tri_tt'] || SISTEMAS.tri_tt;
+    return sistema.id === 'tri_it' ? 'IT' : 'TT';
+  }
+
+  function tiempoMaxDefectoTierra(c, esquema, masasInterconectadasIt, draftArg) {
+    const dref = draftArg || draft;
+    const inA = Number((calcularCircuito(c, caidaPreviaDe(dref)) || {}).breaker || c.inProteccion || 0);
+    const uso = c.uso || 'fuerza';
+    const circuitoFinal = (uso === 'tomacorrientes' && inA > 0 && inA <= 63) || (uso !== 'tomacorrientes' && inA > 0 && inA <= 32);
+    if (esquema === 'TT' || (esquema === 'IT' && masasInterconectadasIt === false)) return circuitoFinal ? 0.2 : 1.0;
+    if (esquema === 'IT' && masasInterconectadasIt === true) return circuitoFinal ? 0.4 : 5.0;
+    return null;
+  }
+
+  function comprobarContactosIndirectos(draft, pg, base) {
+    if (!pg || !pg.aplica) return { aplica:false, estado:'no_aplica', causas:[], pendientes:[], notas:[] };
+    const esquema = esquemaContactosIndirectos(draft);
+    const g = (draft && draft.proteccionGeneral) || {};
+    const ul = base && Number(base.tensionLimite) > 0 ? Number(base.tensionLimite) : (g.ambienteTierra === 'humedo' ? 24 : 50);
+    const ra = Number(g.resistenciaTierraOhm) > 0 ? Number(g.resistenciaTierraOhm) : null;
+    const causas=[], pendientes=[], notas=[], circuitos=[];
+    if (esquema === 'TT') {
+      const idnA = (Number(pg.diferencialSensibilidad) || 30) / 1000;
+      const uc = ra !== null ? ra * idnA : null;
+      if (ra === null) pendientes.push('TT: falta medir R_A para comprobar la tensión de contacto por R_A·IΔn.');
+      else if (uc > ul) causas.push('TT: R_A·IΔn = ' + fmt(uc) + ' V supera U_L = ' + fmt(ul,0) + ' V.');
+      const tGeneral = Number(g.tiempoDiferencialGeneralS) > 0 ? Number(g.tiempoDiferencialGeneralS) : null;
+      (draft.circuitos || []).forEach((c) => {
+        const tmax = tiempoMaxDefectoTierra(c, 'TT', null, draft);
+        const t = Number(c.tiempoDefectoTierraS) > 0 ? Number(c.tiempoDefectoTierraS) : tGeneral;
+        const estado = t === null ? 'pendiente' : (t <= tmax ? 'cumple' : 'no_cumple');
+        circuitos.push({ circuito:c.nombre || 'Circuito', t, tmax, estado, fuente:Number(c.tiempoDefectoTierraS)>0?'circuito':'general' });
+        if (t === null) pendientes.push('TT: falta tiempo de desconexión por defecto a tierra para "' + (c.nombre || 'Circuito') + '" (máx. ' + fmt(tmax,1) + ' s).');
+        else if (t > tmax) causas.push('TT: "' + (c.nombre || 'Circuito') + '" desconecta en ' + fmt(t,3) + ' s y supera ' + fmt(tmax,1) + ' s.');
+      });
+      notas.push('IEC 60364-4-41, Tabla 41.1: en TT a 230 V, 0,2 s para circuitos finales dentro de los límites de 411.3.2.2 y 1 s para distribución/otros circuitos.');
+      return { aplica:true, esquema, estado:causas.length?'no_cumple':(pendientes.length?'pendiente':'cumple'), causas, pendientes, notas, ul, ra, tensionContacto:uc, circuitos };
+    }
+
+    const id = Number(g.corrientePrimerDefectoMa) > 0 ? Number(g.corrientePrimerDefectoMa)/1000 : null;
+    const uc1 = (ra !== null && id !== null) ? ra * id : null;
+    if (ra === null) pendientes.push('IT: falta medir R_A para verificar el primer defecto.');
+    if (id === null) pendientes.push('IT: falta ingresar la corriente de primer defecto I_d para comprobar R_A·I_d ≤ U_L.');
+    if (uc1 !== null && uc1 > ul) causas.push('IT: en primer defecto R_A·I_d = ' + fmt(uc1) + ' V supera U_L = ' + fmt(ul,0) + ' V.');
+    if (pg.monitorAislamientoIt === null) pendientes.push('IT: falta confirmar dispositivo de vigilancia/monitorización del aislamiento para señalizar el primer defecto.');
+    else if (pg.monitorAislamientoIt === false) causas.push('IT: no se confirmó vigilancia de aislamiento; el primer defecto debe ser detectado/señalizado cuando el sistema se mantiene en servicio.');
+    if (pg.masasInterconectadasIt === null) pendientes.push('IT: falta confirmar si todas las masas están interconectadas por PE y colectivamente puestas a tierra.');
+    (draft.circuitos || []).forEach((c) => {
+      const tmax = tiempoMaxDefectoTierra(c, 'IT', pg.masasInterconectadasIt, draft);
+      const t = Number(c.tiempoDefectoTierraS) > 0 ? Number(c.tiempoDefectoTierraS) : null;
+      const estado = tmax === null || t === null ? 'pendiente' : (t <= tmax ? 'cumple' : 'no_cumple');
+      circuitos.push({ circuito:c.nombre || 'Circuito', t, tmax, estado, fuente:'circuito' });
+      if (tmax === null) return;
+      if (t === null) pendientes.push('IT: falta documentar el tiempo de despeje del segundo defecto para "' + (c.nombre || 'Circuito') + '" (máx. ' + fmt(tmax,1) + ' s).');
+      else if (t > tmax) causas.push('IT: segundo defecto en "' + (c.nombre || 'Circuito') + '" despeja en ' + fmt(t,3) + ' s y supera ' + fmt(tmax,1) + ' s.');
+    });
+    notas.push('IEC 60364-4-41 §411.6: el primer defecto en IT debe mantener R_A·I_d dentro de la tensión límite y ser detectado; ante un segundo defecto, con masas interconectadas se aplican condiciones tipo TN y con tierras independientes, tipo TT.');
+    return { aplica:true, esquema, estado:causas.length?'no_cumple':(pendientes.length?'pendiente':'cumple'), causas, pendientes, notas, ul, ra, corrientePrimerDefectoA:id, tensionContacto:uc1, circuitos };
+  }
+
+  // Comprobación conjunta de protección general, tierra y sobretensiones.
+  function comprobarProteccionGeneral(draft, calculada) {
+    const pg = calculada || calcularProteccionGeneral(draft);
+    if (!pg.aplica) return { aplica: false, estado: 'no_aplica', causas: [], pendientes: [], notas: [] };
+    const guardada = (draft && draft.proteccionGeneral) || {};
+    const residencial = !!(draft && draft.obra && draft.obra.tipo === 'Residencial');
+    const sensibilidadMa = Number(pg.diferencialSensibilidad) || 30;
+    const ambiente = guardada.ambienteTierra === 'humedo' ? 'humedo' : 'seco';
+    const tensionLimite = ambiente === 'humedo' ? 24 : 50;
+    const sensibilidadA = sensibilidadMa / 1000;
+    const raMax = sensibilidadA > 0 ? tensionLimite / sensibilidadA : null;
+    const ra = Number(guardada.resistenciaTierraOhm);
+    const tieneRa = Number.isFinite(ra) && ra > 0;
+    const causas = [], pendientes = [], notas = [];
+    if (pg.enlace) {
+      (pg.enlace.causas || []).forEach((x) => causas.push('Alimentador: ' + x));
+      (pg.enlace.pendientes || []).forEach((x) => pendientes.push('Alimentador: ' + x));
+    }
+
+    if (pg.modo === 'nueva') {
+      if (!pg.coordina || pg.termicaIn === null || pg.diferencialIn === null) causas.push(pg.motivo || 'La protección general no coordina con el alimentador.');
+    } else {
+      if (!pg.alimentadorConfirmado) pendientes.push('En ampliación/reparación falta confirmar la sección real del alimentador existente; no se acepta como verificada la sección calculada automáticamente.');
+      if (pg.termicaIn === null) pendientes.push('Falta relevar la corriente nominal del interruptor general existente.');
+      else if (pg.alimentadorConfirmado && pg.coordina === false) {
+        if (pg.termicaIn < pg.enlace.ibDiseno) causas.push('La térmica general existente (' + fmt(pg.termicaIn,0) + ' A) queda por debajo de la corriente de diseño resultante (' + fmt(pg.enlace.ibDiseno) + ' A).');
+        if (pg.termicaIn > pg.enlace.iz) causas.push('La térmica general existente (' + fmt(pg.termicaIn,0) + ' A) supera la capacidad admisible del alimentador relevado (' + fmt(pg.enlace.iz) + ' A).');
+      }
+      if (pg.diferencialExiste === null) pendientes.push('Falta confirmar si el tablero general existente tiene interruptor diferencial.');
+      else if (pg.diferencialExiste === false) causas.push('El tablero general existente no tiene interruptor diferencial; UTE exige diferencial en todos los tableros generales de clientes.');
+      else {
+        if (pg.diferencialIn === null) pendientes.push('Falta relevar la corriente nominal del diferencial general existente.');
+        else if (pg.termicaIn !== null && pg.diferencialIn < pg.termicaIn) causas.push('El diferencial existente (' + fmt(pg.diferencialIn,0) + ' A) tiene corriente nominal inferior a la térmica general (' + fmt(pg.termicaIn,0) + ' A).');
+      }
+    }
+    if ((pg.modo === 'nueva' || pg.diferencialExiste === true) && residencial && sensibilidadMa !== 30) {
+      causas.push('Instalación domiciliaria: UTE exige diferencial general de alta sensibilidad de 30 mA.');
+    }
+    if (!tieneRa) pendientes.push('Falta ingresar la resistencia de puesta a tierra medida para verificar R_A · IΔn ≤ ' + tensionLimite + ' V.');
+    else if (raMax !== null && ra > raMax) causas.push('La resistencia de puesta a tierra (' + fmt(ra) + ' Ω) supera el máximo de ' + fmt(raMax) + ' Ω para ' + sensibilidadMa + ' mA y ' + tensionLimite + ' V.');
+
+    const sobretensiones = evaluarSobretensiones(draft, pg);
+    sobretensiones.causas.forEach((x) => causas.push(x));
+    sobretensiones.pendientes.forEach((x) => pendientes.push(x));
+    sobretensiones.notas.forEach((x) => notas.push(x));
+    notas.push('UTE RBT Cap. VI: R ≤ ' + tensionLimite + '/IΔn; con ' + sensibilidadMa + ' mA resulta R_A máx. = ' + fmt(raMax) + ' Ω.');
+    notas.push('El diferencial general es obligatorio; en instalaciones domiciliarias debe ser de 30 mA (Comunicado UTE 26002, 19/02/2026).');
+    const sistemaObra = SISTEMAS[draft.sistemaId] || SISTEMAS.tri_tt;
+    const balanceFases = sistemaObra.fases === 3 ? calcularBalanceFases(draft) : { aplica:false, estado:'no_aplica', pendientes:[], causas:[], notas:[] };
+    if (balanceFases.aplica) {
+      balanceFases.causas.forEach((x) => causas.push('Balance de fases: ' + x));
+      balanceFases.pendientes.forEach((x) => pendientes.push('Balance de fases: ' + x));
+      balanceFases.notas.forEach((x) => notas.push(x));
+      if (balanceFases.estado === 'cumple') notas.push('Reparto de cargas dentro del límite de UTE: ' + fmt(balanceFases.desequilibrioPct) + ' % ≤ ' + fmt(balanceFases.limitePct,0) + ' %.');
+    }
+
+    const contactosIndirectos = comprobarContactosIndirectos(draft, pg, { tensionLimite });
+    contactosIndirectos.causas.forEach((x) => causas.push('Contactos indirectos: ' + x));
+    contactosIndirectos.pendientes.forEach((x) => pendientes.push('Contactos indirectos: ' + x));
+    contactosIndirectos.notas.forEach((x) => notas.push(x));
+
+    return {
+      aplica: true, modo: pg.modo, estado: causas.length ? 'no_cumple' : (pendientes.length ? 'pendiente' : 'cumple'),
+      causas, pendientes, notas, residencial, sensibilidadMa, ambiente, tensionLimite,
+      resistenciaTierraOhm: tieneRa ? ra : null, raMax, sobretensiones, balanceFases, contactosIndirectos,
+      cumpleTierra: tieneRa && raMax !== null ? ra <= raMax : null,
+      cumpleSensibilidad: !residencial || sensibilidadMa === 30,
+    };
   }
 
   function importarCargasComoCircuitos(cargas, sistema) {
@@ -1418,18 +2330,105 @@
       const pTotal = (Number(c.potenciaW) || 0) * (Number(c.cantidad) || 0);
       const cosPhi = Number(c.cosPhi) || 1;
       const s = cosPhi > 0 ? pTotal / cosPhi : pTotal;
-      const ib = sistema.fases === 1 ? s / sistema.v : s / (SQRT3 * sistema.v);
+      // En suministro trifásico una carga no se convierte mágicamente en
+      // trifásica. Se parte de monofásico 230 V (conservador) y se exige que el
+      // técnico confirme 1φ/3φ en Circuitos. En suministro mono queda confirmado.
+      const fasesCircuito = 1;
+      const vCircuito = tensionDeCircuito(sistema, fasesCircuito);
+      const ib = s / vCircuito;
       const cat = CATEGORIAS.find((cat) => cat.id === c.categoria);
       const uso = c.uso || (cat ? cat.uso : 'fuerza');
-      return {
-        id: 'imp-' + Date.now() + '-' + i,
+      const circuito = {
+        id: c.id ? 'imp-' + c.id : 'imp-' + Date.now() + '-' + i,
+        cargaId: c.id || null,
         nombre: c.nombre || (cat ? cat.label : 'Circuito'),
         ib: Math.round(ib * 100) / 100,
-        v: sistema.v, fases: sistema.fases, l: 15, material: 'cobre', metodo: 'embutido', aislacion: 'pvc',
-        tempAmb: 30, agrupados: 1, caidaMax: CAIDA_MAX_DEFAULT[uso] || 5, cosPhi, uso,
+        v: vCircuito, fases: fasesCircuito, fasesConfirmadas: sistema.fases === 1, sistemaId: sistema.id,
+        faseAsignada: '', faseManual: false,
+        l: 15, material: 'cobre', metodo: 'embutido', aislacion: 'pvc',
+        tempAmb: 30, agrupados: 1, resistividadTerreno: null, profundidadEnterrado: 0.5, caidaMax: CAIDA_MAX_DEFAULT[uso] || 5, cosPhi, uso,
         equipo: c.equipo || 'comun',
       };
+      circuito.origenCarga = {
+        nombre: circuito.nombre, ib: circuito.ib, cosPhi: circuito.cosPhi,
+        uso: circuito.uso, equipo: circuito.equipo,
+      };
+      return circuito;
     });
+  }
+
+  // Mantiene la relación carga -> circuito cuando el técnico vuelve atrás y
+  // modifica las cargas. Los datos derivados se actualizan; longitud, método,
+  // aislamiento y demás ajustes hechos en Circuitos se conservan. Un circuito
+  // cuya carga se eliminó no se borra: queda marcado para revisión manual.
+  function sincronizarCargasComoCircuitos(cargas, sistema, circuitosActuales) {
+    const bases = importarCargasComoCircuitos(cargas, sistema);
+    const actuales = Array.isArray(circuitosActuales) ? circuitosActuales : [];
+    const usados = new Set();
+
+    const sincronizados = bases.map((base) => {
+      let existente = actuales.find((c) => !usados.has(c.id) && c.cargaId && c.cargaId === base.cargaId);
+      if (!existente) {
+        // Compatibilidad con relevamientos creados antes de guardar cargaId.
+        existente = actuales.find((c) => !usados.has(c.id) && !c.cargaId &&
+          String(c.id || '').startsWith('imp-') && c.nombre === base.nombre);
+      }
+      if (!existente) return base;
+      usados.add(existente.id);
+      return {
+        ...base,
+        ...existente,
+        cargaId: base.cargaId,
+        nombre: existente.nombreManual ? existente.nombre : base.nombre,
+        ib: existente.ibManual ? existente.ib : (existente.fasesManual && Number(existente.fases) === 3
+          ? Math.round((base.ib * 230 / (SQRT3 * sistema.v)) * 100) / 100
+          : base.ib),
+        v: existente.fasesManual ? tensionDeCircuito(sistema, existente.fases) : base.v,
+        fases: existente.fasesManual ? Number(existente.fases) : base.fases,
+        fasesConfirmadas: existente.fasesManual ? true : base.fasesConfirmadas,
+        faseAsignada: existente.faseAsignada || '', faseManual: Boolean(existente.faseManual),
+        sistemaId: sistema.id,
+        cosPhi: existente.cosPhiManual ? existente.cosPhi : base.cosPhi,
+        uso: existente.usoManual ? existente.uso : base.uso,
+        equipo: existente.equipoManual ? existente.equipo : base.equipo,
+        origenCarga: base.origenCarga,
+        cargaDesvinculada: false,
+      };
+    });
+
+    const idsCargas = new Set(bases.map((c) => c.cargaId));
+    const restantes = actuales.filter((c) => !usados.has(c.id)).map((c) => {
+      let actualizado = { ...c };
+      const cambioSistema = Boolean(actualizado.sistemaId && actualizado.sistemaId !== sistema.id);
+      actualizado.sistemaId = sistema.id;
+      if (cambioSistema) {
+        if (sistema.fases === 1) {
+          actualizado.fases = 1;
+          actualizado.v = tensionDeCircuito(sistema, 1);
+          actualizado.fasesConfirmadas = true;
+          actualizado.fasesManual = false;
+        } else {
+          // Un cambio de suministro invalida la inferencia anterior. Se vuelve
+          // a 1φ/230 V, que es conservador, y el técnico debe confirmar 1φ/3φ.
+          actualizado.fases = 1;
+          actualizado.v = tensionDeCircuito(sistema, 1);
+          actualizado.fasesConfirmadas = false;
+          actualizado.fasesManual = false;
+        }
+        actualizado.faseAsignada = '';
+        actualizado.faseManual = false;
+        actualizado.polosManual = false;
+      } else if (sistema.fases === 1) {
+        actualizado.fases = 1;
+        actualizado.v = tensionDeCircuito(sistema, 1);
+        actualizado.fasesConfirmadas = true;
+        actualizado.faseAsignada = '';
+        actualizado.faseManual = false;
+      }
+      if (actualizado.cargaId && !idsCargas.has(actualizado.cargaId)) actualizado.cargaDesvinculada = true;
+      return actualizado;
+    });
+    return sincronizados.concat(restantes);
   }
 
   /* ============================================================
@@ -1839,6 +2838,25 @@
             precioDiferencial(ded.tipo, polosRcd, inRcd, precios));
       }
     });
+    // Alimentador medidor → tablero. Se cotiza separado de los circuitos para
+    // respetar la sección propia de fase, neutro y PE.
+    const alimMat = calcularAcometida(draft);
+    if (alimMat.seccion && Number(alimMat.l) > 0) {
+      const largoAlim = Math.ceil(Number(alimMat.l) * 1.1);
+      const nFases = (SISTEMAS[draft.sistemaId] || SISTEMAS.tri_tt).fases === 1 ? 1 : 3;
+      const sf = alimMat.seccion, sn = alimMat.neutroSeccion, spe = alimMat.peSeccion;
+      const txtSf = fmt(sf, sf < 10 ? 1 : 0).replace(/,00$/, '');
+      add('Cable unipolar fase alimentador ' + txtSf + ' mm²', 'm', largoAlim * nFases, precios.cableUnipolar[sf] || 0);
+      if (alimMat.tieneNeutro && sn) {
+        const txtSn = fmt(sn, sn < 10 ? 1 : 0).replace(/,00$/, '');
+        add('Cable unipolar neutro alimentador ' + txtSn + ' mm²', 'm', largoAlim, precios.cableUnipolar[sn] || 0);
+      }
+      if (spe) {
+        const txtPe = fmt(spe, spe < 10 ? 1 : 0).replace(/,00$/, '');
+        add('Cable unipolar verde/amarillo (PE alimentador) ' + txtPe + ' mm²', 'm', largoAlim, precios.cableUnipolar[spe] || 0);
+      }
+    }
+
     // Puntos de luz y de toma, según la cantidad cargada en cada carga del relevamiento.
     // Quedan como cualquier otro material: editables a mano si la cantidad real difiere.
     ((draft && draft.cargas) || []).forEach((carga) => {
@@ -1853,10 +2871,10 @@
         add('Tomacorriente', 'un.', n, precios.tomacorriente);
       }
     });
-    if (pgMat.aplica && pgMat.termicaIn !== null) {
+    if (pgMat.aplica && pgMat.modo === 'nueva' && pgMat.termicaIn !== null) {
       // Protección general del tablero: la térmica con su poder de corte y el
       // diferencial con su tipo. Mismo criterio de precio que los circuitos.
-      const tipoGen = pgMat.termicaPolos <= 2 ? 'bipolar' : 'tetrapolar';
+      const tipoGen = ({2:'bipolar',3:'tripolar',4:'tetrapolar'})[pgMat.termicaPolos] || 'bipolar';
       const pcGen = pgMat.poderCorte;
       const baseGen = pcGen && pcGen.poderCorteKa !== null && pcGen.poderCorteKa <= Math.max(pcGen.pisoKa, NORMATIVE_PACK.parametros.iccPlazaKa);
       add('Térmica general ' + tipoGen + ' ' + pgMat.termicaIn + 'A curva ' + pgMat.termicaCurva + ' — ' + (pcGen ? textoPoderCorte(pcGen) : 'PdC a definir'),
@@ -1983,23 +3001,26 @@
     const pg = calcularProteccionGeneral(draft);
     if (pg.aplica && pg.termicaIn !== null) {
       // Los puentes de la general y del diferencial llevan la sección que
-      // corresponde a la térmica general.
+      // corresponde a la térmica general. En instalaciones existentes no se
+      // dibuja un diferencial que todavía no fue confirmado en el relevamiento.
       const seccionGeneral = calcularCircuito({
         ib: pg.termicaIn, v: sistema.v, fases: sistema.fases, l: 1, material: 'cobre', metodo: 'embutido',
-        aislacion: 'pvc', tempAmb: 30, agrupados: 1, caidaMax: 5, cosPhi: 1, uso: 'fuerza',
+        aislacion: 'pvc', tempAmb: 30, agrupados: 1, resistividadTerreno: null, profundidadEnterrado: 0.5, caidaMax: 5, cosPhi: 1, uso: 'fuerza',
       }).seccionAdoptada || null;
       items.push({
         img: mono ? 'thermal-2p' : 'thermal-4p', modulos: mono ? 2 : 4, seccion: seccionGeneral,
-        cara: pg.termicaCurva + pg.termicaIn, caraChica: null,
-        rotulo: 'GENERAL', etiqueta: 'Térmica general',
-        detalle: pg.termicaIn + ' A · ' + pg.termicaPolos + 'P · curva ' + pg.termicaCurva,
+        cara: (pg.termicaCurva || '') + pg.termicaIn, caraChica: null,
+        rotulo: 'GENERAL', etiqueta: pg.modo === 'existente' ? 'Térmica general existente' : 'Térmica general',
+        detalle: pg.termicaIn + ' A' + (pg.modo === 'nueva' ? ' · ' + pg.termicaPolos + 'P · curva ' + pg.termicaCurva : ' · relevada'),
       });
-      items.push({
-        img: mono ? 'rcd-2p' : 'rcd-4p', modulos: mono ? 2 : 4, seccion: seccionGeneral,
-        cara: pg.diferencialIn + 'A', caraChica: pg.diferencialSensibilidad + 'mA',
-        rotulo: 'DIFERENCIAL', etiqueta: 'Diferencial general',
-        detalle: pg.diferencialIn + ' A · ' + pg.diferencialSensibilidad + ' mA · ' + textoTipoDiferencial(pg.diferencialTipo),
-      });
+      if (diferencialGeneralDisponible(pg) && pg.diferencialIn !== null) {
+        items.push({
+          img: mono ? 'rcd-2p' : 'rcd-4p', modulos: mono ? 2 : 4, seccion: seccionGeneral,
+          cara: pg.diferencialIn + 'A', caraChica: pg.diferencialSensibilidad + 'mA',
+          rotulo: 'DIFERENCIAL', etiqueta: pg.modo === 'existente' ? 'Diferencial general existente' : 'Diferencial general',
+          detalle: pg.diferencialIn + ' A · ' + pg.diferencialSensibilidad + ' mA · ' + textoTipoDiferencial(pg.diferencialTipo),
+        });
+      }
     }
     const tipoGeneralTab = pg.aplica ? tipoDiferencialGeneral(pg) : TIPO_DIFERENCIAL_DEFECTO;
     const dedicadosTab = diferencialesDedicados(draft.circuitos || [], tipoGeneralTab).dedicados;
@@ -2825,8 +3846,10 @@
   }
 
   const STORAGE_KEY = 'adonai_ht_v1';
+  const DB_SCHEMA_VERSION = 14;
   function defaultDB() {
     return {
+      schemaVersion: DB_SCHEMA_VERSION,
       trabajos: [], presupuestos: [],
       settings: { margen: 30, iva: 22, precios: clonePrecios(DEFAULT_PRECIOS),
                   manoObra: { ...DEFAULT_MANO_OBRA }, dolar: { ...DEFAULT_DOLAR },
@@ -2834,8 +3857,244 @@
       seq: { trabajo: 0, presupuesto: 0 }, _seeded: false,
     };
   }
+
+  // Migra de forma explícita la estructura local. Los cambios de datos más
+  // específicos (catálogo, medidas y presupuestos) siguen teniendo sus propias
+  // migraciones debajo, pero el número de esquema permite saber qué versión
+  // abrió y normalizó cada copia de seguridad.
+  function migrarEsquemaDB(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return { db: defaultDB(), cambio: true };
+    let cambio = false;
+    const versionAnterior = Number(data.schemaVersion) || 0;
+    if (!Array.isArray(data.trabajos)) { data.trabajos = []; cambio = true; }
+    if (!Array.isArray(data.presupuestos)) { data.presupuestos = []; cambio = true; }
+    if (!data.settings || typeof data.settings !== 'object' || Array.isArray(data.settings)) { data.settings = {}; cambio = true; }
+    if (!data.seq || typeof data.seq !== 'object' || Array.isArray(data.seq)) { data.seq = { trabajo: 0, presupuesto: 0 }; cambio = true; }
+
+    // v2: estado de materiales regenerados / pendientes de regenerar.
+    if (versionAnterior < 2) {
+      data.trabajos.forEach((tr) => {
+        if (tr && tr.materialesDesactualizados === undefined) tr.materialesDesactualizados = false;
+      });
+      cambio = true;
+    }
+
+    // v3: vínculo carga -> circuito. No se fuerza una asociación por nombre
+    // durante la migración para no enlazar una carga equivocada; el paso
+    // Circuitos la reconstruye de forma segura al sincronizar.
+    if (versionAnterior < 3) cambio = true;
+
+    // v4: la memoria agrega la comprobación de puesta a tierra. Se conserva la
+    // sensibilidad existente y sólo se agregan los nuevos campos; la resistencia
+    // queda vacía para que una copia antigua no aparezca falsamente verificada.
+    if (versionAnterior < 4) {
+      data.trabajos.forEach((tr) => {
+        if (!tr || typeof tr !== 'object') return;
+        if (!tr.proteccionGeneral || typeof tr.proteccionGeneral !== 'object') tr.proteccionGeneral = { diferencialSensibilidad: 30 };
+        if (!tr.proteccionGeneral.ambienteTierra) tr.proteccionGeneral.ambienteTierra = 'seco';
+        if (tr.proteccionGeneral.resistenciaTierraOhm === undefined) tr.proteccionGeneral.resistenciaTierraOhm = null;
+      });
+      cambio = true;
+    }
+
+    // v5: terreno enterrado, sobretensiones y verificación de protecciones
+    // existentes. Ningún dato antiguo se da por confirmado: los nuevos campos
+    // quedan en estado desconocido para evitar falsos "Verificado".
+    if (versionAnterior < 5) {
+      data.trabajos.forEach((tr) => {
+        if (!tr || typeof tr !== 'object') return;
+        if (!tr.proteccionGeneral || typeof tr.proteccionGeneral !== 'object') tr.proteccionGeneral = { diferencialSensibilidad: 30 };
+        const pg = tr.proteccionGeneral;
+        if (!pg.diferencialExiste) pg.diferencialExiste = 'desconocido';
+        if (pg.termicaExistenteA === undefined) pg.termicaExistenteA = null;
+        if (pg.diferencialExistenteA === undefined) pg.diferencialExistenteA = null;
+        if (!pg.sobretensionesRiesgo) pg.sobretensionesRiesgo = 'pendiente';
+        if (!pg.pararrayosLps) pg.pararrayosLps = 'desconocido';
+        if (!pg.spdExiste) pg.spdExiste = 'desconocido';
+        if (pg.spdTipo === undefined) pg.spdTipo = '';
+        (tr.circuitos || []).forEach((c) => {
+          if (c.resistividadTerreno === undefined) c.resistividadTerreno = c.metodo === 'enterrado' ? RESISTIVIDAD_TERRENO_UTE_DEFECTO : null;
+          if (c.profundidadEnterrado === undefined) c.profundidadEnterrado = 0.5;
+        });
+      });
+      cambio = true;
+    }
+
+    // v6: auditoría estricta de circuitos. Los VE antiguos no reciben un modo
+    // ni una protección individual supuestos: quedan pendientes hasta relevarlos.
+    if (versionAnterior < 6) {
+      data.trabajos.forEach((tr) => {
+        if (!tr || typeof tr !== 'object') return;
+        const sistema = SISTEMAS[tr.sistemaId] || SISTEMAS.tri_tt;
+        (tr.circuitos || []).forEach((c) => {
+          if (c.modoCargaVe === undefined) c.modoCargaVe = '';
+          if (c.diferencialIndividualVe === undefined) c.diferencialIndividualVe = 'desconocido';
+          c.sistemaId = sistema.id;
+          if (sistema.fases === 1) {
+            c.fases = 1; c.v = 230; c.fasesConfirmadas = true;
+          } else if (c.fasesConfirmadas === undefined) {
+            // Los proyectos viejos heredaban 3 fases del suministro sin poder
+            // distinguir el circuito. Se recalculan provisionalmente a 1φ/230 V
+            // y se exige confirmación para no conservar un subdimensionado.
+            c.fases = 1; c.v = 230; c.fasesConfirmadas = false; c.fasesManual = false;
+          }
+        });
+      });
+      cambio = true;
+    }
+
+    // v7: balance de fases. No se inventa una fase para circuitos monofásicos
+    // existentes; quedan sin asignación hasta que el técnico los distribuya o
+    // use la función de balance automático. La potencia contratada puede quedar
+    // vacía y, mientras tanto, se usa el escalón sugerido si existe.
+    if (versionAnterior < 7) {
+      data.trabajos.forEach((tr) => {
+        if (!tr || typeof tr !== 'object') return;
+        if (!tr.balanceFases || typeof tr.balanceFases !== 'object') tr.balanceFases = { potenciaContratadaKw: null };
+        const sistema = SISTEMAS[tr.sistemaId] || SISTEMAS.tri_tt;
+        (tr.circuitos || []).forEach((c) => {
+          if (c.faseAsignada === undefined) c.faseAsignada = '';
+          if (c.faseManual === undefined) c.faseManual = false;
+          if (sistema.fases === 1 || Number(c.fases) === 3) c.faseAsignada = '';
+        });
+      });
+      cambio = true;
+    }
+
+    // v8: alimentador completo. Las copias anteriores sólo tenían la sección
+    // de fase; neutro y PE quedan en automático (null) para no inventar una
+    // sección relevada manualmente.
+    if (versionAnterior < 8) {
+      data.trabajos.forEach((tr) => {
+        if (!tr || typeof tr !== 'object') return;
+        if (!tr.acometida || typeof tr.acometida !== 'object') tr.acometida = { ...ACOMETIDA_DEFECTO };
+        if (tr.acometida.neutroSeccion === undefined) tr.acometida.neutroSeccion = null;
+        if (tr.acometida.peSeccion === undefined) tr.acometida.peSeccion = null;
+      });
+      cambio = true;
+    }
+
+    // v9: coordinación/selectividad. Los proyectos anteriores no reciben una
+    // selectividad supuesta; quedan pendientes hasta cargar dato del fabricante.
+    if (versionAnterior < 9) {
+      data.trabajos.forEach((tr) => {
+        if (!tr || typeof tr !== 'object') return;
+        if (!tr.proteccionGeneral || typeof tr.proteccionGeneral !== 'object') tr.proteccionGeneral = { diferencialSensibilidad:30 };
+        if (!tr.proteccionGeneral.diferencialSelectividad) tr.proteccionGeneral.diferencialSelectividad = 'instantaneo';
+        (tr.circuitos || []).forEach((c)=>{
+          if (c.curvaProteccion === undefined) c.curvaProteccion = '';
+          if (!c.selectividadFabricante) c.selectividadFabricante = 'pendiente';
+          if (c.selectividadLimiteKa === undefined) c.selectividadLimiteKa = null;
+        });
+      });
+      cambio = true;
+    }
+
+    // v10: Icc mínima al final de línea y tiempo de actuación de la protección. No se
+    // inventan mediciones en proyectos anteriores: quedan vacías hasta relevar.
+    if (versionAnterior < 10) {
+      data.trabajos.forEach((tr) => {
+        if (!tr || typeof tr !== 'object') return;
+        (tr.circuitos || []).forEach((c)=>{
+          if (c.iccMinFinalA === undefined) c.iccMinFinalA = null;
+          if (c.zCortoFinalOhm === undefined) c.zCortoFinalOhm = null;
+          if (c.tiempoDesconexionVerificadoS === undefined) c.tiempoDesconexionVerificadoS = null;
+        });
+      });
+      cambio = true;
+    }
+
+    // v11: protección contra contactos indirectos TT/IT. Los tiempos de ensayo,
+    // la corriente de primer defecto y la vigilancia IT nunca se inventan al migrar.
+    if (versionAnterior < 11) {
+      data.trabajos.forEach((tr) => {
+        if (!tr || typeof tr !== 'object') return;
+        if (!tr.proteccionGeneral || typeof tr.proteccionGeneral !== 'object') tr.proteccionGeneral = { diferencialSensibilidad:30 };
+        const pg = tr.proteccionGeneral;
+        if (pg.tiempoDiferencialGeneralS === undefined) pg.tiempoDiferencialGeneralS = null;
+        if (pg.monitorAislamientoIt === undefined) pg.monitorAislamientoIt = 'desconocido';
+        if (pg.masasInterconectadasIt === undefined) pg.masasInterconectadasIt = 'desconocido';
+        if (pg.corrientePrimerDefectoMa === undefined) pg.corrientePrimerDefectoMa = null;
+        (tr.circuitos || []).forEach((c)=>{
+          if (c.tiempoDefectoTierraS === undefined) c.tiempoDefectoTierraS = null;
+        });
+      });
+      cambio = true;
+    }
+
+    // v12: PE, continuidad y equipotencialidad. Ningún ensayo antiguo se presume realizado.
+    if (versionAnterior < 12) {
+      data.trabajos.forEach((tr) => {
+        if (!tr || typeof tr !== 'object') return;
+        if (!tr.proteccionGeneral || typeof tr.proteccionGeneral !== 'object') tr.proteccionGeneral = { diferencialSensibilidad:30 };
+        const pg=tr.proteccionGeneral;
+        if (pg.equipotencialPrincipalAplica === undefined) pg.equipotencialPrincipalAplica='pendiente';
+        if (pg.equipotencialPrincipalSeccion === undefined) pg.equipotencialPrincipalSeccion=null;
+        if (pg.equipotencialPrincipalContinuidad === undefined) pg.equipotencialPrincipalContinuidad='pendiente';
+        if (pg.equipotencialSuplementariaAplica === undefined) pg.equipotencialSuplementariaAplica='no';
+        if (pg.equipotencialSuplementariaSeccion === undefined) pg.equipotencialSuplementariaSeccion=null;
+        if (pg.equipotencialSuplementariaContinuidad === undefined) pg.equipotencialSuplementariaContinuidad='pendiente';
+        if (pg.equipotencialSuplementariaProtegida === undefined) pg.equipotencialSuplementariaProtegida=true;
+        (tr.circuitos||[]).forEach((c)=>{
+          if (c.peSeccion === undefined) c.peSeccion=null;
+          if (c.peSeparado === undefined) c.peSeparado=false;
+          if (c.peProteccionMecanica === undefined) c.peProteccionMecanica=true;
+          if (c.continuidadPe === undefined) c.continuidadPe='pendiente';
+          if (c.resistenciaContinuidadPeOhm === undefined) c.resistenciaContinuidadPeOhm=null;
+        });
+      });
+      cambio=true;
+    }
+
+    // v13: protocolo de puesta en servicio. No se inventan mediciones ni ensayos.
+    if (versionAnterior < 13) {
+      data.trabajos.forEach((tr) => {
+        if (!tr || typeof tr !== 'object') return;
+        if (!tr.proteccionGeneral || typeof tr.proteccionGeneral !== 'object') tr.proteccionGeneral={diferencialSensibilidad:30};
+        const pg=tr.proteccionGeneral;
+        if (pg.ensayoRcdGeneral === undefined) pg.ensayoRcdGeneral='pendiente';
+        if (pg.ensayoFuncionalProtecciones === undefined) pg.ensayoFuncionalProtecciones='pendiente';
+        if (!tr.protocoloEnsayos || typeof tr.protocoloEnsayos !== 'object') tr.protocoloEnsayos={fecha:'',tecnico:'',instrumento:'',serie:'',calibracion:'pendiente'};
+        (tr.circuitos||[]).forEach((c)=>{
+          if (c.aislamientoEnsayoV === undefined) c.aislamientoEnsayoV=null;
+          if (c.aislamientoMohm === undefined) c.aislamientoMohm=null;
+          if (c.polaridad === undefined) c.polaridad='pendiente';
+          if (c.secuenciaFases === undefined) c.secuenciaFases='pendiente';
+          if (c.ensayoRcd === undefined) c.ensayoRcd='pendiente';
+          if (c.tiempoRcdS === undefined) c.tiempoRcdS=null;
+          if (c.impedanciaLazoTierraOhm === undefined) c.impedanciaLazoTierraOhm=null;
+        });
+      });
+      cambio=true;
+    }
+
+    // v14: cierre profesional. Los datos de firma/anexos no se inventan y el
+    // estado definitivo siempre se recalcula a partir de las verificaciones reales.
+    if (versionAnterior < 14) {
+      data.trabajos.forEach((tr) => {
+        if (!tr || typeof tr !== 'object') return;
+        if (!tr.cierreProfesional || typeof tr.cierreProfesional !== 'object') {
+          tr.cierreProfesional = { responsableNombre:'', categoriaUTE:'', fecha:'', declaracion:'pendiente', firmaDataUrl:'', fotos:[] };
+        }
+        if (!Array.isArray(tr.cierreProfesional.fotos)) tr.cierreProfesional.fotos = [];
+      });
+      cambio = true;
+    }
+
+    if (data.schemaVersion !== DB_SCHEMA_VERSION) { data.schemaVersion = DB_SCHEMA_VERSION; cambio = true; }
+    return { db: data, cambio };
+  }
+
   let DB;
-  try { DB = JSON.parse(localStorage.getItem(STORAGE_KEY)) || defaultDB(); } catch (e) { DB = defaultDB(); }
+  let esquemaMigrado = false;
+  try {
+    const migracion = migrarEsquemaDB(JSON.parse(localStorage.getItem(STORAGE_KEY)) || defaultDB());
+    DB = migracion.db;
+    esquemaMigrado = migracion.cambio;
+  } catch (e) {
+    DB = defaultDB();
+    esquemaMigrado = true;
+  }
   if (!DB.settings) DB.settings = { margen: 30, iva: 22 };
   if (!DB.settings.precios) DB.settings.precios = clonePrecios(DEFAULT_PRECIOS);
   const medidasConvertidas = migrarMedidasTablero(DB.settings.precios);
@@ -2943,15 +4202,29 @@
 
   // Si el navegador no deja guardar (memoria llena, modo privado), se avisa:
   // antes fallaba en silencio y los cambios se perdían al cerrar.
+  function mostrarEstadoPersistencia(mensaje) {
+    const aviso = document.getElementById('storage-alert');
+    if (!aviso) return;
+    if (!mensaje) {
+      aviso.hidden = true;
+      aviso.textContent = '';
+      return;
+    }
+    aviso.textContent = mensaje;
+    aviso.hidden = false;
+  }
+
   function saveDB() {
     try {
+      DB.schemaVersion = DB_SCHEMA_VERSION;
       localStorage.setItem(STORAGE_KEY, JSON.stringify(DB));
+      mostrarEstadoPersistencia('');
       return true;
     } catch (e) {
       console.error('No se pudieron guardar los datos:', e);
-      if (typeof toast === 'function' && document.getElementById('toast')) {
-        toast('No se pudieron guardar los cambios. Exportá una copia de seguridad.');
-      }
+      const mensaje = 'No se pudieron guardar los cambios en este dispositivo. Exportá una copia de seguridad antes de cerrar la app.';
+      mostrarEstadoPersistencia(mensaje);
+      if (typeof toast === 'function' && document.getElementById('toast')) toast(mensaje);
       return false;
     }
   }
@@ -2959,7 +4232,7 @@
   // arranque y el catálogo en pantalla no coincidiría con el del disco.
   DB.trabajos.forEach((tr) => { if (cotizarMaterialesSinPrecio(tr)) clavesAgregadas = true; });
   if (sincronizarPresupuestos()) clavesAgregadas = true;
-  if (medidasConvertidas || clavesAgregadas) saveDB();
+  if (esquemaMigrado || medidasConvertidas || clavesAgregadas) saveDB();
 
   function seedSampleData() {
     const sistema = SISTEMAS.tri_tt;
@@ -2976,7 +4249,9 @@
       cliente: { nombre: 'Empresa Delta (ejemplo)', telefono: '', whatsapp: '', email: '', contacto: '', obs: '' },
       obra: { nombre: 'Depósito Central', direccion: '', localidad: 'Salto', tipo: 'Industrial', naturaleza: 'Instalación nueva', obs: '' },
       sistemaId: 'tri_tt', factores: { iluminacion: 1.0, tomacorrientes: 0.66, cargaFija: 0.8 },
-      proteccionGeneral: { diferencialSensibilidad: 30 },
+      proteccionGeneral: { diferencialSensibilidad: 30, ambienteTierra: 'seco', resistenciaTierraOhm: null, diferencialExiste: 'desconocido', termicaExistenteA: null, diferencialExistenteA: null, sobretensionesRiesgo: 'pendiente', pararrayosLps: 'desconocido', spdExiste: 'desconocido', spdTipo: '', diferencialSelectividad: 'instantaneo', equipotencialPrincipalAplica: 'pendiente', equipotencialPrincipalSeccion: null, equipotencialPrincipalContinuidad: 'pendiente', equipotencialSuplementariaAplica: 'no', equipotencialSuplementariaSeccion: null, equipotencialSuplementariaContinuidad: 'pendiente', equipotencialSuplementariaProtegida: true, ensayoRcdGeneral: 'pendiente', ensayoFuncionalProtecciones: 'pendiente' },
+      protocoloEnsayos: { fecha:'', tecnico:'', instrumento:'', serie:'', calibracion:'pendiente' },
+      cierreProfesional: { responsableNombre:'', categoriaUTE:'', fecha:'', declaracion:'pendiente', firmaDataUrl:'', fotos:[] },
       cargas, circuitos, materiales, estado: 'revision', observaciones: 'Se verificó caída de tensión y protección según normas vigentes. Pendiente confirmación de tableros.',
       createdAt: now - 3 * 3600e3, updatedAt: now - 3600e3,
     };
@@ -3189,7 +4464,9 @@
       obra: { nombre: '', direccion: '', localidad: 'Salto', tipo: 'Residencial', naturaleza: 'Instalación nueva', obs: '' },
       acometida: { ...ACOMETIDA_DEFECTO },
       sistemaId: 'tri_tt', factores: { iluminacion: 1.0, tomacorrientes: 0.66, cargaFija: 0.8 },
-      proteccionGeneral: { diferencialSensibilidad: 30 },
+      proteccionGeneral: { diferencialSensibilidad: 30, ambienteTierra: 'seco', resistenciaTierraOhm: null, diferencialExiste: 'desconocido', termicaExistenteA: null, diferencialExistenteA: null, sobretensionesRiesgo: 'pendiente', pararrayosLps: 'desconocido', spdExiste: 'desconocido', spdTipo: '', diferencialSelectividad: 'instantaneo', equipotencialPrincipalAplica: 'pendiente', equipotencialPrincipalSeccion: null, equipotencialPrincipalContinuidad: 'pendiente', equipotencialSuplementariaAplica: 'no', equipotencialSuplementariaSeccion: null, equipotencialSuplementariaContinuidad: 'pendiente', equipotencialSuplementariaProtegida: true, ensayoRcdGeneral: 'pendiente', ensayoFuncionalProtecciones: 'pendiente' },
+      protocoloEnsayos: { fecha:'', tecnico:'', instrumento:'', serie:'', calibracion:'pendiente' },
+      cierreProfesional: { responsableNombre:'', categoriaUTE:'', fecha:'', declaracion:'pendiente', firmaDataUrl:'', fotos:[] },
       cargas: [], circuitos: [], materiales: [], estado: 'pendiente', observaciones: '',
       motorVersion: MOTOR_VERSION, normativaPackId: NORMATIVE_PACK.id, normativaVersion: NORMATIVE_PACK.version,
       createdAt: Date.now(), updatedAt: Date.now(),
@@ -3210,7 +4487,25 @@
     if (!t) return;
     if (cotizarMaterialesSinPrecio(t)) { sincronizarPresupuestos(t.id); saveDB(); }
     draft = JSON.parse(JSON.stringify(t));
-    if (!draft.proteccionGeneral) draft.proteccionGeneral = { diferencialSensibilidad: 30 };
+    if (!draft.proteccionGeneral) draft.proteccionGeneral = { diferencialSensibilidad: 30, ambienteTierra: 'seco', resistenciaTierraOhm: null, diferencialExiste: 'desconocido', termicaExistenteA: null, diferencialExistenteA: null, sobretensionesRiesgo: 'pendiente', pararrayosLps: 'desconocido', spdExiste: 'desconocido', spdTipo: '' };
+    if (!draft.cierreProfesional || typeof draft.cierreProfesional !== 'object') draft.cierreProfesional = { responsableNombre:'', categoriaUTE:'', fecha:'', declaracion:'pendiente', firmaDataUrl:'', fotos:[] };
+    if (!Array.isArray(draft.cierreProfesional.fotos)) draft.cierreProfesional.fotos = [];
+    if (!draft.proteccionGeneral.ambienteTierra) draft.proteccionGeneral.ambienteTierra = 'seco';
+    if (draft.proteccionGeneral.resistenciaTierraOhm === undefined) draft.proteccionGeneral.resistenciaTierraOhm = null;
+    if (!draft.proteccionGeneral.diferencialExiste) draft.proteccionGeneral.diferencialExiste = 'desconocido';
+    if (draft.proteccionGeneral.termicaExistenteA === undefined) draft.proteccionGeneral.termicaExistenteA = null;
+    if (draft.proteccionGeneral.diferencialExistenteA === undefined) draft.proteccionGeneral.diferencialExistenteA = null;
+    if (!draft.proteccionGeneral.sobretensionesRiesgo) draft.proteccionGeneral.sobretensionesRiesgo = 'pendiente';
+    if (!draft.proteccionGeneral.pararrayosLps) draft.proteccionGeneral.pararrayosLps = 'desconocido';
+    if (!draft.proteccionGeneral.spdExiste) draft.proteccionGeneral.spdExiste = 'desconocido';
+    if (draft.proteccionGeneral.spdTipo === undefined) draft.proteccionGeneral.spdTipo = '';
+    if (draft.proteccionGeneral.equipotencialPrincipalAplica === undefined) draft.proteccionGeneral.equipotencialPrincipalAplica = 'pendiente';
+    if (draft.proteccionGeneral.equipotencialPrincipalSeccion === undefined) draft.proteccionGeneral.equipotencialPrincipalSeccion = null;
+    if (draft.proteccionGeneral.equipotencialPrincipalContinuidad === undefined) draft.proteccionGeneral.equipotencialPrincipalContinuidad = 'pendiente';
+    if (draft.proteccionGeneral.equipotencialSuplementariaAplica === undefined) draft.proteccionGeneral.equipotencialSuplementariaAplica = 'no';
+    if (draft.proteccionGeneral.equipotencialSuplementariaSeccion === undefined) draft.proteccionGeneral.equipotencialSuplementariaSeccion = null;
+    if (draft.proteccionGeneral.equipotencialSuplementariaContinuidad === undefined) draft.proteccionGeneral.equipotencialSuplementariaContinuidad = 'pendiente';
+    (draft.circuitos || []).forEach((c) => { if (c.resistividadTerreno === undefined) c.resistividadTerreno = c.metodo === 'enterrado' ? RESISTIVIDAD_TERRENO_UTE_DEFECTO : null; if (c.profundidadEnterrado === undefined) c.profundidadEnterrado = 0.5; if (!c.sistemaId) c.sistemaId = draft.sistemaId; if (c.iccMinFinalA === undefined) c.iccMinFinalA = null; if (c.zCortoFinalOhm === undefined) c.zCortoFinalOhm = null; if (c.tiempoDesconexionVerificadoS === undefined) c.tiempoDesconexionVerificadoS = null; if (c.peSeccion === undefined) c.peSeccion = null; if (c.peSeparado === undefined) c.peSeparado = false; if (c.peProteccionMecanica === undefined) c.peProteccionMecanica = true; if (c.continuidadPe === undefined) c.continuidadPe = 'pendiente'; if (c.resistenciaContinuidadPeOhm === undefined) c.resistenciaContinuidadPeOhm = null; if (c.aislamientoEnsayoV === undefined) c.aislamientoEnsayoV = null; if (c.aislamientoMohm === undefined) c.aislamientoMohm = null; if (c.polaridad === undefined) c.polaridad = 'pendiente'; if (c.secuenciaFases === undefined) c.secuenciaFases = 'pendiente'; if (c.ensayoRcd === undefined) c.ensayoRcd = 'pendiente'; if (c.tiempoRcdS === undefined) c.tiempoRcdS = null; if (c.impedanciaLazoTierraOhm === undefined) c.impedanciaLazoTierraOhm = null; });
     wizardStep = WIZARD_STEPS.length - 1;
     renderClientesExistentes();
     renderWizardForm();
@@ -3251,6 +4546,7 @@
 
   function renderWizardForm() {
     // Precarga los campos desde `draft`
+    (draft.circuitos || []).forEach((c) => { if (c.resistividadTerreno === undefined) c.resistividadTerreno = c.metodo === 'enterrado' ? RESISTIVIDAD_TERRENO_UTE_DEFECTO : null; if (c.profundidadEnterrado === undefined) c.profundidadEnterrado = 0.5; if (!c.sistemaId) c.sistemaId = draft.sistemaId; if (c.iccMinFinalA === undefined) c.iccMinFinalA = null; if (c.zCortoFinalOhm === undefined) c.zCortoFinalOhm = null; if (c.tiempoDesconexionVerificadoS === undefined) c.tiempoDesconexionVerificadoS = null; if (c.peSeccion === undefined) c.peSeccion = null; if (c.peSeparado === undefined) c.peSeparado = false; if (c.peProteccionMecanica === undefined) c.peProteccionMecanica = true; if (c.continuidadPe === undefined) c.continuidadPe = 'pendiente'; if (c.resistenciaContinuidadPeOhm === undefined) c.resistenciaContinuidadPeOhm = null; if (c.aislamientoEnsayoV === undefined) c.aislamientoEnsayoV = null; if (c.aislamientoMohm === undefined) c.aislamientoMohm = null; if (c.polaridad === undefined) c.polaridad = 'pendiente'; if (c.secuenciaFases === undefined) c.secuenciaFases = 'pendiente'; if (c.ensayoRcd === undefined) c.ensayoRcd = 'pendiente'; if (c.tiempoRcdS === undefined) c.tiempoRcdS = null; if (c.impedanciaLazoTierraOhm === undefined) c.impedanciaLazoTierraOhm = null; });
     $('#f-cliente-nombre').value = draft.cliente.nombre;
     $('#f-cliente-telefono').value = draft.cliente.telefono;
     $('#f-cliente-whatsapp').value = draft.cliente.whatsapp;
@@ -3309,12 +4605,10 @@
     }));
     $('#btn-ir-circuitos').addEventListener('click', () => {
       syncFormToDraft();
-      // solo importa automáticamente si el paso de circuitos está vacío,
-      // para no pisar circuitos ya editados a mano si el usuario vuelve atrás
-      if (draft.circuitos.length === 0) {
-        const sistema = SISTEMAS[draft.sistemaId];
-        draft.circuitos = importarCargasComoCircuitos(draft.cargas, sistema);
-      }
+      const sistema = SISTEMAS[draft.sistemaId];
+      const antes = JSON.stringify(draft.circuitos);
+      draft.circuitos = sincronizarCargasComoCircuitos(draft.cargas, sistema, draft.circuitos);
+      if (JSON.stringify(draft.circuitos) !== antes && draft.materiales.length) draft.materialesDesactualizados = true;
       wizardStep = 3;
       renderWizardStep();
     });
@@ -3437,15 +4731,44 @@
   }
 
   function proteccionGeneralHtml(pg) {
+    if (pg.modo === 'existente') {
+      return statBox('Térmica general existente', pg.termicaIn !== null ? pg.termicaIn + ' A' : 'Pendiente de relevar', true) +
+        statBox('Diferencial general existente', pg.diferencialExiste === false ? 'No instalado' : (pg.diferencialExiste === true ? ((pg.diferencialIn || '—') + ' A · ' + pg.diferencialSensibilidad + ' mA · ' + textoTipoDiferencial(pg.diferencialTipo)) : 'Pendiente de confirmar'), true);
+    }
     if (pg.termicaIn === null) return '<div class="alert-error">' + escapeHtml(pg.motivo) + '</div>';
     return statBox('Térmica general', pg.termicaIn + 'A · ' + pg.termicaPolos + 'p · curva ' + pg.termicaCurva + (pg.poderCorte ? ' · ' + textoPoderCorte(pg.poderCorte) : ''), true) +
       statBox('Diferencial general', pg.diferencialIn + 'A · ' + pg.diferencialSensibilidad + ' mA · ' + textoTipoDiferencial(pg.diferencialTipo), true);
   }
   function proteccionGeneralLightHtml(pg) {
+    if (pg.modo === 'existente') {
+      return '<div class="light-stat-row"><span class="lbl">Térmica general existente</span><span class="val strong">' + (pg.termicaIn !== null ? pg.termicaIn + ' A' : 'Pendiente') + '</span></div>' +
+        '<div class="light-stat-row"><span class="lbl">Diferencial general existente</span><span class="val strong">' + (pg.diferencialExiste === false ? 'No instalado' : (pg.diferencialExiste === true ? ((pg.diferencialIn || '—') + ' A · ' + pg.diferencialSensibilidad + ' mA · ' + textoTipoDiferencial(pg.diferencialTipo)) : 'Pendiente')) + '</span></div>';
+    }
     if (pg.termicaIn === null) return '<div class="alert-error">' + escapeHtml(pg.motivo) + '</div>';
     return '<div class="light-stat-row"><span class="lbl">Térmica general</span><span class="val strong">' + pg.termicaIn + 'A · ' + pg.termicaPolos + 'p · curva ' + pg.termicaCurva + (pg.poderCorte ? ' · ' + textoPoderCorte(pg.poderCorte) : '') + '</span></div>' +
-      '<div class="light-stat-row"><span class="lbl">Diferencial general</span><span class="val strong">' + pg.diferencialIn + 'A · ' + textoTipoDiferencial(pg.diferencialTipo) + '</span></div>';
+      '<div class="light-stat-row"><span class="lbl">Diferencial general</span><span class="val strong">' + pg.diferencialIn + 'A · ' + pg.diferencialSensibilidad + ' mA · ' + textoTipoDiferencial(pg.diferencialTipo) + '</span></div>';
   }
+  function proteccionGeneralVerificacionHtml(v) {
+    if (!v || !v.aplica) return '';
+    const titulo = v.estado === 'cumple' ? 'Verificado' : (v.estado === 'pendiente' ? 'Pendiente' : 'No cumple');
+    const clase = v.estado === 'cumple' ? 'alert-success' : (v.estado === 'pendiente' ? 'alert-warning' : 'alert-error');
+    const partes = [];
+    partes.push('<b>Protección general, tierra y sobretensiones: ' + titulo + '.</b>');
+    if (v.resistenciaTierraOhm !== null) partes.push('R<sub>A</sub> = ' + fmt(v.resistenciaTierraOhm) + ' Ω; máximo por diferencial = ' + fmt(v.raMax) + ' Ω.');
+    else partes.push('Falta la medición de R<sub>A</sub>; máximo por diferencial = ' + fmt(v.raMax) + ' Ω.');
+    if (v.contactosIndirectos && v.contactosIndirectos.aplica) {
+      partes.push('Esquema de protección contra contactos indirectos: <b>' + v.contactosIndirectos.esquema + '</b> · ' + (v.contactosIndirectos.estado === 'cumple' ? 'verificado' : (v.contactosIndirectos.estado === 'pendiente' ? 'pendiente' : 'no cumple')) + '.');
+    }
+    if (v.sobretensiones) {
+      if (v.sobretensiones.requerido === true) partes.push('SPD requerido; propuesta: ' + escapeHtml(v.sobretensiones.tipoPropuesto) + '.');
+      else if (v.sobretensiones.requerido === false) partes.push('SPD no requerido por la evaluación declarada de sobretensiones atmosféricas.');
+      else partes.push('Evaluación de sobretensiones pendiente.');
+    }
+    v.causas.forEach((x) => partes.push(escapeHtml(x)));
+    v.pendientes.forEach((x) => partes.push(escapeHtml(x)));
+    return '<div class="' + clase + '" style="margin-top:10px">' + partes.join(' ') + '</div>';
+  }
+
 
   // Ficha del alimentador: longitud, sección y la caída que arrastra.
   function renderAcometida() {
@@ -3472,10 +4795,22 @@
     sel.innerHTML = '<option value="">La que calcula la app' + (a.seccion ? ' (' + fmt(a.seccion, a.seccion < 10 ? 1 : 0).replace(/,0$/, '') + ' mm²)' : '') + '</option>' +
       secciones.map((x) => '<option value="' + x + '"' + (Number(draft.acometida.seccion) === x ? ' selected' : '') + '>' +
         fmt(x, x < 10 ? 1 : 0).replace(/,0$/, '') + ' mm²</option>').join('');
+    const selN = $('#f-acom-neutro');
+    const selPe = $('#f-acom-pe');
+    if (selN) {
+      selN.disabled = !a.tieneNeutro;
+      selN.innerHTML = !a.tieneNeutro ? '<option value="">No aplica (sistema sin neutro)</option>' :
+        '<option value="">Automático = fase' + (a.neutroSeccion ? ' (' + fmt(a.neutroSeccion, a.neutroSeccion < 10 ? 1 : 0).replace(/,0$/, '') + ' mm²)' : '') + '</option>' +
+        secciones.map((x) => '<option value="' + x + '"' + (Number(draft.acometida.neutroSeccion) === x ? ' selected' : '') + '>' + fmt(x, x < 10 ? 1 : 0).replace(/,0$/, '') + ' mm²</option>').join('');
+    }
+    if (selPe) selPe.innerHTML = '<option value="">Automático' + (a.peSeccion ? ' (' + fmt(a.peSeccion, a.peSeccion < 10 ? 1 : 0).replace(/,0$/, '') + ' mm²)' : '') + '</option>' +
+      secciones.map((x) => '<option value="' + x + '"' + (Number(draft.acometida.peSeccion) === x ? ' selected' : '') + '>' + fmt(x, x < 10 ? 1 : 0).replace(/,0$/, '') + ' mm²</option>').join('');
     const limite = 3;
     $('#acom-resultado').innerHTML =
       '<div class="light-stat-row"><span class="lbl">Corriente de demanda / de diseño</span><span class="val strong">' + fmt(a.ib) + ' A · ' + fmt(a.ibDiseno) + ' A</span></div>' +
       '<div class="light-stat-row"><span class="lbl">Sección del alimentador</span><span class="val strong">' + (a.seccion ? a.seccion + ' mm² Cu' : '—') + (a.automatica ? ' (calculada)' : ' (fijada)') + '</span></div>' +
+      '<div class="light-stat-row"><span class="lbl">Neutro</span><span class="val strong">' + (!a.tieneNeutro ? 'No aplica' : ((a.neutroSeccion ? a.neutroSeccion + ' mm² Cu' : 'Pendiente') + (a.neutroCorriente !== null ? ' · I<sub>N,fund</sub> ≈ ' + fmt(a.neutroCorriente) + ' A' : ''))) + '</span></div>' +
+      '<div class="light-stat-row"><span class="lbl">Conductor de protección (PE)</span><span class="val strong">' + (a.peSeccion ? a.peSeccion + ' mm² Cu' : 'Pendiente') + (a.peMin ? ' · mínimo adoptado ' + a.peMin + ' mm²' : '') + '</span></div>' +
       '<div class="light-stat-row"><span class="lbl">Corriente admisible del enlace</span><span class="val strong">' + fmt(a.iz) + ' A</span></div>' +
       '<div class="light-stat-row"><span class="lbl">Térmica general que coordina</span><span class="val strong" style="color:' + (a.termicaIn ? 'inherit' : 'var(--error)') + '">' +
         (a.termicaIn ? a.termicaIn + ' A (Ib ' + fmt(a.ibDiseno) + ' ≤ In ≤ Iz ' + fmt(a.iz) + ')' : 'ninguna coordina: subí la sección') + '</span></div>' +
@@ -3497,6 +4832,8 @@
             ? '<div class="light-stat-row" style="align-items:flex-start"><span class="lbl">Cálculo con el Anexo</span><span class="val" style="text-align:right;font-size:0.78rem">' +
               ctx.anexo.pasos.map(escapeHtml).join('<br>') + '</span></div>' : '');
       })() +
+      '<div class="light-stat-row"><span class="lbl">Estado del alimentador</span><span class="val strong" style="color:' + (a.estado === 'cumple' ? 'inherit' : 'var(--error)') + '">' + (a.estado === 'cumple' ? 'Verificado' : (a.estado === 'pendiente' ? 'Pendiente' : 'No cumple')) + '</span></div>' +
+      ((a.causas.length || a.pendientes.length) ? '<div class="alert-' + (a.causas.length ? 'error' : 'warning') + '" style="margin-top:8px">' + a.causas.concat(a.pendientes).map(escapeHtml).join(' ') + '</div>' : '') +
       '<div class="light-stat-row"><span class="lbl">Margen que queda para los circuitos</span><span class="val">' +
         fmt(Math.max(0, 3 - a.dUPct)) + ' % en iluminación · ' + fmt(Math.max(0, 5 - a.dUPct)) + ' % en el resto</span></div>';
   }
@@ -3506,7 +4843,7 @@
   const circuitosAbiertos = new Set();
   function tieneAvanzados(c) {
     return Boolean(c.expuestoSol || c.inProteccion || (c.tipoProteccion && c.tipoProteccion !== 'mcb') ||
-      c.iccKa || c.poderCorteKa || c.icu60947Ka || c.i2tPasante || c.tiempoDespejeS);
+      c.iccKa || c.poderCorteKa || c.icu60947Ka || c.i2tPasante || c.tiempoDespejeS || c.iccMinFinalA || c.zCortoFinalOhm || c.tiempoDesconexionVerificadoS || c.modoCargaVe || c.diferencialIndividualVe === 'si' || c.diferencialIndividualVe === 'no');
   }
 
   function renderCircuitosList() {
@@ -3521,12 +4858,26 @@
     draft.circuitos.forEach((c) => {
       const calc = calcularCircuito(c, caidaPrevia);
       const comp = calc.apto ? comprobarCircuito(datosCircuito(c, caidaPrevia, ctxCorto)) : null;
+      const sistemaCircuito = SISTEMAS[draft.sistemaId] || SISTEMAS.tri_tt;
+      const faseHtml = sistemaCircuito.fases === 3 && c.fasesConfirmadas !== false && Number(c.fases) === 1
+        ? '<div class="field"><label>' + (sistemaCircuito.id === 'tri_it' ? 'Par de conductores' : 'Fase asignada') + '</label><select class="select" data-f="faseAsignada">' +
+          '<option value=""' + (!c.faseAsignada ? ' selected' : '') + '>Pendiente de asignar</option>' +
+          opcionesFaseCircuito(sistemaCircuito).map((x) => '<option value="' + x.v + '"' + (c.faseAsignada === x.v ? ' selected' : '') + '>' + x.label + '</option>').join('') + '</select></div>'
+        : '';
       const card = el('div', { class: 'card card-pad item-card', style: 'position:relative' });
       card.innerHTML =
         '<button class="remove-btn" type="button">' + icon('ic-trash') + '</button>' +
+        (c.cargaDesvinculada ? '<div class="alert-warning" style="margin:0 30px 12px 0"><b>Circuito sin carga vinculada.</b> La carga original fue eliminada; revisalo o quitá este circuito manualmente.</div>' : '') +
         '<div class="item-grid" style="padding-right:30px">' +
         '<div class="field" style="grid-column:1/-1"><label>Nombre del circuito</label><input class="input" data-f="nombre" value="' + escapeHtml(c.nombre) + '"></div>' +
         '<div class="field"><label>Corriente Ib (A)</label><input class="input" type="number" data-f="ib" value="' + c.ib + '"></div>' +
+        ((SISTEMAS[draft.sistemaId] || SISTEMAS.tri_tt).fases === 3
+          ? '<div class="field"><label>Alimentación del circuito</label><select class="select" data-f="fasesCircuito">' +
+            '<option value=""' + (c.fasesConfirmadas === false ? ' selected' : '') + '>Pendiente de confirmar</option>' +
+            '<option value="1"' + (c.fasesConfirmadas !== false && Number(c.fases) === 1 ? ' selected' : '') + '>Monofásico · 230 V</option>' +
+            '<option value="3"' + (c.fasesConfirmadas !== false && Number(c.fases) === 3 ? ' selected' : '') + '>Trifásico · ' + (SISTEMAS[draft.sistemaId] || SISTEMAS.tri_tt).v + ' V</option></select></div>'
+          : '<div class="field"><label>Alimentación del circuito</label><div class="hint" style="margin:0">Monofásico · 230 V</div></div>') +
+        faseHtml +
         '<div class="field"><label>Longitud (m)</label><input class="input" type="number" data-f="l" value="' + c.l + '"></div>' +
         '<div class="field"><label>Material</label><select class="select" data-f="material"><option value="cobre"' + (c.material === 'cobre' ? ' selected' : '') + '>Cobre</option><option value="aluminio"' + (c.material === 'aluminio' ? ' selected' : '') + '>Aluminio</option></select></div>' +
         '<div class="field"><label>Método</label><select class="select" data-f="metodo">' + Object.keys(METODO_LABEL).map((k) => '<option value="' + k + '"' + (c.metodo === k ? ' selected' : '') + '>' + METODO_LABEL[k] + '</option>').join('') + '</select></div>' +
@@ -3545,7 +4896,9 @@
         (c.metodo === 'enterrado'
           ? '<div class="field"><label>Caños y separación</label><select class="select" data-f="disposicion">' +
             DISPOSICIONES_ENTERRADO.map((d) => '<option value="' + d.id + '"' + (disposicionEnterrado(c.disposicion) === d.id ? ' selected' : '') + '>' + d.label + '</option>').join('') +
-            '</select></div>'
+            '</select></div>' +
+            '<div class="field"><label>Resistividad térmica terreno (K·m/W)</label><input class="input" type="number" min="0" step="0.1" data-f="resistividadTerreno" placeholder="UTE: 1,0 en condición normal" value="' + (Number(c.resistividadTerreno) || '') + '"></div>' +
+            '<div class="field"><label>Profundidad del caño (m)</label><input class="input" type="number" min="0" step="0.05" data-f="profundidadEnterrado" value="' + (Number(c.profundidadEnterrado) || 0.5) + '"></div>'
           : '') +
         '<div class="field"><label>Polos</label><select class="select" data-f="polos">' +
         opcionesPolos(c).map((o) => '<option value="' + o.v + '"' + (polosDe(c) === o.v ? ' selected' : '') + '>' + o.label + '</option>').join('') +
@@ -3557,9 +4910,16 @@
         EQUIPOS_CIRCUITO.map((e) => '<option value="' + e.id + '"' + ((c.equipo || 'comun') === e.id ? ' selected' : '') + '>' + e.label + '</option>').join('') +
         '</select></div>' +
         (c.equipo === 'cargador_ve'
-          ? '<div class="field"><label>¿Trae monitor de continua 6 mA (IEC 62955)?</label><select class="select" data-f="rdcdd6mA">' +
-            '<option value="0"' + (!c.rdcdd6mA ? ' selected' : '') + '>No o no sé (tipo B)</option>' +
-            '<option value="1"' + (c.rdcdd6mA ? ' selected' : '') + '>Sí (alcanza con tipo A)</option></select></div>'
+          ? '<div class="field"><label>Modo de carga VE</label><select class="select" data-f="modoCargaVe">' +
+            '<option value=""' + (!c.modoCargaVe ? ' selected' : '') + '>Pendiente de definir</option>' +
+            ['1','2','3','4'].map((m) => '<option value="' + m + '"' + (String(c.modoCargaVe) === m ? ' selected' : '') + '>Modo ' + m + '</option>').join('') + '</select></div>' +
+            '<div class="field"><label>Diferencial individual del punto (≤ 30 mA, omnipolar)</label><select class="select" data-f="diferencialIndividualVe">' +
+            '<option value="desconocido"' + ((c.diferencialIndividualVe || 'desconocido') === 'desconocido' ? ' selected' : '') + '>Pendiente / no relevado</option>' +
+            '<option value="si"' + (c.diferencialIndividualVe === 'si' ? ' selected' : '') + '>Sí / incluido en proyecto</option>' +
+            '<option value="no"' + (c.diferencialIndividualVe === 'no' ? ' selected' : '') + '>No</option></select></div>' +
+            '<div class="field"><label>¿Trae monitor de continua 6 mA (IEC 62955)?</label><select class="select" data-f="rdcdd6mA">' +
+            '<option value="0"' + (!c.rdcdd6mA ? ' selected' : '') + '>No o no sé</option>' +
+            '<option value="1"' + (c.rdcdd6mA ? ' selected' : '') + '>Sí</option></select></div>'
           : '') +
         '<div class="field"><label>Aislación</label><select class="select" data-f="aislacion">' +
         '<option value="pvc"' + ((c.aislacion || 'pvc') === 'pvc' ? ' selected' : '') + '>PVC</option>' +
@@ -3584,7 +4944,26 @@
         ((c.tipoProteccion || 'mcb') === 'otro'
           ? '<div class="field"><label>I₂ del fabricante (A)</label><input class="input" type="number" step="0.1" min="0" data-f="i2" value="' + (Number(c.i2) || '') + '"></div>'
           : '') +
-        '<div class="field"><label>Icc en el circuito (kA)</label><input class="input" type="number" step="0.1" min="0" data-f="iccKa" placeholder="La del tablero" value="' + (Number(c.iccKa) || '') + '"></div>' +
+        '<div class="field"><label>Curva termomagnética</label><select class="select" data-f="curvaProteccion"><option value=""' + (!c.curvaProteccion ? ' selected' : '') + '>Automática según uso</option>' + ['B','C','D'].map((x)=>'<option value="'+x+'"'+(c.curvaProteccion===x?' selected':'')+'>Curva '+x+'</option>').join('') + '</select></div>' +
+        '<div class="field"><label>Selectividad con térmica general</label><select class="select" data-f="selectividadFabricante"><option value="pendiente"'+((c.selectividadFabricante||'pendiente')==='pendiente'?' selected':'')+'>Pendiente / sin tabla fabricante</option><option value="total"'+(c.selectividadFabricante==='total'?' selected':'')+'>Total según fabricante</option><option value="parcial"'+(c.selectividadFabricante==='parcial'?' selected':'')+'>Parcial según fabricante</option><option value="no"'+(c.selectividadFabricante==='no'?' selected':'')+'>No selectiva</option></select></div>' +
+        (c.selectividadFabricante==='parcial' ? '<div class="field"><label>Límite de selectividad Is (kA)</label><input class="input" type="number" step="0.1" min="0" data-f="selectividadLimiteKa" value="'+(Number(c.selectividadLimiteKa)||'')+'"></div>' : '') +
+        '<div class="field"><label>Icc máxima en el circuito (kA)</label><input class="input" type="number" step="0.1" min="0" data-f="iccKa" placeholder="La del tablero" value="' + (Number(c.iccKa) || '') + '"></div>' +
+        '<div class="field"><label>Sección PE del circuito (mm²)</label><input class="input" type="number" step="0.5" min="0" data-f="peSeccion" placeholder="Automático IEC" value="' + (Number(c.peSeccion) || '') + '"><div class="hint">Vacío = mínimo automático IEC 60364-5-54 según la sección de fase.</div></div>' +
+        '<div class="field"><label>Disposición del PE</label><select class="select" data-f="peSeparado"><option value="0"' + (!c.peSeparado ? ' selected' : '') + '>Misma canalización / cable</option><option value="1"' + (c.peSeparado ? ' selected' : '') + '>PE separado</option></select></div>' +
+        (c.peSeparado ? '<div class="field"><label>Protección mecánica del PE separado</label><select class="select" data-f="peProteccionMecanica"><option value="1"' + (c.peProteccionMecanica !== false ? ' selected' : '') + '>Sí</option><option value="0"' + (c.peProteccionMecanica === false ? ' selected' : '') + '>No</option></select></div>' : '') +
+        '<div class="field"><label>Ensayo de continuidad PE</label><select class="select" data-f="continuidadPe"><option value="pendiente"' + ((c.continuidadPe||'pendiente')==='pendiente'?' selected':'') + '>Pendiente</option><option value="si"' + (c.continuidadPe==='si'?' selected':'') + '>Continuidad verificada</option><option value="no"' + (c.continuidadPe==='no'?' selected':'') + '>No continuo / falla</option></select></div>' +
+        '<div class="field"><label>Resistencia continuidad PE (Ω, opcional)</label><input class="input" type="number" step="0.001" min="0" data-f="resistenciaContinuidadPeOhm" placeholder="Valor medido" value="' + (c.resistenciaContinuidadPeOhm !== null && c.resistenciaContinuidadPeOhm !== undefined ? c.resistenciaContinuidadPeOhm : '') + '"></div>' +
+        '<div class="field"><label>Tensión ensayo aislamiento (Vcc)</label><select class="select" data-f="aislamientoEnsayoV"><option value=""' + (!c.aislamientoEnsayoV?' selected':'') + '>Pendiente</option><option value="250"' + (Number(c.aislamientoEnsayoV)===250?' selected':'') + '>250 Vcc · sólo SPD/electrónica sensible</option><option value="500"' + (Number(c.aislamientoEnsayoV)===500?' selected':'') + '>500 Vcc</option><option value="1000"' + (Number(c.aislamientoEnsayoV)===1000?' selected':'') + '>1000 Vcc</option></select></div>' +
+        '<div class="field"><label>Resistencia de aislamiento (MΩ)</label><input class="input" type="number" step="0.01" min="0" data-f="aislamientoMohm" placeholder="Medición" value="' + (Number(c.aislamientoMohm)>0?c.aislamientoMohm:'') + '"><div class="hint">IEC 60364-6: hasta 500 V, mínimo 1 MΩ; ensayo normal a 500 Vcc.</div></div>' +
+        '<div class="field"><label>Ensayo de polaridad</label><select class="select" data-f="polaridad"><option value="pendiente"'+((c.polaridad||'pendiente')==='pendiente'?' selected':'')+'>Pendiente</option><option value="si"'+(c.polaridad==='si'?' selected':'')+'>Correcta</option><option value="no"'+(c.polaridad==='no'?' selected':'')+'>Incorrecta</option></select></div>' +
+        '<div class="field"><label>Secuencia de fases</label><select class="select" data-f="secuenciaFases"><option value="pendiente"'+((c.secuenciaFases||'pendiente')==='pendiente'?' selected':'')+'>Pendiente / no aplica</option><option value="si"'+(c.secuenciaFases==='si'?' selected':'')+'>Correcta</option><option value="no"'+(c.secuenciaFases==='no'?' selected':'')+'>Incorrecta</option></select></div>' +
+        '<div class="field"><label>Ensayo RCD dedicado</label><select class="select" data-f="ensayoRcd"><option value="pendiente"'+((c.ensayoRcd||'pendiente')==='pendiente'?' selected':'')+'>Pendiente / no aplica</option><option value="si"'+(c.ensayoRcd==='si'?' selected':'')+'>Satisfactorio</option><option value="no"'+(c.ensayoRcd==='no'?' selected':'')+'>No satisfactorio</option></select></div>' +
+        '<div class="field"><label>Tiempo RCD dedicado (s)</label><input class="input" type="number" step="0.001" min="0" data-f="tiempoRcdS" placeholder="Si aplica" value="' + (Number(c.tiempoRcdS)>0?c.tiempoRcdS:'') + '"></div>' +
+        '<div class="field"><label>Impedancia lazo de defecto a tierra (Ω)</label><input class="input" type="number" step="0.001" min="0" data-f="impedanciaLazoTierraOhm" placeholder="Cuando corresponda" value="' + (Number(c.impedanciaLazoTierraOhm)>0?c.impedanciaLazoTierraOhm:'') + '"><div class="hint">Registro de ensayo cuando el esquema/método de verificación lo requiere; no se confunde con Z de cortocircuito L-N/L-L.</div></div>' +
+        '<div class="field"><label>Icc mínima al final (A)</label><input class="input" type="number" step="1" min="0" data-f="iccMinFinalA" placeholder="Medida o calculada" value="' + (Number(c.iccMinFinalA) || '') + '"><div class="hint">Sirve para comprobar si la curva B/C/D entra en zona magnética.</div></div>' +
+        '<div class="field"><label>Impedancia de lazo de cortocircuito al final (Ω)</label><input class="input" type="number" step="0.001" min="0" data-f="zCortoFinalOhm" placeholder="Alternativa a Icc mínima" value="' + (Number(c.zCortoFinalOhm) || '') + '"><div class="hint">Si se carga, la app usa Icc = U/Z. La Icc manual prevalece.</div></div>' +
+        '<div class="field"><label>Tiempo de actuación a Ik,min (s)</label><input class="input" type="number" step="0.001" min="0" data-f="tiempoDesconexionVerificadoS" placeholder="Curva fabricante / ensayo" value="' + (Number(c.tiempoDesconexionVerificadoS) || '') + '"><div class="hint">Sólo hace falta si Ik,min no garantiza la zona magnética o si se quiere documentar el tiempo real.</div></div>' +
+        '<div class="field"><label>Tiempo por defecto a tierra / segundo defecto (s)</label><input class="input" type="number" step="0.001" min="0" data-f="tiempoDefectoTierraS" placeholder="Ensayo RCD o verificación de protección" value="' + (Number(c.tiempoDefectoTierraS) || '') + '"><div class="hint">TT: puede heredarse del ensayo del diferencial general. IT: documentar por circuito el despeje del segundo defecto.</div></div>' +
         ((c.tipoProteccion || 'mcb') === 'mcb'
           ? '<div class="field"><label>Icn IEC 60898-1 (kA)</label><input class="input" type="number" step="0.5" min="0" data-f="poderCorteKa" placeholder="Según la gama" value="' + (Number(c.poderCorteKa) || '') + '"></div>' +
             '<div class="field"><label>Icu IEC 60947-2 (kA, sólo ficha)</label><input class="input" type="number" step="0.5" min="0" data-f="icu60947Ka" value="' + (Number(c.icu60947Ka) || '') + '"></div>'
@@ -3598,11 +4977,16 @@
             statBox('Sección', calc.seccionAdoptada + ' mm²', true) + statBox('Iz corregida', fmt(calc.iz) + ' A') +
             statBox('Caída del circuito', fmt(calc.dUPct) + ' %') +
             statBox('Caída desde el medidor', fmt(calc.dUPctTotal) + ' %', true) +
-            statBox('Protección', calc.breaker + ' A' + (comp && comp.poderCorteKa !== null ? ' · ' + fmt(comp.poderCorteKa, 0) + ' kA' + (comp.iccFuente === 'plaza' ? ' (plaza)' : '') : ''), true) + statBox('Curva sugerida', calc.curva) +
+            statBox('Protección', calc.breaker + ' A · curva ' + calc.curva + ' ' + (comp && comp.poderCorteKa !== null ? ' · ' + fmt(comp.poderCorteKa, 0) + ' kA' + (comp.iccFuente === 'plaza' ? ' (plaza)' : '') : ''), true) + statBox('Curva sugerida', calc.curva) +
+            statBox('Icc mín. final', comp && comp.iccMinFinalA !== null ? fmt(comp.iccMinFinalA,0) + ' A' + (comp.umbralMagneticoA ? ' / umbral ' + fmt(comp.umbralMagneticoA,0) + ' A' : '') : 'Pendiente') +
+            statBox('Desconexión', comp && comp.cumpleTiempoDesconexion === true ? 'Verificada' : (comp && comp.cumpleTiempoDesconexion === false ? 'No cumple' : 'Pendiente')) +
+            statBox('PE', comp && comp.pe ? fmt(comp.pe.seccion) + ' mm² · ' + (comp.pe.estado === 'cumple' ? 'continuidad OK' : (comp.pe.estado === 'no_cumple' ? 'No cumple' : 'Pendiente')) : 'Pendiente') +
             statBox('Diferencial', (() => {
               const d = diferencialDelCircuito(c);
               const pgC = calcularProteccionGeneral(draft);
               const tg = pgC.aplica ? tipoDiferencialGeneral(pgC) : TIPO_DIFERENCIAL_DEFECTO;
+              if (pgC.modo === 'existente' && pgC.diferencialExiste === false) return 'General no instalado · pendiente de corrección';
+              if (pgC.modo === 'existente' && pgC.diferencialExiste !== true) return 'General sin relevar · pendiente';
               return RANGO_DIFERENCIAL[d.tipo] > RANGO_DIFERENCIAL[tg] ? 'Dedicado tipo ' + d.tipo : 'General tipo ' + tg;
             })()) +
             statBox('Comprobación', comp.estado === 'cumple' ? 'Verificado' : (comp.estado === 'pendiente' ? 'Pendiente' : 'No cumple')) + '</div>' +
@@ -3620,12 +5004,30 @@
         input.addEventListener('change', () => {
           const f = input.dataset.f;
           const esTexto = f === 'nombre' || f === 'material' || f === 'metodo' || f === 'uso' || f === 'aislacion' ||
-            f === 'disposicion' || f === 'montaje' || f === 'tipoProteccion' || f === 'equipo';
-          if (f === 'expuestoSol' || f === 'separados2De' || f === 'rdcdd6mA') c[f] = input.value === '1';
+            f === 'disposicion' || f === 'montaje' || f === 'tipoProteccion' || f === 'equipo' || f === 'modoCargaVe' || f === 'diferencialIndividualVe' || f === 'faseAsignada' || f === 'curvaProteccion' || f === 'selectividadFabricante' || f === 'continuidadPe' || f === 'polaridad' || f === 'secuenciaFases' || f === 'ensayoRcd';
+          if (f === 'fasesCircuito') {
+            const sistemaActual = SISTEMAS[draft.sistemaId] || SISTEMAS.tri_tt;
+            if (!input.value) {
+              c.fases = 1; c.v = 230; c.fasesConfirmadas = false; c.fasesManual = false; c.faseAsignada = ''; c.faseManual = false; c.sistemaId = sistemaActual.id;
+            } else {
+              c.fases = Number(input.value); c.v = tensionDeCircuito(sistemaActual, c.fases); c.fasesConfirmadas = true; c.fasesManual = true; c.sistemaId = sistemaActual.id;
+              if (c.fases === 3) { c.faseAsignada = ''; c.faseManual = false; }
+              if (!c.ibManual && c.origenCarga && Number(c.origenCarga.ib) > 0) {
+                c.ib = c.fases === 3 ? Math.round((c.origenCarga.ib * 230 / (SQRT3 * sistemaActual.v)) * 100) / 100 : c.origenCarga.ib;
+              }
+              if (!c.polosManual) c.polos = polosPorDefecto(c);
+            }
+          } else if (f === 'expuestoSol' || f === 'separados2De' || f === 'rdcdd6mA' || f === 'peSeparado' || f === 'peProteccionMecanica') c[f] = input.value === '1';
           // vacío = que decida la app
-          else if (f === 'inProteccion' || f === 'i2' || f === 'iccKa' || f === 'poderCorteKa' || f === 'icu60947Ka' || f === 'i2tPasante' || f === 'tiempoDespejeS') {
+          else if (f === 'inProteccion' || f === 'i2' || f === 'iccKa' || f === 'poderCorteKa' || f === 'icu60947Ka' || f === 'i2tPasante' || f === 'tiempoDespejeS' || f === 'selectividadLimiteKa' || f === 'iccMinFinalA' || f === 'zCortoFinalOhm' || f === 'tiempoDesconexionVerificadoS' || f === 'tiempoDefectoTierraS' || f === 'peSeccion' || f === 'resistenciaContinuidadPeOhm' || f === 'aislamientoEnsayoV' || f === 'aislamientoMohm' || f === 'tiempoRcdS' || f === 'impedanciaLazoTierraOhm') {
             c[f] = Number(input.value) > 0 ? Number(input.value) : null;
           } else c[f] = esTexto ? input.value : Number(input.value);
+          if (f === 'nombre') c.nombreManual = true;
+          if (f === 'faseAsignada') c.faseManual = true;
+          if (f === 'ib') c.ibManual = true;
+          if (f === 'cosPhi') c.cosPhiManual = true;
+          if (f === 'uso') c.usoManual = true;
+          if (f === 'equipo') c.equipoManual = true;
           // Cada uso trae su propia caída máxima admisible: iluminación admite
           // menos que fuerza. Al cambiar el uso se acompaña el valor.
           if (f === 'uso') {
@@ -3636,11 +5038,15 @@
           }
           if (f === 'polos') c.polosManual = true;
           // al enterrar el caño se propone la temperatura de terreno (25 °C,
-          // supuesto 1) en vez de la de aire (30 °C), salvo que ya se haya
-          // tocado el campo a mano
+          // supuesto 1, UTE) en vez de la de aire (30 °C), y la resistividad
+          // estándar de UTE (1,0 K·m/W) si el campo todavía no fue tocado
           if (f === 'metodo') {
-            if (input.value === 'enterrado' && c.tempAmb === TEMP_AMBIENTE_DEFECTO) c.tempAmb = TEMP_TERRENO_ENTERRADO_DEFECTO;
-            else if (input.value !== 'enterrado' && c.tempAmb === TEMP_TERRENO_ENTERRADO_DEFECTO) c.tempAmb = TEMP_AMBIENTE_DEFECTO;
+            if (input.value === 'enterrado') {
+              if (c.tempAmb === TEMP_AMBIENTE_DEFECTO) c.tempAmb = TEMP_TERRENO_ENTERRADO_DEFECTO;
+              if (!(Number(c.resistividadTerreno) > 0)) c.resistividadTerreno = RESISTIVIDAD_TERRENO_UTE_DEFECTO;
+            } else if (c.tempAmb === TEMP_TERRENO_ENTERRADO_DEFECTO) {
+              c.tempAmb = TEMP_AMBIENTE_DEFECTO;
+            }
           }
           renderCircuitosList();
         });
@@ -3658,6 +5064,37 @@
         '<td style="color:' + (calc.apto && calc.dUPctTotal > calc.caidaMax ? 'var(--error)' : 'inherit') + '">' + (calc.apto ? fmt(calc.dUPctTotal) : '—') + '</td></tr>';
     }).join('');
 
+    const balanceWrap = $('#circuitos-balance-fases');
+    const sistemaBalance = SISTEMAS[draft.sistemaId] || SISTEMAS.tri_tt;
+    const balance = calcularBalanceFases(draft);
+    balanceWrap.hidden = sistemaBalance.fases !== 3 || draft.circuitos.length === 0;
+    if (!balanceWrap.hidden) {
+      const potSugerida = calcularPotencia(draft.cargas || [], sistemaBalance, draft.factores || {}).suministroSugerido;
+      balanceWrap.innerHTML =
+        '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap">' +
+          '<div><div class="section-label" style="margin:0 0 4px">BALANCE DE FASES</div><div class="hint" style="margin:0">UTE RBT Cap. II §9 y Cap. V §1.4.6</div></div>' +
+          '<button class="btn btn-secondary" type="button" id="btn-auto-balance">Distribuir automáticamente</button>' +
+        '</div>' +
+        '<div class="item-grid" style="margin-top:12px">' +
+          '<div class="field"><label>Potencia contratada / proyectada (kW)</label><input class="input" id="f-potencia-contratada-balance" type="number" min="0" step="0.5" placeholder="' + (potSugerida !== null ? fmt(potSugerida,1) + ' sugeridos' : 'Ingresar') + '" value="' + (draft.balanceFases && Number(draft.balanceFases.potenciaContratadaKw) > 0 ? Number(draft.balanceFases.potenciaContratadaKw) : '') + '"><div class="hint">Vacío = usa el suministro sugerido, si está disponible.</div></div>' +
+          statBox('L1', fmt(balance.corrientes[0]) + ' A', balance.faseMax === 'L1') +
+          statBox('L2', fmt(balance.corrientes[1]) + ' A', balance.faseMax === 'L2') +
+          statBox('L3', fmt(balance.corrientes[2]) + ' A', balance.faseMax === 'L3') +
+          statBox('Fase más cargada', balance.faseMax ? balance.faseMax + ' · ' + fmt(balance.corrienteMax) + ' A' : 'Pendiente', true) +
+          statBox('Desequilibrio', fmt(balance.desequilibrioPct) + ' %' + (balance.limitePct !== null ? ' / máx. ' + fmt(balance.limitePct,0) + ' %' : ''), true) +
+          statBox('Estado', balance.estado === 'cumple' ? 'Verificado' : (balance.estado === 'pendiente' ? 'Pendiente' : 'No cumple'), true) +
+        '</div>' +
+        (balance.causas.length || balance.pendientes.length
+          ? '<ul style="margin:10px 0 0;padding-left:18px;font-size:0.8rem;color:var(--error)">' + balance.causas.concat(balance.pendientes).map((x) => '<li>' + escapeHtml(x) + '</li>').join('') + '</ul>'
+          : '<div class="hint" style="margin-top:10px">Índice = máxima desviación respecto de la corriente media / corriente media × 100.</div>');
+      $('#btn-auto-balance').addEventListener('click', () => { autoBalancearFases(draft); renderCircuitosList(); });
+      $('#f-potencia-contratada-balance').addEventListener('change', () => {
+        if (!draft.balanceFases) draft.balanceFases = { potenciaContratadaKw: null };
+        draft.balanceFases.potenciaContratadaKw = Number($('#f-potencia-contratada-balance').value) > 0 ? Number($('#f-potencia-contratada-balance').value) : null;
+        renderCircuitosList();
+      });
+    }
+
     const pgWrap = $('#circuitos-proteccion-general');
     const pg = calcularProteccionGeneral(draft);
     pgWrap.hidden = !pg.aplica || draft.circuitos.length === 0;
@@ -3668,7 +5105,9 @@
     const wrap = $('#materiales-list');
     if (draft.materiales.length === 0 && draft.circuitos.length > 0) {
       draft.materiales = generarMateriales(draft.circuitos, draft);
+      draft.materialesDesactualizados = false;
     }
+    $('#materiales-warning').hidden = !draft.materialesDesactualizados;
     wrap.innerHTML = '';
     if (draft.materiales.length === 0) {
       wrap.appendChild(el('div', { class: 'empty-state', html: 'Sin materiales todavía. Cargá circuitos o agregá un ítem manual.' }));
@@ -3702,17 +5141,29 @@
     const sistema = SISTEMAS[draft.sistemaId] || SISTEMAS.tri_tt;
     const r = calcularPotencia(draft.cargas, sistema, draft.factores);
     $('#resumen-carga').textContent = fmt(r.pDemandTotal / 1000) + ' kW';
+    $('#resumen-potencia-instalada').textContent = fmt(r.potenciaInstalada / 1000) + ' kW';
 
     const cWrap = $('#resumen-circuitos');
     cWrap.innerHTML = '';
     if (draft.circuitos.length === 0) cWrap.appendChild(el('div', { class: 'empty-state', html: 'Sin circuitos cargados.' }));
+    const caidaPreviaResumen = caidaPreviaDe(draft);
+    const ctxCortoResumen = contextoCortocircuito(draft);
+    const estadosTecnicos = [];
     draft.circuitos.forEach((c, i) => {
-      const calc = calcularCircuito(c);
+      const calc = calcularCircuito(c, caidaPreviaResumen);
+      const comp = calc.apto ? comprobarCircuito(datosCircuito(c, caidaPreviaResumen, ctxCortoResumen)) : null;
+      const estadoTecnico = comp ? comp.estado : 'no_cumple';
+      estadosTecnicos.push(estadoTecnico);
+      const estadoTecnicoHtml = estadoTecnico === 'cumple'
+        ? '<span class="badge-apto">Verificado</span>'
+        : (estadoTecnico === 'pendiente'
+          ? '<span class="badge-pendiente">Pendiente</span>'
+          : '<span class="badge-noapto">No cumple</span>');
       const row = el('div', { class: 'card card-pad summary-circuit-card' });
       if (calc.apto) {
         row.innerHTML =
           '<div class="summary-circuit-id">C' + (i + 1) + '</div>' +
-          '<div class="summary-circuit-name">' + escapeHtml(c.nombre || 'Circuito') + '</div>' +
+          '<div class="summary-circuit-name">' + escapeHtml(c.nombre || 'Circuito') + estadoTecnicoHtml + '</div>' +
           '<div class="summary-circuit-stat"><b>' + calc.seccionAdoptada + ' mm²</b><span>Sección</span></div>' +
           '<div class="summary-circuit-stat"><b>' + calc.breaker + ' A</b><span>Protección</span></div>' +
           '<div class="summary-circuit-stat"><b>' + fmt(calc.dUPct) + ' %</b><span>Caída</span></div>' +
@@ -3727,29 +5178,176 @@
     });
 
     const pg = calcularProteccionGeneral(draft);
+    const verPg = comprobarProteccionGeneral(draft, pg);
+    if (pg.aplica) estadosTecnicos.push(verPg.estado);
+    const verEq = comprobarEquipotencialidad(draft);
+    estadosTecnicos.push(verEq.estado);
+    const verProto = comprobarProtocoloEnsayos(draft);
+    estadosTecnicos.push(verProto.estado);
+
+    const estadoTecnicoWrap = $('#resumen-estado-tecnico');
+    if (estadosTecnicos.includes('no_cumple')) {
+      estadoTecnicoWrap.innerHTML = '<div class="alert-error"><b>Estado técnico: no cumple.</b> Hay circuitos, protecciones, puesta a tierra o ensayos de puesta en servicio que deben corregirse antes de cerrar la instalación.</div>';
+    } else if (estadosTecnicos.includes('pendiente')) {
+      estadoTecnicoWrap.innerHTML = '<div class="alert-warning"><b>Estado técnico: verificación pendiente.</b> Faltan mediciones, datos o validaciones obligatorias para cerrar la memoria.</div>';
+    } else if (estadosTecnicos.length) {
+      estadoTecnicoWrap.innerHTML = '<div class="alert-success"><b>Estado técnico: verificado.</b> Los circuitos, protecciones, puesta a tierra y el protocolo de ensayos completaron las comprobaciones aplicables.</div>';
+    } else {
+      estadoTecnicoWrap.innerHTML = '<div class="alert-warning"><b>Estado técnico: pendiente.</b> No hay circuitos para comprobar.</div>';
+    }
+
     $('#resumen-proteccion-general').hidden = !pg.aplica;
     if (pg.aplica) {
       $('#resumen-proteccion-general-stats').innerHTML = proteccionGeneralLightHtml(pg);
       $('#resumen-diferencial-sensibilidad').value = String(pg.diferencialSensibilidad);
       $('#resumen-diferencial-tipo').value = tipoDiferencialGeneral(pg);
+      $('#resumen-diferencial-selectividad').value = pg.diferencialSelectividad === 'S' ? 'S' : 'instantaneo';
+      $('#resumen-tierra-ambiente').value = pg.ambienteTierra;
+      $('#resumen-tierra-resistencia').value = pg.resistenciaTierraOhm !== null ? String(pg.resistenciaTierraOhm) : '';
+      $('#resumen-tiempo-diferencial-general').value = pg.tiempoDiferencialGeneralS !== null ? String(pg.tiempoDiferencialGeneralS) : '';
+      const esquemaCI = esquemaContactosIndirectos(draft);
+      $('#resumen-esquema-contactos').textContent = esquemaCI;
+      $('#resumen-it-campos').hidden = esquemaCI !== 'IT';
+      $('#resumen-it-imd').value = pg.monitorAislamientoIt === true ? 'si' : (pg.monitorAislamientoIt === false ? 'no' : 'desconocido');
+      $('#resumen-it-masas').value = pg.masasInterconectadasIt === true ? 'si' : (pg.masasInterconectadasIt === false ? 'no' : 'desconocido');
+      $('#resumen-it-id').value = pg.corrientePrimerDefectoMa !== null ? String(pg.corrientePrimerDefectoMa) : '';
+      $('#resumen-eqp-principal-aplica').value = pg.equipotencialPrincipalAplica || 'pendiente';
+      $('#resumen-eqp-principal-seccion').value = pg.equipotencialPrincipalSeccion !== null && pg.equipotencialPrincipalSeccion !== undefined ? String(pg.equipotencialPrincipalSeccion) : '';
+      $('#resumen-eqp-principal-continuidad').value = pg.equipotencialPrincipalContinuidad || 'pendiente';
+      $('#resumen-eqp-suplementaria-aplica').value = pg.equipotencialSuplementariaAplica || 'no';
+      $('#resumen-eqp-suplementaria-seccion').value = pg.equipotencialSuplementariaSeccion !== null && pg.equipotencialSuplementariaSeccion !== undefined ? String(pg.equipotencialSuplementariaSeccion) : '';
+      $('#resumen-eqp-suplementaria-continuidad').value = pg.equipotencialSuplementariaContinuidad || 'pendiente';
+      $('#resumen-eqp-verificacion').innerHTML = '<div class="' + (verEq.estado==='cumple'?'alert-success':(verEq.estado==='no_cumple'?'alert-error':'alert-warning')) + '"><b>PE y equipotencialidad: ' + (verEq.estado==='cumple'?'verificado':(verEq.estado==='no_cumple'?'no cumple':'pendiente')) + '.</b> ' + escapeHtml(verEq.causas.concat(verEq.pendientes).join(' ')) + '</div>';
+      if (!draft.protocoloEnsayos) draft.protocoloEnsayos={fecha:'',tecnico:'',instrumento:'',serie:'',calibracion:'pendiente'};
+      $('#resumen-protocolo-fecha').value = draft.protocoloEnsayos.fecha || '';
+      $('#resumen-protocolo-tecnico').value = draft.protocoloEnsayos.tecnico || '';
+      $('#resumen-protocolo-instrumento').value = draft.protocoloEnsayos.instrumento || '';
+      $('#resumen-protocolo-serie').value = draft.protocoloEnsayos.serie || '';
+      $('#resumen-protocolo-calibracion').value = draft.protocoloEnsayos.calibracion || 'pendiente';
+      $('#resumen-prueba-funcional').value = pg.ensayoFuncionalProtecciones || 'pendiente';
+      $('#resumen-ensayo-rcd-general').value = pg.ensayoRcdGeneral || 'pendiente';
+      $('#resumen-protocolo-verificacion').innerHTML = '<div class="' + (verProto.estado==='cumple'?'alert-success':(verProto.estado==='no_cumple'?'alert-error':'alert-warning')) + '"><b>Protocolo de ensayos: ' + (verProto.estado==='cumple'?'completo':(verProto.estado==='no_cumple'?'no conforme':'pendiente')) + '.</b> ' + escapeHtml(verProto.causas.concat(verProto.pendientes).slice(0,4).join(' ')) + (verProto.causas.length+verProto.pendientes.length>4?' …':'') + '</div>';
+      $('#resumen-pg-existente').hidden = pg.modo !== 'existente';
+      if (pg.modo === 'existente') {
+        $('#resumen-termica-existente').value = pg.termicaIn !== null ? String(pg.termicaIn) : '';
+        $('#resumen-diferencial-existe').value = pg.diferencialExiste === true ? 'si' : (pg.diferencialExiste === false ? 'no' : 'desconocido');
+        $('#resumen-diferencial-in-existente').value = pg.diferencialIn !== null ? String(pg.diferencialIn) : '';
+      }
+      $('#resumen-sobretensiones-riesgo').value = pg.sobretensionesRiesgo;
+      $('#resumen-pararrayos-lps').value = pg.pararrayosLps;
+      $('#resumen-spd-existe').value = pg.spdExiste;
+      $('#resumen-spd-tipo').value = pg.spdTipo || '';
+      $('#resumen-proteccion-general-verificacion').innerHTML = proteccionGeneralVerificacionHtml(verPg);
       const rcd = diferencialesDedicados(draft.circuitos, tipoDiferencialGeneral(pg));
-      $('#resumen-diferenciales').innerHTML =
-        (rcd.dedicados.length
+      const generalRcdDisponible = diferencialGeneralDisponible(pg);
+      $('#resumen-diferenciales').innerHTML = !generalRcdDisponible
+        ? '<div class="alert-warning"><b>Cobertura diferencial de los circuitos: pendiente.</b> No se declara ningún circuito como cubierto por el diferencial general hasta confirmar/instalar ese dispositivo. Los tipos requeridos por cargas electrónicas siguen mostrándose en cada circuito.</div>'
+        : (rcd.dedicados.length
           ? rcd.dedicados.map((d) => '<div class="light-stat-row"><span class="lbl">' + escapeHtml(d.circuito.nombre || 'Circuito') +
               '</span><span class="val strong">Diferencial dedicado tipo ' + d.tipo + '</span></div>').join('')
-          : '<div class="light-stat-row"><span class="lbl">Diferenciales por circuito</span><span class="val">Todos quedan cubiertos por el general</span></div>') +
+          : '<div class="light-stat-row"><span class="lbl">Diferenciales por circuito</span><span class="val">Cubiertos por el diferencial general relevado/proyectado</span></div>') +
         rcd.avisos.map((a) => '<div class="alert-error" style="margin-top:8px">' + escapeHtml(a) + '</div>').join('');
+
+      const selTerm = comprobarSelectividadTermicas(draft);
+      const selRcd = comprobarSelectividadDiferenciales(draft);
+      const estadoSel = (e) => e === 'cumple' ? '<span class="badge-apto">Verificada</span>' : (e === 'no_aplica' ? '<span class="badge-pendiente">No aplica</span>' : (e === 'no_selectiva' ? '<span class="badge-noapto">No selectiva</span>' : '<span class="badge-pendiente">Pendiente</span>'));
+      $('#resumen-diferenciales').innerHTML += '<div class="section-label" style="margin-top:14px">Coordinación y selectividad</div>' +
+        '<div class="light-stat-row"><span class="lbl">Térmicas general ↔ circuitos</span><span class="val">' + estadoSel(selTerm.estado) + '</span></div>' +
+        selTerm.detalles.map((x)=>'<div class="hint" style="margin:4px 0 8px"><b>'+escapeHtml(x.circuito)+':</b> '+escapeHtml(x.motivo)+'</div>').join('') +
+        '<div class="light-stat-row"><span class="lbl">Diferenciales en cascada</span><span class="val">' + estadoSel(selRcd.estado) + '</span></div>' +
+        selRcd.detalles.map((x)=>'<div class="hint" style="margin:4px 0 8px"><b>'+escapeHtml(x.circuito)+':</b> '+escapeHtml(x.motivo)+'</div>').join('');
     }
 
     $('#resumen-materiales-count').textContent = draft.materiales.length + ' ítems';
     const mWrap = $('#resumen-materiales-preview');
     mWrap.innerHTML = '';
+    if (draft.materialesDesactualizados) {
+      mWrap.appendChild(el('div', { class: 'alert-warning', html: '<b>Materiales desactualizados.</b> Volvé al paso Materiales y usá Regenerar.' }));
+    }
     draft.materiales.slice(0, 3).forEach((m) => {
       mWrap.appendChild(el('div', { class: 'light-stat-row', html: '<span class="lbl">' + escapeHtml(m.nombre) + '</span><span class="val">' + fmt(m.cantidad, 0) + ' ' + escapeHtml(m.unidad) + '</span>' }));
     });
     if (draft.materiales.length > 3) mWrap.appendChild(el('div', { class: 'light-stat-row', html: '<span class="lbl" style="color:var(--steel)">+' + (draft.materiales.length - 3) + ' más</span><span></span>' }));
 
     $('#resumen-observaciones').value = draft.observaciones;
+    renderCierreProfesional();
+  }
+
+  function cierreBase(trabajo) {
+    if (!trabajo.cierreProfesional || typeof trabajo.cierreProfesional !== 'object') trabajo.cierreProfesional = { responsableNombre:'', categoriaUTE:'', fecha:'', declaracion:'pendiente', firmaDataUrl:'', fotos:[] };
+    if (!Array.isArray(trabajo.cierreProfesional.fotos)) trabajo.cierreProfesional.fotos = [];
+    return trabajo.cierreProfesional;
+  }
+
+  function evaluarCierreProfesional(trabajo) {
+    const c = cierreBase(trabajo);
+    const faltantes = [], fallas = [], ok = [];
+    const tramite = trabajo.obra && trabajo.obra.naturaleza === 'Trámite';
+    if (!trabajo.cliente || !String(trabajo.cliente.nombre || '').trim()) faltantes.push('Identificar al cliente.'); else ok.push('Cliente identificado.');
+    if (!trabajo.obra || !String(trabajo.obra.nombre || '').trim()) faltantes.push('Identificar la obra.'); else ok.push('Obra identificada.');
+    if (!String(c.responsableNombre || '').trim()) faltantes.push('Ingresar responsable técnico.');
+    if (!String(c.categoriaUTE || '').trim()) faltantes.push('Ingresar categoría UTE / habilitación del responsable.');
+    if (!c.fecha) faltantes.push('Ingresar fecha de cierre.');
+    if (c.declaracion !== 'si') faltantes.push('Confirmar la declaración del responsable técnico.');
+    if (!tramite) {
+      if (!(trabajo.circuitos || []).length) faltantes.push('Agregar al menos un circuito.');
+      const caida = caidaPreviaDe(trabajo), ctx = contextoCortocircuito(trabajo);
+      (trabajo.circuitos || []).forEach((circ, i) => {
+        const calc = calcularCircuito(circ, caida);
+        if (!calc.apto) { fallas.push('C' + (i+1) + ': no apto con los parámetros actuales.'); return; }
+        const comp = comprobarCircuito(datosCircuito(circ, caida, ctx));
+        if (comp.estado === 'no_cumple') fallas.push('C' + (i+1) + ': no cumple.');
+        else if (comp.estado === 'pendiente') faltantes.push('C' + (i+1) + ': verificación técnica pendiente.');
+      });
+      const pg = calcularProteccionGeneral(trabajo);
+      const vpg = comprobarProteccionGeneral(trabajo, pg);
+      if (pg.aplica && vpg.estado === 'no_cumple') fallas.push('Protección general / puesta a tierra: no cumple.');
+      else if (pg.aplica && vpg.estado === 'pendiente') faltantes.push('Protección general / puesta a tierra: pendiente.');
+      const veq = comprobarEquipotencialidad(trabajo);
+      if (veq.estado === 'no_cumple') fallas.push('PE / equipotencialidad: no cumple.');
+      else if (veq.estado === 'pendiente') faltantes.push('PE / equipotencialidad: pendiente.');
+      const vp = comprobarProtocoloEnsayos(trabajo);
+      if (vp.estado === 'no_cumple') fallas.push('Protocolo de ensayos: no conforme.');
+      else if (vp.estado === 'pendiente') faltantes.push('Protocolo de ensayos: pendiente.');
+      if (trabajo.materialesDesactualizados) faltantes.push('Regenerar la lista de materiales.');
+    }
+    const estado = fallas.length ? 'no_cumple' : (faltantes.length ? 'pendiente' : 'listo');
+    c.estadoFinal = estado;
+    c.ultimaRevision = Date.now();
+    return { estado, faltantes, fallas, ok };
+  }
+
+  function renderCierreProfesional() {
+    if (!draft || !$('#cierre-revision')) return;
+    const c = cierreBase(draft);
+    $('#cierre-responsable').value = c.responsableNombre || '';
+    $('#cierre-categoria').value = c.categoriaUTE || '';
+    $('#cierre-fecha').value = c.fecha || '';
+    $('#cierre-declaracion').value = c.declaracion || 'pendiente';
+    $('#cierre-firma-estado').textContent = c.firmaDataUrl ? 'Firma gráfica adjunta al proyecto.' : 'Sin firma gráfica adjunta.';
+    const r = evaluarCierreProfesional(draft);
+    const badge = $('#cierre-badge');
+    badge.className = r.estado === 'listo' ? 'badge-apto' : (r.estado === 'no_cumple' ? 'badge-noapto' : 'badge-pendiente');
+    badge.textContent = r.estado === 'listo' ? 'Listo para emitir' : (r.estado === 'no_cumple' ? 'No cumple' : 'Pendiente');
+    const mensajes = r.fallas.concat(r.faltantes);
+    $('#cierre-revision').innerHTML = mensajes.length
+      ? '<div class="' + (r.fallas.length ? 'alert-error' : 'alert-warning') + '"><b>' + (r.fallas.length ? 'No se puede cerrar como definitivo.' : 'Revisión final pendiente.') + '</b><ul style="margin:7px 0 0;padding-left:18px">' + mensajes.slice(0,10).map(x=>'<li>'+escapeHtml(x)+'</li>').join('') + (mensajes.length>10?'<li>… y '+(mensajes.length-10)+' punto(s) más.</li>':'') + '</ul></div>'
+      : '<div class="alert-success"><b>Listo para emitir.</b> La revisión final no detecta incumplimientos ni datos críticos pendientes.</div>';
+    const fotos = c.fotos || [];
+    $('#cierre-fotos-lista').innerHTML = fotos.length ? fotos.map((f,i)=>'<div class="light-stat-row"><span class="lbl">'+escapeHtml(f.nombre||('Foto '+(i+1)))+'</span><button class="btn btn-ghost btn-sm" type="button" data-quitar-foto="'+i+'">Quitar</button></div>').join('') : '<div class="hint">Sin anexos fotográficos.</div>';
+    $$('[data-quitar-foto]', $('#cierre-fotos-lista')).forEach(btn=>btn.addEventListener('click',()=>{ c.fotos.splice(Number(btn.dataset.quitarFoto),1); renderCierreProfesional(); }));
+  }
+
+  function comprimirImagenArchivo(file, maxPx, calidad) {
+    return new Promise((resolve,reject)=>{
+      const rd=new FileReader(); rd.onerror=reject; rd.onload=()=>{
+        const img=new Image(); img.onerror=reject; img.onload=()=>{
+          const esc=Math.min(1,(maxPx||1000)/Math.max(img.width,img.height));
+          const cv=document.createElement('canvas'); cv.width=Math.max(1,Math.round(img.width*esc)); cv.height=Math.max(1,Math.round(img.height*esc));
+          cv.getContext('2d').drawImage(img,0,0,cv.width,cv.height); resolve(cv.toDataURL('image/jpeg',calidad||0.72));
+        }; img.src=rd.result;
+      }; rd.readAsDataURL(file);
+    });
   }
 
   function syncFormToDraftSoft() {
@@ -3841,6 +5439,12 @@
             : { plaza: ' (de plaza, no verificada)', subestacion: ' (falta: subestación propia)' }[c.iccFuente]) +
           (c.icu60947Ka !== null ? ' · Icu IEC 60947-2 ' + fmt(c.icu60947Ka) + ' kA, sólo informativo' : ''),
         'UTE RBT Cap. V §1.b · Anexo Tabla A') +
+      filaComprobacion('Icc mínima / despeje al final', c.cumpleIccMinima,
+        c.iccMinFinalA === null ? 'Icc mínima final pendiente' : fmt(c.iccMinFinalA,0) + ' A' + (c.umbralMagneticoA ? ' · umbral magnético ' + fmt(c.umbralMagneticoA,0) + ' A (' + c.curvaProteccion + ')' : '') + (c.tiempoAdmisibleIccMinS !== null ? ' · t térmico admisible ' + fmt(c.tiempoAdmisibleIccMinS,3) + ' s' : ''),
+        'UTE RBT Cap. II - Anexo §7 + IEC 60898-1') +
+      filaComprobacion('Tiempo de actuación a Ik,min', c.cumpleTiempoDesconexion,
+        c.tiempoDesconexionVerificadoS !== null ? fmt(c.tiempoDesconexionVerificadoS,3) + ' s' + (c.tiempoAdmisibleIccMinS !== null ? ' ≤ ' + fmt(c.tiempoAdmisibleIccMinS,3) + ' s admisibles' : '') : 'Pendiente',
+        'Curva tiempo-corriente / cota magnética IEC 60898-1; límite térmico UTE Anexo §7') +
       filaComprobacion('Cortocircuito térmico', c.cumpleTermicaCorto,
         c.i2tExigido === null
           ? 'Admisible ' + (c.i2tAdmisible === null ? '—' : fmt(c.i2tAdmisible / 1000, 0) + ' kA²s')
@@ -3848,10 +5452,10 @@
         'UTE RBT Cap. II - Anexo §7' + (c.tipoProteccion === 'mcb' ? ' · energía pasante del termomagnético' : '')) +
       '</div>';
     html += '<div style="margin-top:12px">' + (c.estado === 'cumple'
-      ? '<span class="badge-apto">' + icon('ic-check-circle') + 'Circuito verificado</span>'
+      ? '<span class="badge-apto">' + icon('ic-check-circle') + 'Circuito técnicamente verificado</span>'
       : (c.estado === 'pendiente'
-        ? '<span class="badge-pendiente">Verificación pendiente</span>'
-        : '<span class="badge-noapto">' + icon('ic-x-circle') + 'Circuito no verificado</span>')) + '</div>';
+        ? '<span class="badge-pendiente">Dimensionado preliminar · verificación pendiente</span>'
+        : '<span class="badge-noapto">' + icon('ic-x-circle') + 'Circuito no cumple</span>')) + '</div>';
     if (c.causas.length) {
       html += '<ul style="margin:10px 0 0;padding-left:18px;font-size:0.82rem;color:var(--error)">' +
         c.causas.map((x) => '<li>' + escapeHtml(x) + '</li>').join('') + '</ul>';
@@ -3905,6 +5509,8 @@
       metodo: $('#cond-metodo').value, aislacion: $('#cond-aislacion').value,
       tempAmb: Number($('#cond-temp').value) || 30, agrupados: Number($('#cond-agrupados').value) || 1,
       disposicion: $('#cond-disposicion').value,
+      resistividadTerreno: Number($('#cond-terreno-rho').value) || null,
+      profundidadEnterrado: Number($('#cond-terreno-prof').value) || null,
       montaje: $('#cond-montaje').value,
       separados2De: $('#cond-separados').value === '1',
       cosPhi, caidaMax: Number($('#cond-caidamax').value) || 5, uso: $('#cond-uso').value,
@@ -3925,12 +5531,12 @@
     $('#cond-tiempo-wrap').hidden = esMcb;
     $('#cond-icu-wrap').hidden = !esMcb;
     $('#cond-podercorte-label').textContent = esMcb ? 'Icn IEC 60898-1 (kA)' : 'Icu IEC 60947-2 (kA)';
-    $('#cond-temp-label').textContent = datos.metodo === 'enterrado' ? 'Temp. terreno (°C)' : 'Temp. ambiente (°C)';
     // montaje y separación cuentan al aire y en bandeja; los caños, enterrado
     const alAire = pideMontaje(datos.metodo);
     $('#cond-montaje-wrap').hidden = !alAire;
     $('#cond-aire-nota').hidden = !(datos.metodo === 'aire' && NORMATIVE_PACK.parametros.aireLibreSeparado);
     $('#cond-disposicion-wrap').hidden = datos.metodo !== 'enterrado';
+    $('#cond-terreno-wrap').hidden = datos.metodo !== 'enterrado';
     if (alAire && $('#cond-montaje').dataset.metodo !== datos.metodo) {
       // al cambiar de método se propone el montaje típico de ese método
       $('#cond-montaje').value = MONTAJE_DEFECTO[datos.metodo];
@@ -3938,15 +5544,16 @@
       datos.montaje = MONTAJE_DEFECTO[datos.metodo];
     }
     if ($('#cond-temp').dataset.metodo !== datos.metodo) {
-      // enterrado se propone a temperatura de terreno (25 °C, supuesto 1) en
-      // vez de la de aire (30 °C), salvo que ya se haya tocado el campo
-      if (datos.metodo === 'enterrado' && datos.tempAmb === TEMP_AMBIENTE_DEFECTO) {
-        $('#cond-temp').value = TEMP_TERRENO_ENTERRADO_DEFECTO;
-        datos.tempAmb = TEMP_TERRENO_ENTERRADO_DEFECTO;
-      } else if (datos.metodo !== 'enterrado' && datos.tempAmb === TEMP_TERRENO_ENTERRADO_DEFECTO) {
+      // enterrado se propone a temperatura de terreno (25 °C, supuesto 1) y
+      // resistividad estándar de UTE (1,0 K·m/W), salvo que ya se hayan tocado
+      if (datos.metodo === 'enterrado') {
+        if (datos.tempAmb === TEMP_AMBIENTE_DEFECTO) { $('#cond-temp').value = TEMP_TERRENO_ENTERRADO_DEFECTO; datos.tempAmb = TEMP_TERRENO_ENTERRADO_DEFECTO; }
+        if (!(Number($('#cond-terreno-rho').value) > 0)) { $('#cond-terreno-rho').value = RESISTIVIDAD_TERRENO_UTE_DEFECTO; datos.resistividadTerreno = RESISTIVIDAD_TERRENO_UTE_DEFECTO; }
+      } else if (datos.tempAmb === TEMP_TERRENO_ENTERRADO_DEFECTO) {
         $('#cond-temp').value = TEMP_AMBIENTE_DEFECTO;
         datos.tempAmb = TEMP_AMBIENTE_DEFECTO;
       }
+      $('#cond-temp-label').textContent = datos.metodo === 'enterrado' ? 'Temp. terreno (°C)' : 'Temp. ambiente (°C)';
       $('#cond-temp').dataset.metodo = datos.metodo;
     }
     const r = calcularSeccion(datos);
@@ -4008,6 +5615,7 @@
     copia.codigo = 'REL-' + new Date().getFullYear() + '-' + String(DB.trabajos.length + 1).padStart(4, '0');
     copia.obra = { ...copia.obra, nombre: (copia.obra.nombre || 'Obra') + ' (copia)' };
     copia.estado = 'pendiente';
+    copia.cierreProfesional = { responsableNombre:'', categoriaUTE:'', fecha:'', declaracion:'pendiente', firmaDataUrl:'', fotos:[] };
     copia.createdAt = Date.now();
     copia.updatedAt = Date.now();
     DB.trabajos.push(copia);
@@ -4103,6 +5711,8 @@
   function renderPerfil() {
     $('#perfil-count-trabajos').textContent = DB.trabajos.length;
     $('#perfil-count-presupuestos').textContent = DB.presupuestos.length;
+    const schemaEl = $('#perfil-schema-version');
+    if (schemaEl) schemaEl.textContent = 'v' + DB_SCHEMA_VERSION;
     $('#perfil-margen').value = DB.settings.margen;
     $('#perfil-iva').value = DB.settings.iva;
     $('#perfil-tarifahora').value = DB.settings.manoObra.tarifaHora;
@@ -4181,7 +5791,7 @@
         { key: 'diferencialB2P', tipo: 'mapa', etiqueta: (a) => 'Bipolar ' + a + 'A' },
         { key: 'diferencialB4P', tipo: 'mapa', etiqueta: (a) => 'Tetrapolar ' + a + 'A' },
       ],
-      nota: 'Bipolar de 25 y 40A: Tongou TORD4B-63 2P 40A, de MercadoLibre (USD 247 de lista el 21/09/2026), que es gama económica; el de 25A toma ese mismo precio. El de 63A y los tetrapolares son Schneider Acti9 iID B-SI (A9Z612xx / A9Z614xx) de WiAutomation, que salieron menos que los ABB equivalentes. Alternativas relevadas para cargar a mano: Schneider 2P 25A $ 17.285 y 2P 40A $ 19.411, ABB F202 B-25 $ 16.592 y ABB F204 B de 25, 40 y 63A ($ 26.660 / $ 22.001 / $ 23.053). Es la protección del cargador de auto y de la fotovoltaica: si el equipo ya trae el monitor de continua de 6 mA, alcanza con un tipo A y este costo no va.',
+      nota: 'Bipolar de 25 y 40A: Tongou TORD4B-63 2P 40A, de MercadoLibre (USD 247 de lista el 21/09/2026), que es gama económica; el de 25A toma ese mismo precio. El de 63A y los tetrapolares son Schneider Acti9 iID B-SI (A9Z612xx / A9Z614xx) de WiAutomation, que salieron menos que los ABB equivalentes. Alternativas relevadas para cargar a mano: Schneider 2P 25A $ 17.285 y 2P 40A $ 19.411, ABB F202 B-25 $ 16.592 y ABB F204 B de 25, 40 y 63A ($ 26.660 / $ 22.001 / $ 23.053). Se usa cuando el circuito queda configurado con diferencial tipo B (por ejemplo, VE modo 3 sin RDC-DD de 6 mA o cuando el fabricante/equipo lo exige). En VE no siempre corresponde B: con RDC-DD de 6 mA puede corresponder A/F según UTE Cap. XXX y el modo de carga.',
     },
     {
       titulo: 'Puntos de luz y de toma ($/un.)',
@@ -4407,7 +6017,7 @@
       if (!data || !Array.isArray(data.trabajos) || !Array.isArray(data.presupuestos) || !data.settings) {
         toast('La copia no tiene el formato esperado'); return;
       }
-      DB = data;
+      DB = migrarEsquemaDB(data).db;
       if (!DB.settings.precios) DB.settings.precios = clonePrecios(DEFAULT_PRECIOS);
       if (!DB.settings.manoObra) DB.settings.manoObra = { ...DEFAULT_MANO_OBRA };
       if (!DB.seq) DB.seq = { trabajo: 0, presupuesto: 0 };
@@ -4437,7 +6047,7 @@
         toast('Archivo inválido'); return;
       }
       if (!confirm('Esto reemplaza TODOS los datos actuales de este dispositivo por los del archivo. ¿Continuar?')) return;
-      DB = data;
+      DB = migrarEsquemaDB(data).db;
       if (!DB.settings.precios) DB.settings.precios = clonePrecios(DEFAULT_PRECIOS);
       if (!DB.settings.manoObra) DB.settings.manoObra = { ...DEFAULT_MANO_OBRA };
       if (!DB.seq) DB.seq = { trabajo: 0, presupuesto: 0 };
@@ -4646,11 +6256,23 @@
       draft.acometida.seccion = Number($('#f-acom-seccion').value) || null;
       renderCircuitosList();
     });
+    $('#f-acom-neutro').addEventListener('change', () => {
+      if (!draft.acometida) draft.acometida = { ...ACOMETIDA_DEFECTO };
+      draft.acometida.neutroSeccion = Number($('#f-acom-neutro').value) || null;
+      renderCircuitosList();
+    });
+    $('#f-acom-pe').addEventListener('change', () => {
+      if (!draft.acometida) draft.acometida = { ...ACOMETIDA_DEFECTO };
+      draft.acometida.peSeccion = Number($('#f-acom-pe').value) || null;
+      renderCircuitosList();
+    });
     $('#btn-add-circuito').addEventListener('click', () => {
       const sistema = SISTEMAS[draft.sistemaId];
-      draft.circuitos.push({ id: uid('m2'), nombre: '', ib: 10, v: sistema.v, fases: sistema.fases, l: 15,
+      draft.circuitos.push({ id: uid('m2'), nombre: '', ib: 10, v: 230, fases: 1,
+        fasesConfirmadas: sistema.fases === 1, sistemaId: sistema.id, faseAsignada: '', faseManual: false, l: 15,
         material: 'cobre', metodo: 'embutido', aislacion: 'pvc', tempAmb: 30, agrupados: 1,
-        caidaMax: CAIDA_MAX_DEFAULT.fuerza, cosPhi: 1, uso: 'fuerza', expuestoSol: false, tipoProteccion: 'mcb' });
+        caidaMax: CAIDA_MAX_DEFAULT.fuerza, cosPhi: 1, uso: 'fuerza', expuestoSol: false, tipoProteccion: 'mcb', curvaProteccion: '', selectividadFabricante: 'pendiente', selectividadLimiteKa: null,
+        iccMinFinalA: null, zCortoFinalOhm: null, tiempoDesconexionVerificadoS: null });
       renderCircuitosList();
     });
     $('#btn-add-material').addEventListener('click', () => {
@@ -4659,6 +6281,7 @@
     });
     $('#btn-regenerar-materiales').addEventListener('click', () => {
       draft.materiales = generarMateriales(draft.circuitos, draft);
+      draft.materialesDesactualizados = false;
       // Se guarda en el acto: si no, alguien regenera, se va derecho a hacer el
       // PDF y sale con la lista vieja, porque el PDF lee el relevamiento
       // guardado y no el borrador en pantalla.
@@ -4669,13 +6292,70 @@
     $('#resumen-estado').addEventListener('change', () => { draft.estado = $('#resumen-estado').value; });
     $('#resumen-diferencial-tipo').innerHTML = TIPOS_DIFERENCIAL.map((t) => '<option value="' + t.v + '">' + t.label + '</option>').join('');
     $('#resumen-diferencial-tipo').addEventListener('change', () => {
-      if (!draft.proteccionGeneral) draft.proteccionGeneral = { diferencialSensibilidad: 30 };
+      if (!draft.proteccionGeneral) draft.proteccionGeneral = { diferencialSensibilidad: 30, ambienteTierra: 'seco', resistenciaTierraOhm: null, diferencialExiste: 'desconocido', termicaExistenteA: null, diferencialExistenteA: null, sobretensionesRiesgo: 'pendiente', pararrayosLps: 'desconocido', spdExiste: 'desconocido', spdTipo: '' };
       draft.proteccionGeneral.diferencialTipo = $('#resumen-diferencial-tipo').value;
       renderResumen();
     });
-    $('#resumen-diferencial-sensibilidad').addEventListener('change', () => {
-      draft.proteccionGeneral.diferencialSensibilidad = Number($('#resumen-diferencial-sensibilidad').value);
+    $('#resumen-diferencial-selectividad').addEventListener('change', () => {
+      if (!draft.proteccionGeneral) draft.proteccionGeneral = { diferencialSensibilidad:30 };
+      draft.proteccionGeneral.diferencialSelectividad = $('#resumen-diferencial-selectividad').value === 'S' ? 'S' : 'instantaneo';
+      renderResumen();
     });
+    $('#resumen-diferencial-sensibilidad').addEventListener('change', () => {
+      if (!draft.proteccionGeneral) draft.proteccionGeneral = { diferencialSensibilidad: 30, ambienteTierra: 'seco', resistenciaTierraOhm: null, diferencialExiste: 'desconocido', termicaExistenteA: null, diferencialExistenteA: null, sobretensionesRiesgo: 'pendiente', pararrayosLps: 'desconocido', spdExiste: 'desconocido', spdTipo: '' };
+      draft.proteccionGeneral.diferencialSensibilidad = Number($('#resumen-diferencial-sensibilidad').value);
+      renderResumen();
+    });
+    $('#resumen-tierra-ambiente').addEventListener('change', () => {
+      if (!draft.proteccionGeneral) draft.proteccionGeneral = { diferencialSensibilidad: 30, ambienteTierra: 'seco', resistenciaTierraOhm: null, diferencialExiste: 'desconocido', termicaExistenteA: null, diferencialExistenteA: null, sobretensionesRiesgo: 'pendiente', pararrayosLps: 'desconocido', spdExiste: 'desconocido', spdTipo: '' };
+      draft.proteccionGeneral.ambienteTierra = $('#resumen-tierra-ambiente').value === 'humedo' ? 'humedo' : 'seco';
+      renderResumen();
+    });
+    $('#resumen-tierra-resistencia').addEventListener('change', () => {
+      if (!draft.proteccionGeneral) draft.proteccionGeneral = { diferencialSensibilidad: 30, ambienteTierra: 'seco', resistenciaTierraOhm: null, diferencialExiste: 'desconocido', termicaExistenteA: null, diferencialExistenteA: null, sobretensionesRiesgo: 'pendiente', pararrayosLps: 'desconocido', spdExiste: 'desconocido', spdTipo: '' };
+      const v = Number($('#resumen-tierra-resistencia').value);
+      draft.proteccionGeneral.resistenciaTierraOhm = v > 0 ? v : null;
+      renderResumen();
+    });
+    $('#resumen-tiempo-diferencial-general').addEventListener('change', () => {
+      const v = Number($('#resumen-tiempo-diferencial-general').value); draft.proteccionGeneral.tiempoDiferencialGeneralS = v > 0 ? v : null; renderResumen();
+    });
+    $('#resumen-it-imd').addEventListener('change', () => { draft.proteccionGeneral.monitorAislamientoIt = $('#resumen-it-imd').value; renderResumen(); });
+    $('#resumen-it-masas').addEventListener('change', () => { draft.proteccionGeneral.masasInterconectadasIt = $('#resumen-it-masas').value; renderResumen(); });
+    $('#resumen-it-id').addEventListener('change', () => { const v=Number($('#resumen-it-id').value); draft.proteccionGeneral.corrientePrimerDefectoMa = v>0?v:null; renderResumen(); });
+    $('#resumen-eqp-principal-aplica').addEventListener('change',()=>{draft.proteccionGeneral.equipotencialPrincipalAplica=$('#resumen-eqp-principal-aplica').value;renderResumen();});
+    $('#resumen-eqp-principal-seccion').addEventListener('change',()=>{const v=Number($('#resumen-eqp-principal-seccion').value);draft.proteccionGeneral.equipotencialPrincipalSeccion=v>0?v:null;renderResumen();});
+    $('#resumen-eqp-principal-continuidad').addEventListener('change',()=>{draft.proteccionGeneral.equipotencialPrincipalContinuidad=$('#resumen-eqp-principal-continuidad').value;renderResumen();});
+    $('#resumen-eqp-suplementaria-aplica').addEventListener('change',()=>{draft.proteccionGeneral.equipotencialSuplementariaAplica=$('#resumen-eqp-suplementaria-aplica').value;renderResumen();});
+    $('#resumen-eqp-suplementaria-seccion').addEventListener('change',()=>{const v=Number($('#resumen-eqp-suplementaria-seccion').value);draft.proteccionGeneral.equipotencialSuplementariaSeccion=v>0?v:null;renderResumen();});
+    $('#resumen-eqp-suplementaria-continuidad').addEventListener('change',()=>{draft.proteccionGeneral.equipotencialSuplementariaContinuidad=$('#resumen-eqp-suplementaria-continuidad').value;renderResumen();});
+    ['fecha','tecnico','instrumento','serie'].forEach((f)=>{
+      $('#resumen-protocolo-'+f).addEventListener('change',()=>{ if(!draft.protocoloEnsayos) draft.protocoloEnsayos={fecha:'',tecnico:'',instrumento:'',serie:'',calibracion:'pendiente'}; draft.protocoloEnsayos[f]=$('#resumen-protocolo-'+f).value.trim(); renderResumen(); });
+    });
+    $('#resumen-protocolo-calibracion').addEventListener('change',()=>{ if(!draft.protocoloEnsayos) draft.protocoloEnsayos={}; draft.protocoloEnsayos.calibracion=$('#resumen-protocolo-calibracion').value; renderResumen(); });
+    $('#resumen-prueba-funcional').addEventListener('change',()=>{draft.proteccionGeneral.ensayoFuncionalProtecciones=$('#resumen-prueba-funcional').value;renderResumen();});
+    $('#resumen-ensayo-rcd-general').addEventListener('change',()=>{draft.proteccionGeneral.ensayoRcdGeneral=$('#resumen-ensayo-rcd-general').value;renderResumen();});
+    $('#resumen-termica-existente').addEventListener('change', () => {
+      const v = Number($('#resumen-termica-existente').value); draft.proteccionGeneral.termicaExistenteA = v > 0 ? v : null; renderResumen();
+    });
+    $('#resumen-diferencial-existe').addEventListener('change', () => { draft.proteccionGeneral.diferencialExiste = $('#resumen-diferencial-existe').value; renderResumen(); });
+    $('#resumen-diferencial-in-existente').addEventListener('change', () => {
+      const v = Number($('#resumen-diferencial-in-existente').value); draft.proteccionGeneral.diferencialExistenteA = v > 0 ? v : null; renderResumen();
+    });
+    $('#resumen-sobretensiones-riesgo').addEventListener('change', () => { draft.proteccionGeneral.sobretensionesRiesgo = $('#resumen-sobretensiones-riesgo').value; renderResumen(); });
+    $('#resumen-pararrayos-lps').addEventListener('change', () => { draft.proteccionGeneral.pararrayosLps = $('#resumen-pararrayos-lps').value; renderResumen(); });
+    $('#resumen-spd-existe').addEventListener('change', () => { draft.proteccionGeneral.spdExiste = $('#resumen-spd-existe').value; renderResumen(); });
+    $('#resumen-spd-tipo').addEventListener('change', () => { draft.proteccionGeneral.spdTipo = $('#resumen-spd-tipo').value; renderResumen(); });
+    ['responsable','categoria','fecha'].forEach((f)=>{
+      $('#cierre-'+f).addEventListener('change',()=>{ const c=cierreBase(draft); const map={responsable:'responsableNombre',categoria:'categoriaUTE',fecha:'fecha'}; c[map[f]]=$('#cierre-'+f).value.trim(); renderCierreProfesional(); });
+    });
+    $('#cierre-declaracion').addEventListener('change',()=>{ cierreBase(draft).declaracion=$('#cierre-declaracion').value; renderCierreProfesional(); });
+    $('#cierre-firma').addEventListener('change', async()=>{ const f=$('#cierre-firma').files[0]; if(!f)return; try{ cierreBase(draft).firmaDataUrl=await comprimirImagenArchivo(f,800,0.72); renderCierreProfesional(); toast('Firma gráfica incorporada'); }catch(e){ toast('No se pudo procesar la firma'); } });
+    $('#cierre-fotos').addEventListener('change', async()=>{ const c=cierreBase(draft); const disponibles=Math.max(0,6-c.fotos.length); const files=Array.from($('#cierre-fotos').files).slice(0,disponibles); for(const f of files){ try{ c.fotos.push({nombre:f.name,dataUrl:await comprimirImagenArchivo(f,1200,0.68)}); }catch(e){} } $('#cierre-fotos').value=''; renderCierreProfesional(); toast('Anexos fotográficos actualizados'); });
+    $('#btn-pdf-memoria').addEventListener('click',()=>generarDocumentoCierre('memoria'));
+    $('#btn-pdf-protocolo').addEventListener('click',()=>generarDocumentoCierre('protocolo'));
+    $('#btn-pdf-unifilar').addEventListener('click',()=>generarDocumentoCierre('unifilar'));
+    $('#btn-pdf-expediente').addEventListener('click',()=>generarDocumentoCierre('expediente'));
     $('#btn-enviar-revision').addEventListener('click', () => { persistDraft('revision'); toast('Enviado a revisión'); showView('home'); });
     $('#btn-crear-presupuesto').addEventListener('click', () => {
       persistDraft();
@@ -4701,6 +6381,7 @@
     });
     // cada uso trae su caída máxima: iluminación admite 3 % y el resto 5 %
     $('#cond-disposicion').addEventListener('change', calcularConductorForm);
+    ['#cond-terreno-rho', '#cond-terreno-prof'].forEach((sel) => $(sel).addEventListener('input', calcularConductorForm));
     $('#cond-montaje').addEventListener('change', calcularConductorForm);
     $('#cond-separados').addEventListener('change', calcularConductorForm);
     ['#cond-sol', '#cond-prot-tipo'].forEach((sel) => $(sel).addEventListener('change', calcularConductorForm));
@@ -4719,8 +6400,10 @@
       const fases = Number($('#cond-fases .active').dataset.fases);
       draft.circuitos.push({
         id: uid('cc'), nombre: 'Circuito (' + $('#cond-uso').value + ')', ib: r.ib, v: Number($('#cond-tension').value), fases,
+        fasesConfirmadas: true, fasesManual: true, sistemaId: draft.sistemaId || 'tri_tt', faseAsignada: '', faseManual: false,
         l: Number($('#cond-longitud').value) || 0, material: $('#cond-material').value, metodo: $('#cond-metodo').value,
         tempAmb: Number($('#cond-temp').value) || 30, agrupados: Number($('#cond-agrupados').value) || 1,
+        resistividadTerreno: Number($('#cond-terreno-rho').value) || null, profundidadEnterrado: Number($('#cond-terreno-prof').value) || 0.5,
         caidaMax: Number($('#cond-caidamax').value) || 5, cosPhi: Number($('#cond-cosphi').value) || 1, uso: $('#cond-uso').value,
       });
       wizardStep = 3; renderWizardForm(); showView('relevamiento'); renderWizardStep();
@@ -4845,7 +6528,7 @@
     y += 10;
 
     doc.setFont('helvetica', 'bold'); doc.setFontSize(16); doc.setTextColor(23, 23, 25);
-    doc.text('Presupuesto ' + p.codigo, margin, y);
+    doc.text((interno ? 'Memoria técnica y presupuesto ' : 'Presupuesto ') + p.codigo, margin, y);
     y += 7;
     doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
     doc.text(pdfTexto('Cliente: ' + (p.clienteNombre || '-')), margin, y);
@@ -4893,11 +6576,73 @@
       y += 4;
     }
 
+    if (interno && trabajo) {
+      const sistemaResumen = SISTEMAS[trabajo.sistemaId] || SISTEMAS.tri_tt;
+      const potenciaResumen = calcularPotencia(trabajo.cargas || [], sistemaResumen, trabajo.factores || {});
+      const previaEstadoPdf = caidaPreviaDe(trabajo);
+      const ctxEstadoPdf = contextoCortocircuito(trabajo);
+      const estadosResumen = [];
+      let cantCumple = 0, cantPendiente = 0, cantNoCumple = 0;
+      (trabajo.circuitos || []).forEach((c) => {
+        const calc = calcularCircuito(c, previaEstadoPdf);
+        const comp = calc.apto ? comprobarCircuito(datosCircuito(c, previaEstadoPdf, ctxEstadoPdf)) : { estado: 'no_cumple' };
+        estadosResumen.push(comp.estado);
+        if (comp.estado === 'cumple') cantCumple++;
+        else if (comp.estado === 'pendiente') cantPendiente++;
+        else cantNoCumple++;
+      });
+      const pgResumen = calcularProteccionGeneral(trabajo);
+      if (pgResumen.aplica) estadosResumen.push(comprobarProteccionGeneral(trabajo, pgResumen).estado);
+      estadosResumen.push(comprobarEquipotencialidad(trabajo).estado);
+      estadosResumen.push(comprobarProtocoloEnsayos(trabajo).estado);
+      const estadoGlobal = estadosResumen.includes('no_cumple') ? 'NO CUMPLE' : (estadosResumen.includes('pendiente') ? 'PENDIENTE' : (estadosResumen.length ? 'VERIFICADO' : 'PENDIENTE'));
+
+      lugarPara(48);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
+      doc.text('RESUMEN TECNICO DE LA INSTALACION', margin, y); y += 5;
+      doc.autoTable({
+        startY: y, margin: margenTablas,
+        head: [['Estado global','Sistema','Pot. instalada','Pot. demandada']],
+        body: pdfFilas([[estadoGlobal, sistemaResumen.nombre || trabajo.sistemaId || '-', fmt(potenciaResumen.potenciaInstalada/1000) + ' kW', fmt(potenciaResumen.pDemandTotal/1000) + ' kW']]),
+        theme:'plain', styles:{fontSize:8,textColor:[23,23,25],cellPadding:{top:2,bottom:2,left:0,right:0},lineWidth:{bottom:0.2},lineColor:[226,227,229]},
+        headStyles:{fontSize:7,textColor:[111,114,119],fontStyle:'bold'}
+      });
+      y = doc.lastAutoTable.finalY + 3;
+      doc.autoTable({
+        startY:y, margin:margenTablas,
+        head:[['Circuitos','Verificados','Pendientes','No cumple']],
+        body:pdfFilas([[(trabajo.circuitos||[]).length, cantCumple, cantPendiente, cantNoCumple]]),
+        theme:'plain', styles:{fontSize:8,textColor:[23,23,25],cellPadding:{top:2,bottom:2,left:0,right:0},lineWidth:{bottom:0.2},lineColor:[226,227,229]},
+        headStyles:{fontSize:7,textColor:[111,114,119],fontStyle:'bold'},
+        columnStyles:{0:{halign:'right'},1:{halign:'right'},2:{halign:'right'},3:{halign:'right'}}
+      });
+      y = doc.lastAutoTable.finalY + 3;
+      const criterioEstado = estadoGlobal === 'VERIFICADO'
+        ? 'La memoria no registra pendientes ni incumplimientos en las comprobaciones aplicables con los datos cargados.'
+        : (estadoGlobal === 'PENDIENTE'
+          ? 'La memoria contiene datos, mediciones o validaciones pendientes. No debe interpretarse como cierre técnico definitivo.'
+          : 'La memoria registra al menos un incumplimiento que debe corregirse antes del cierre técnico.');
+      const resumenNota = doc.splitTextToSize(pdfTexto(criterioEstado), pageWidth - 2*margin);
+      doc.setFont('helvetica','italic'); doc.setFontSize(7); doc.setTextColor(111,114,119); doc.text(resumenNota, margin, y);
+      y += resumenNota.length*3.2 + 7;
+    }
+
     if (trabajo && trabajo.circuitos && trabajo.circuitos.length) {
+      const previaResumenPdf = caidaPreviaDe(trabajo);
+      const ctxResumenPdf = contextoCortocircuito(trabajo);
       const filasCircuitos = trabajo.circuitos
-        .map((c) => ({ c, calc: calcularCircuito(c) }))
+        .map((c) => ({
+          c,
+          calc: calcularCircuito(c),
+          comp: comprobarCircuito(datosCircuito(c, previaResumenPdf, ctxResumenPdf)),
+        }))
         .filter(({ calc }) => calc.apto)
-        .map(({ c, calc }) => [c.nombre || 'Circuito', calc.seccionAdoptada + ' mm²', calc.breaker + ' A curva ' + calc.curva]);
+        .map(({ c, calc, comp }) => [
+          c.nombre || 'Circuito',
+          calc.seccionAdoptada + ' mm²',
+          calc.breaker + ' A curva ' + calc.curva,
+          comp.estado === 'cumple' ? 'Verificado' : (comp.estado === 'pendiente' ? 'Pendiente' : 'No cumple'),
+        ]);
       if (filasCircuitos.length) {
         lugarPara(4 + FILA * 3);
         doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
@@ -4906,20 +6651,24 @@
         doc.autoTable({
           startY: y,
           margin: margenTablas,
-          head: [['Circuito', 'Sección de cable', 'Protección']],
+          head: [['Circuito', 'Sección de cable', 'Protección', 'Estado']],
           body: pdfFilas(filasCircuitos),
           theme: 'plain',
           styles: { fontSize: 9, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
           headStyles: { textColor: [111, 114, 119], fontStyle: 'bold', fontSize: 8, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
-          columnStyles: { 1: { halign: 'right', cellWidth: 36 }, 2: { halign: 'right', cellWidth: 40 } },
+          columnStyles: { 1: { halign: 'right', cellWidth: 32 }, 2: { halign: 'right', cellWidth: 36 }, 3: { halign: 'right', cellWidth: 24 } },
         });
         y = doc.lastAutoTable.finalY + 4;
         // Cita la fuente normativa usada por el motor de cálculo (NORMATIVE_PACK), sin
         // afirmar "verificado" — el paquete normativo puede seguir en estado "pendiente"
-        // (falta confirmación de un electricista matriculado), eso no se le oculta al
+        // (falta confirmación de un técnico instalador autorizado por UTE), eso no se le oculta al
         // cliente pero tampoco se sobreafirma acá.
         doc.setFont('helvetica', 'italic'); doc.setFontSize(8); doc.setTextColor(111, 114, 119);
-        const normLines = doc.splitTextToSize(pdfTexto('Secciones y protecciones calculadas según ' + NORMATIVE_PACK.nombre + '.'), pageWidth - 2 * margin);
+        const textoNormaPdf = NORMATIVE_PACK.estado === 'verificado'
+          ? 'Secciones y protecciones comprobadas según ' + NORMATIVE_PACK.nombre + '.'
+          : 'Cálculo según ' + NORMATIVE_PACK.nombre + '. Cada circuito informa su propio estado (Verificado / Pendiente / No cumple). ' +
+            'El paquete ' + NORMATIVE_PACK.version + ' incorpora resistividad/profundidad del terreno, sobretensiones, protecciones generales existentes, auditoría de datos esenciales, alimentación 1φ/3φ por circuito, protección diferencial individual de los puntos de carga VE, balance de fases, verificación separada de fase, neutro y PE del alimentador, selectividad, Icc mínima/tiempo de desconexión, PE/equipotencialidad y protocolo de puesta en servicio IEC 60364-6.';
+        const normLines = doc.splitTextToSize(pdfTexto(textoNormaPdf), pageWidth - 2 * margin);
         lugarPara(normLines.length * 4);
         doc.text(normLines, margin, y);
         y += normLines.length * 4 + 8;
@@ -4934,16 +6683,65 @@
       let hayReferencia = false;
       let hayPlaza = false;
       let haySubestacion = false;
+      const detallesTerrenoPdf = [];
+      const detallesVePdf = [];
+      const auditoriaCircuitosPdf = [];
+      const balancePdf = calcularBalanceFases(trabajo);
+      if (balancePdf.aplica) {
+        lugarPara(4 + FILA * 4);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
+        doc.text('BALANCE DE FASES', margin, y); y += 4;
+        doc.autoTable({
+          startY:y, margin:margenTablas,
+          head:[['L1','L2','L3','Máxima','Desequilibrio','Límite UTE','Estado']],
+          body:pdfFilas([[
+            fmt(balancePdf.corrientes[0]) + ' A', fmt(balancePdf.corrientes[1]) + ' A', fmt(balancePdf.corrientes[2]) + ' A',
+            (balancePdf.faseMax || '—') + ' · ' + fmt(balancePdf.corrienteMax) + ' A', fmt(balancePdf.desequilibrioPct) + ' %',
+            balancePdf.limitePct !== null ? fmt(balancePdf.limitePct,0) + ' %' : 'Pendiente',
+            balancePdf.estado === 'cumple' ? 'Verificado' : (balancePdf.estado === 'pendiente' ? 'Pendiente' : 'No cumple')
+          ]]), theme:'plain',
+          styles:{fontSize:8,textColor:[23,23,25],cellPadding:{top:2,bottom:2,left:0,right:0},lineWidth:{bottom:0.2},lineColor:[226,227,229]},
+          headStyles:{textColor:[111,114,119],fontStyle:'bold',fontSize:7,lineWidth:{bottom:0.2},lineColor:[226,227,229]},
+          columnStyles:{0:{halign:'right'},1:{halign:'right'},2:{halign:'right'},3:{halign:'right'},4:{halign:'right'},5:{halign:'right'},6:{halign:'right'}},
+        });
+        y = doc.lastAutoTable.finalY + 3;
+        const detalleBalance = 'Potencia contratada/proyectada: ' + (balancePdf.potenciaContratadaKw !== null ? fmt(balancePdf.potenciaContratadaKw,1) + ' kW (' + balancePdf.fuentePotencia + ')' : 'pendiente') + '. Índice aplicado: máxima desviación de corriente respecto del promedio / promedio × 100. UTE Cap. II §9 fija 20 % hasta 50 kW y 15 % por encima; la fórmula porcentual es el criterio técnico documentado de la app.';
+        const bl = doc.splitTextToSize(pdfTexto(detalleBalance), pageWidth - 2*margin); doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.text(bl,margin,y); y += bl.length*3.2 + 5;
+      }
       const filasComp = trabajo.circuitos.map((c) => {
         const comp = comprobarCircuito(datosCircuito(c, previaPdf, ctxCortoPdf));
         if (comp.factorReferencia) hayReferencia = true;
         if (comp.iccFuente === 'plaza') hayPlaza = true;
         if (comp.iccFuente === 'subestacion') haySubestacion = true;
+        if (c.metodo === 'enterrado') {
+          const t = comp.terreno || factorTerrenoEnterrado(c);
+          detallesTerrenoPdf.push((c.nombre || 'Circuito') + ': ρt ' +
+            (t.rho !== null ? fmt(t.rho) + ' K·m/W' : 'pendiente') + ' · profundidad ' +
+            (t.profundidad !== null ? fmt(t.profundidad) + ' m' : 'pendiente') + ' · fρ ' + fmt(comp.fr || 1, 2) +
+            (t.estado === 'cumple' ? ' · dentro del alcance tabulado' : ' · verificación pendiente'));
+        }
+        if (c.equipo === 'cargador_ve') {
+          const dVe = diferencialDelCircuito(c);
+          detallesVePdf.push((c.nombre || 'Circuito VE') + ': modo ' + (c.modoCargaVe || 'pendiente') +
+            ' · diferencial individual ' + ((c.diferencialIndividualVe || 'desconocido') === 'si' ? 'confirmado/proyectado' : ((c.diferencialIndividualVe || 'desconocido') === 'no' ? 'NO' : 'pendiente')) +
+            ' · solución diferencial ' + textoTipoDiferencial(dVe.tipo) + ' ≤ 30 mA' +
+            (String(c.modoCargaVe) === '3' ? (c.rdcdd6mA ? ' + RDC-DD 6 mA' : ' (sin RDC-DD confirmado)') : ''));
+        }
+        const mensajesAuditoria = comp.causas.map((x) => 'NO CUMPLE: ' + x)
+          .concat(comp.pendientes.map((x) => 'PENDIENTE: ' + x));
+        if (mensajesAuditoria.length) {
+          auditoriaCircuitosPdf.push({
+            nombre: (c.nombre || 'Circuito') + ' · ' + (c.fases || '?') + 'φ ' + (Number(c.v) > 0 ? fmt(Number(c.v), 0) + ' V' : 'tensión pendiente'),
+            mensajes: mensajesAuditoria,
+          });
+        }
         return [(c.nombre || 'Circuito') + (comp.factorReferencia ? ' *' : '') + (comp.iccFuente === 'plaza' ? ' **' : ''),
                 comp.seccion ? comp.seccion + ' mm²' : '-',
                 fmt(comp.ib) + ' A',
                 comp.in ? comp.in + ' A' : '-',
                 comp.poderCorteKa !== null ? fmt(comp.poderCorteKa, 0) + ' kA' : '-',
+                comp.iccMinFinalA !== null ? fmt(comp.iccMinFinalA,0) + ' A' : '-',
+                comp.cumpleTiempoDesconexion === true ? 'OK' : (comp.cumpleTiempoDesconexion === false ? 'No' : 'Pend.'),
                 fmt(comp.iz) + ' A',
                 fmt(comp.dUPctTotal) + ' %',
                 comp.estado === 'cumple' ? 'Verificado' : (comp.estado === 'pendiente' ? 'Pendiente' : 'No cumple')];
@@ -4955,18 +6753,89 @@
       doc.autoTable({
         startY: y,
         margin: margenTablas,
-        head: [['Circuito', 'Sección', 'Ib', 'In', 'PdC', 'Iz corr.', 'Caída total', 'Estado']],
+        head: [['Circuito', 'Sección', 'Ib', 'In', 'PdC', 'Ik min', 't desc.', 'Iz corr.', 'Caída total', 'Estado']],
         body: pdfFilas(filasComp),
         theme: 'plain',
         styles: { fontSize: 8, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
         headStyles: { textColor: [111, 114, 119], fontStyle: 'bold', fontSize: 7, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
-        columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' } },
+        columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' }, 3: { halign: 'right' }, 4: { halign: 'right' }, 5: { halign: 'right' }, 6: { halign: 'right' }, 7: { halign: 'right' }, 8: { halign: 'right' }, 9: { halign: 'right' } },
       });
       y = doc.lastAutoTable.finalY + 4;
+      if (detallesTerrenoPdf.length) {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(111, 114, 119);
+        const tt = doc.splitTextToSize(pdfTexto('ENTERRADOS · factor térmico de terreno aplicado'), pageWidth - 2 * margin);
+        doc.text(tt, margin, y);
+        y += tt.length * 3.2;
+        doc.setFont('helvetica', 'normal');
+        detallesTerrenoPdf.forEach((detalle) => {
+          const dl = doc.splitTextToSize(pdfTexto('• ' + detalle), pageWidth - 2 * margin);
+          lugarPara(dl.length * 3.2 + 1);
+          doc.text(dl, margin, y);
+          y += dl.length * 3.2;
+        });
+        y += 2;
+      }
+      if (detallesVePdf.length) {
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(111, 114, 119);
+        const tv = doc.splitTextToSize(pdfTexto('VE · protección diferencial individual por punto'), pageWidth - 2 * margin);
+        doc.text(tv, margin, y);
+        y += tv.length * 3.2;
+        doc.setFont('helvetica', 'normal');
+        detallesVePdf.forEach((detalle) => {
+          const dl = doc.splitTextToSize(pdfTexto('• ' + detalle), pageWidth - 2 * margin);
+          lugarPara(dl.length * 3.2 + 1);
+          doc.text(dl, margin, y);
+          y += dl.length * 3.2;
+        });
+        y += 2;
+      }
+      if (auditoriaCircuitosPdf.length) {
+        lugarPara(12);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(111, 114, 119);
+        doc.text('CAUSAS Y PENDIENTES POR CIRCUITO', margin, y);
+        y += 4;
+        auditoriaCircuitosPdf.forEach((item) => {
+          lugarPara(8);
+          doc.setFont('helvetica', 'bold');
+          const nl = doc.splitTextToSize(pdfTexto(item.nombre), pageWidth - 2 * margin);
+          doc.text(nl, margin, y);
+          y += nl.length * 3.2;
+          doc.setFont('helvetica', 'normal');
+          item.mensajes.forEach((mensaje) => {
+            const ml = doc.splitTextToSize(pdfTexto('• ' + mensaje), pageWidth - 2 * margin - 4);
+            lugarPara(ml.length * 3.2 + 1);
+            doc.text(ml, margin + 4, y);
+            y += ml.length * 3.2;
+          });
+          y += 1;
+        });
+        y += 1;
+      }
+      const selTermPdf = comprobarSelectividadTermicas(trabajo);
+      const selRcdPdf = comprobarSelectividadDiferenciales(trabajo);
+      lugarPara(14);
+      doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(111,114,119);
+      doc.text('COORDINACION Y SELECTIVIDAD', margin, y); y += 4;
+      doc.autoTable({
+        startY:y, margin:margenTablas,
+        head:[['Protecciones','Estado','Criterio']],
+        body:pdfFilas([
+          ['Térmicas general ↔ circuitos', selTermPdf.estado === 'cumple' ? 'Verificada' : (selTermPdf.estado === 'no_selectiva' ? 'No selectiva' : 'Pendiente'), 'IEC: total/parcial según curvas o tablas del fabricante e Icc'],
+          ['Diferenciales en cascada', selRcdPdf.estado === 'cumple' ? 'Verificada' : (selRcdPdf.estado === 'no_aplica' ? 'No aplica' : (selRcdPdf.estado === 'no_selectiva' ? 'No selectiva' : 'Pendiente')), 'Referencia IEC: IΔn arriba ≥ 3× abajo + cabecera tipo S/temporizada']
+        ]), theme:'plain',
+        styles:{fontSize:8,textColor:[23,23,25],cellPadding:{top:2,bottom:2,left:0,right:0},lineWidth:{bottom:0.2},lineColor:[226,227,229]},
+        headStyles:{textColor:[111,114,119],fontStyle:'bold',fontSize:7,lineWidth:{bottom:0.2},lineColor:[226,227,229]}
+      });
+      y=doc.lastAutoTable.finalY+3;
+      const selDetallesPdf = selTermPdf.detalles.map((x)=>x.circuito+': '+x.motivo).concat(selRcdPdf.detalles.map((x)=>x.circuito+': '+x.motivo));
+      doc.setFont('helvetica','normal'); doc.setFontSize(7); doc.setTextColor(111,114,119);
+      selDetallesPdf.forEach((detalle)=>{ const dl=doc.splitTextToSize(pdfTexto('• '+detalle),pageWidth-2*margin); lugarPara(dl.length*3.2+1); doc.text(dl,margin,y); y+=dl.length*3.2; });
+      y+=2;
+
       doc.setFont('helvetica', 'italic'); doc.setFontSize(7); doc.setTextColor(111, 114, 119);
       const refs = doc.splitTextToSize(pdfTexto(
         (hayReferencia
-          ? '* Factor de agrupamiento con valor de referencia de IEC 60364-5-52 (Tabla B.52.17 al aire y en bandeja, B.52.19 en caños enterrados separados), no del reglamento de UTE: ' + (textoAprobacionSupuesto2() ? 'criterio ' + textoAprobacionSupuesto2() + ' (supuesto 2). ' : 'pendiente de confirmación por electricista matriculado (supuesto 2). ')
+          ? '* Factor de agrupamiento con valor de referencia de IEC 60364-5-52 (Tabla B.52.17 al aire y en bandeja, B.52.19 en caños enterrados separados), no del reglamento de UTE: ' + (textoAprobacionSupuesto2() ? 'criterio ' + textoAprobacionSupuesto2() + ' (supuesto 2). ' : 'pendiente de confirmación por técnico instalador autorizado por UTE (supuesto 2). ')
           : '') +
         (hayPlaza
           ? '** Poder de corte de plaza: la térmica se cotiza con 6 kA (Icn según IEC 60898-1, primer escalón de la gama) porque no se conoce la corriente de cortocircuito del tablero. El cortocircuito de ese circuito no está verificado numéricamente contra una Icc real. '
@@ -4974,16 +6843,111 @@
         (haySubestacion
           ? 'Instalación con subestación propia: falta la corriente de cortocircuito en el tablero (Anexo, Tabla A); no se aplica el valor de plaza y la protección queda a definir. '
           : '') +
-        'Cómo se comprobó cada circuito. Capacidad de conducción: Iz = I de tabla x factor de temperatura (Tabla XIV, escalón superior) x factor de agrupamiento x factor solar (0,90 si está al sol), ' +
+        'Cómo se comprobó cada circuito. Capacidad de conducción: Iz = I de tabla x factor de temperatura (Tabla XIV, escalón superior) x factor de agrupamiento x factor solar (0,90 si está al sol) x factor de terreno cuando es enterrado, ' +
         'y se verifica Iz >= Ib (Reglamento de Baja Tensión de UTE, Capítulo II - Anexo, Tablas VI a XIV, §3.3.2 y §5.1; para el agrupamiento se cuentan también el neutro y la tierra, criterio más exigente que el reglamento; al aire y en bandeja, IEC 60364-5-52 Tabla B.52.17 según el montaje, sin reducción si entre circuitos hay más de 2 diámetros exteriores; en caños enterrados separados, Tabla B.52.19 según la distancia, sin reducción a más de 1 m). ' +
         'Coordinación con la protección: Ib <= In <= Iz (UTE, Capítulo V numeral 1.a; formulación explícita en IEC 60364-4-43:2023 §431.4.2, referencia técnica complementaria, ' +
         'que agrega I2 <= 1,45 Iz, cumplida porque en los termomagnéticos IEC 60898-1 es I2 = 1,45 In). ' +
         'Caída de tensión: e = 2LW/(KSV) en monofásico y LW/(KSV) en trifásico, con la conductividad de servicio (Cu/PVC 48,4; Cu/XLPE 45,5; Al/PVC 29,4; Al/XLPE 27,6), ' +
         'sumando la caída del alimentador entre el medidor y el tablero, contra un máximo de 3 % en alumbrado y 5 % en los demás usos (UTE, Capítulo II - Anexo, numeral 8). ' +
-        'Cortocircuito (Capítulo V §1.b, Anexo §7 y Tabla A): el poder de corte que se compara es el Icn de la IEC 60898-1 en termomagnéticos (el Icu de la IEC 60947-2 no se usa) y el Icu en otros dispositivos; la verificación térmica requiere la energía pasante del termomagnético.'),
+        'Cortocircuito (Capítulo V §1.b, Anexo §7 y Tabla A): el poder de corte que se compara es el Icn de la IEC 60898-1 en termomagnéticos (el Icu de la IEC 60947-2 no se usa) y el Icu en otros dispositivos; la verificación térmica requiere la energía pasante del termomagnético. ' +
+        'Las Tablas B y C se usan con los valores publicados literalmente: si la celda requerida participa de una anomalía no monótona, la app no inventa una corrección y deja la Icc pendiente. ' +
+        'Para VE, UTE RBT Cap. XXX §9.4.2 exige protección diferencial individual por Punto de Conexión, IΔn ≤ 30 mA y corte de todos los conductores activos; la selección de tipo depende del modo de carga. ' +
+        'Icc mínima al final: para termomagnéticos IEC 60898-1 se compara con el extremo superior de la banda magnética (B 5·In, C 10·In, D 20·In). El tiempo máximo que soporta el conductor a esa Icc mínima se obtiene de la relación térmica del UTE RBT Cap. II - Anexo §7 (equivalente a I²t admisible / Ik,min²). Si no se garantiza la zona magnética, la app exige leer/documentar el tiempo de actuación en la curva del fabricante y lo compara con ese tiempo térmico admisible.'),
         pageWidth - 2 * margin);
       doc.text(refs, margin, y);
       y += refs.length * 3.2 + 8;
+    }
+
+    if (interno && trabajo) {
+      const alimPdf = calcularAcometida(trabajo);
+      lugarPara(4 + FILA * 7);
+      doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
+      doc.text('ALIMENTADOR GENERAL', margin, y); y += 4;
+      const estadoAlim = alimPdf.estado === 'cumple' ? 'Verificado' : (alimPdf.estado === 'pendiente' ? 'Pendiente' : 'No cumple');
+      doc.autoTable({
+        startY:y, margin:margenTablas,
+        head:[['Magnitud','Resultado','Estado']],
+        body:pdfFilas([
+          ['Fase', (alimPdf.seccion ? fmt(alimPdf.seccion) + ' mm² Cu' : 'Pendiente') + ' · Ib diseño ' + fmt(alimPdf.ibDiseno) + ' A · Iz ' + fmt(alimPdf.iz) + ' A', alimPdf.termicaIn ? 'Verificado' : 'No cumple'],
+          ['Neutro', !alimPdf.tieneNeutro ? 'No aplica' : ((alimPdf.neutroSeccion ? fmt(alimPdf.neutroSeccion) + ' mm² Cu' : 'Pendiente') + (alimPdf.neutroCorriente !== null ? ' · I_N fundamental ≈ ' + fmt(alimPdf.neutroCorriente) + ' A' : '')), !alimPdf.tieneNeutro ? 'No aplica' : (alimPdf.pendientes.some((x)=>x.indexOf('Neutro:')===0) ? 'Pendiente' : (alimPdf.causas.some((x)=>x.indexOf('Neutro:')===0) ? 'No cumple' : 'Verificado'))],
+          ['PE', alimPdf.peSeccion ? fmt(alimPdf.peSeccion) + ' mm² Cu' + (alimPdf.peMin ? ' · mínimo adoptado ' + fmt(alimPdf.peMin) + ' mm²' : '') : 'Pendiente', alimPdf.pendientes.some((x)=>x.indexOf('PE:')===0) ? 'Pendiente' : (alimPdf.causas.some((x)=>x.indexOf('PE:')===0) ? 'No cumple' : 'Verificado')],
+          ['Protección general', alimPdf.termicaIn ? fmt(alimPdf.termicaIn,0) + ' A · Ib ≤ In ≤ Iz' : 'Sin coordinación disponible', alimPdf.termicaIn ? 'Verificado' : 'No cumple'],
+          ['Caída medidor → tablero', fmt(alimPdf.dU) + ' V · ' + fmt(alimPdf.dUPct) + ' %', alimPdf.dUPct <= 3 ? 'Verificado' : 'No cumple'],
+          ['Estado conjunto', 'Fase + neutro + PE + caída + coordinación', estadoAlim],
+        ]), theme:'plain',
+        styles:{fontSize:8,textColor:[23,23,25],cellPadding:{top:2,bottom:2,left:0,right:0},lineWidth:{bottom:0.2},lineColor:[226,227,229]},
+        headStyles:{textColor:[111,114,119],fontStyle:'bold',fontSize:7,lineWidth:{bottom:0.2},lineColor:[226,227,229]},
+        columnStyles:{1:{halign:'right'},2:{halign:'right',cellWidth:25}},
+      });
+      y=doc.lastAutoTable.finalY+3;
+      const alimNotas = [alimPdf.neutroNota].concat(alimPdf.causas).concat(alimPdf.pendientes).filter(Boolean).join(' ');
+      const alimRef = doc.splitTextToSize(pdfTexto('UTE RBT Cap. II: el neutro es conductor activo. Cap. XXIII §5.4: neutro y tierra del cliente no deben unirse. Para pequeños/medianos suministros individuales, Cap. XXIII §4 y §10 fijan el criterio simplificado de tierra; fuera de ese alcance la app adopta S_PE = S_fase conservadoramente y exige documentar la comprobación térmica frente a falta. ' + alimNotas), pageWidth - 2*margin);
+      doc.setFont('helvetica','italic'); doc.setFontSize(7); doc.setTextColor(111,114,119); doc.text(alimRef,margin,y); y += alimRef.length*3.2 + 7;
+
+      const pgPdf = calcularProteccionGeneral(trabajo);
+      const verPgPdf = comprobarProteccionGeneral(trabajo, pgPdf);
+      if (pgPdf.aplica) {
+        const estadoTxt = (v) => v === true ? 'Verificado' : (v === false ? 'No cumple' : 'Pendiente');
+        const sensOk = verPgPdf.residencial ? verPgPdf.cumpleSensibilidad : true;
+        const filasPg = [
+          [pgPdf.modo === 'existente' ? 'Térmica general existente' : 'Térmica general', pgPdf.termicaIn !== null ? (pgPdf.termicaIn + ' A' + (pgPdf.modo === 'nueva' ? ' · ' + pgPdf.termicaPolos + 'p · curva ' + pgPdf.termicaCurva : '')) : 'Pendiente', pgPdf.modo === 'existente' ? (pgPdf.termicaIn === null ? 'Pendiente' : (pgPdf.coordina === false ? 'No cumple' : 'Verificar')) : (pgPdf.coordina ? 'Verificado' : 'No cumple')],
+          [pgPdf.modo === 'existente' ? 'Diferencial general existente' : 'Diferencial general', pgPdf.diferencialExiste === false ? 'No instalado' : (pgPdf.diferencialIn !== null ? pgPdf.diferencialIn + ' A · ' + pgPdf.diferencialSensibilidad + ' mA · ' + textoTipoDiferencial(pgPdf.diferencialTipo) : 'Pendiente'), pgPdf.diferencialExiste === false ? 'No cumple' : estadoTxt(sensOk && pgPdf.diferencialExiste !== null ? true : null)],
+          ['Puesta a tierra', verPgPdf.resistenciaTierraOhm !== null ? fmt(verPgPdf.resistenciaTierraOhm) + ' Ω (máx. ' + fmt(verPgPdf.raMax) + ' Ω)' : 'Medición pendiente (máx. ' + fmt(verPgPdf.raMax) + ' Ω)', estadoTxt(verPgPdf.cumpleTierra)],
+          ['Contactos indirectos', verPgPdf.contactosIndirectos && verPgPdf.contactosIndirectos.aplica ? (verPgPdf.contactosIndirectos.esquema + ' · U_L ' + fmt(verPgPdf.contactosIndirectos.ul,0) + ' V' + (verPgPdf.contactosIndirectos.tensionContacto !== null && verPgPdf.contactosIndirectos.tensionContacto !== undefined ? ' · U_c≈' + fmt(verPgPdf.contactosIndirectos.tensionContacto) + ' V' : '')) : 'No aplica', verPgPdf.contactosIndirectos && verPgPdf.contactosIndirectos.estado === 'cumple' ? 'Verificado' : (verPgPdf.contactosIndirectos && verPgPdf.contactosIndirectos.estado === 'no_cumple' ? 'No cumple' : 'Pendiente')],
+          ['Sobretensiones', verPgPdf.sobretensiones.requerido === true ? ('SPD requerido · ' + verPgPdf.sobretensiones.tipoPropuesto) : (verPgPdf.sobretensiones.requerido === false ? 'No requerido según evaluación declarada' : 'Evaluación pendiente'), verPgPdf.sobretensiones.estado === 'cumple' ? 'Verificado' : (verPgPdf.sobretensiones.estado === 'pendiente' ? 'Pendiente' : 'No cumple')],
+          ['Estado conjunto', 'Protección + tierra + contactos indirectos + sobretensiones', verPgPdf.estado === 'cumple' ? 'Verificado' : (verPgPdf.estado === 'pendiente' ? 'Pendiente' : 'No cumple')],
+        ];
+        lugarPara(4 + FILA * 6);
+        doc.setFont('helvetica', 'bold'); doc.setFontSize(10); doc.setTextColor(111, 114, 119);
+        const eqPdf = comprobarEquipotencialidad(trabajo);
+        if (y > 235) { doc.addPage(); y = 24; }
+        doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.text('PE, CONTINUIDAD Y EQUIPOTENCIALIDAD', margin, y); y += 6;
+        const filasPe = (trabajo.circuitos||[]).map((c,i)=>{ const cc=calcularCircuito(c,caidaPreviaDe(trabajo)); const pe=cc.apto?comprobarPeCircuito(c,cc.seccionAdoptada):null; return ['C'+(i+1)+' '+(c.nombre||'Circuito'), pe?fmt(pe.seccion)+' mm² (mín. '+fmt(pe.minimo)+' mm²)':'-', pe?(pe.ensayo==='si'?'Continuidad OK'+(pe.resistencia!==null?' · '+fmt(pe.resistencia,3)+' Ω':''):(pe.ensayo==='no'?'No continuo':'Pendiente')):'Pendiente']; });
+        filasPe.push(['Equipotencial principal', eqPdf.aplica==='no'?'No aplica':(eqPdf.seccion?fmt(eqPdf.seccion)+' mm² · mín. '+fmt(eqPdf.minPrincipal)+' mm²':'Pendiente'), eqPdf.continuidad==='si'?'Continuidad OK':(eqPdf.continuidad==='no'?'No cumple':'Pendiente')]);
+        filasPe.push(['Equipotencial suplementaria', eqPdf.suplementariaAplica==='no'?'No aplica':(eqPdf.suplementariaSeccion?fmt(eqPdf.suplementariaSeccion)+' mm² · mín. '+fmt(eqPdf.minSuplementaria)+' mm²':'Pendiente'), eqPdf.suplementariaContinuidad==='si'?'Continuidad OK':(eqPdf.suplementariaAplica==='no'?'No aplica':(eqPdf.suplementariaContinuidad==='no'?'No cumple':'Pendiente'))]);
+        doc.autoTable({startY:y,head:[['Elemento','Sección','Ensayo']],body:filasPe,theme:'grid',styles:{fontSize:7},margin:{left:margin,right:margin}}); y=doc.lastAutoTable.finalY+5;
+        const eqRef=doc.splitTextToSize(pdfTexto('UTE RBT Cap. XXIII §5.4, §6 y §10.5: el circuito de tierra debe ser eléctricamente continuo y las masas se conectan por derivaciones; no se intercalan protecciones ni seccionadores en el PE. IEC 60364-5-54 se usa como referencia complementaria para secciones de PE/equipotencialidad e IEC 60364-6 para registrar el ensayo de continuidad.'),pageWidth-2*margin); doc.setFont('helvetica','normal');doc.setFontSize(7);doc.text(eqRef,margin,y);y+=eqRef.length*3.2+6;
+
+        const protoPdf=comprobarProtocoloEnsayos(trabajo);
+        if (y > 220) { doc.addPage(); y=24; }
+        doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(111,114,119); doc.text('PROTOCOLO DE ENSAYOS DE PUESTA EN SERVICIO',margin,y); y+=5;
+        const meta=trabajo.protocoloEnsayos||{};
+        const filasProto=(trabajo.circuitos||[]).map((c,i)=>{const r=comprobarEnsayoCircuito(c,trabajo);return [
+          'C'+(i+1)+' '+(c.nombre||'Circuito'),
+          Number(c.aislamientoMohm)>0?(fmt(c.aislamientoMohm,2)+' MΩ @ '+(Number(c.aislamientoEnsayoV)||'—')+' Vcc'):'Pendiente',
+          r.polaridadAplica?(c.polaridad==='si'?'OK':(c.polaridad==='no'?'No':'Pend.')):'N/A',
+          r.secuenciaAplica?(c.secuenciaFases==='si'?'OK':(c.secuenciaFases==='no'?'No':'Pend.')):'N/A',
+          c.continuidadPe==='si'?'OK':(c.continuidadPe==='no'?'No':'Pend.'),
+          r.rcdDedicado?(c.ensayoRcd==='si'?('OK'+(Number(c.tiempoRcdS)>0?' · '+fmt(c.tiempoRcdS,3)+' s':'')):(c.ensayoRcd==='no'?'No':'Pend.')):'General',
+          r.estado==='cumple'?'Verificado':(r.estado==='no_cumple'?'No cumple':'Pendiente')
+        ];});
+        doc.autoTable({startY:y,margin:margenTablas,head:[['Circuito','Aislamiento','Polaridad','Secuencia','PE','RCD','Estado']],body:pdfFilas(filasProto),theme:'plain',styles:{fontSize:7,textColor:[23,23,25],cellPadding:{top:2,bottom:2,left:0,right:0},lineWidth:{bottom:0.2},lineColor:[226,227,229]},headStyles:{fontSize:6.5,textColor:[111,114,119],fontStyle:'bold'},columnStyles:{1:{halign:'right'},2:{halign:'right'},3:{halign:'right'},4:{halign:'right'},5:{halign:'right'},6:{halign:'right'}}}); y=doc.lastAutoTable.finalY+3;
+        const metaTxt='Fecha: '+(meta.fecha||'pendiente')+' · Técnico: '+(meta.tecnico||'pendiente')+' · Instrumento: '+(meta.instrumento||'pendiente')+(meta.serie?' · Serie: '+meta.serie:'')+' · Calibración: '+((meta.calibracion||'pendiente')==='si'?'conforme':((meta.calibracion||'pendiente')==='no'?'NO conforme':'pendiente'))+' · Tierra: '+(Number(pgPdf.resistenciaTierraOhm)>0?fmt(pgPdf.resistenciaTierraOhm)+' Ω':'pendiente')+' · RCD general: '+((pgPdf.ensayoRcdGeneral||'pendiente')==='si'?'satisfactorio':((pgPdf.ensayoRcdGeneral||'pendiente')==='no'?'NO satisfactorio':'pendiente'))+(Number(pgPdf.tiempoDiferencialGeneralS)>0?' · '+fmt(pgPdf.tiempoDiferencialGeneralS,3)+' s':'')+' · Estado protocolo: '+(protoPdf.estado==='cumple'?'VERIFICADO':(protoPdf.estado==='no_cumple'?'NO CUMPLE':'PENDIENTE'))+'.';
+        const ml=doc.splitTextToSize(pdfTexto(metaTxt),pageWidth-2*margin); doc.setFont('helvetica','normal');doc.setFontSize(7);doc.text(ml,margin,y);y+=ml.length*3.2+3;
+        const refProto=doc.splitTextToSize(pdfTexto('IEC 60364-6 (referencia complementaria): continuidad, aislamiento, polaridad, desconexión automática/protección adicional, secuencia de fases, pruebas funcionales e informe de resultados. Tabla 6.1: circuitos hasta 500 V → 500 Vcc y mínimo 1 MΩ; si no es practicable desconectar SPD/electrónica sensible puede reducirse a 250 Vcc manteniendo 1 MΩ.'),pageWidth-2*margin); doc.setFont('helvetica','italic');doc.setFontSize(7);doc.text(refProto,margin,y);y+=refProto.length*3.2+7;
+
+        doc.text('PROTECCION GENERAL, TIERRA Y SOBRETENSIONES', margin, y);
+        y += 4;
+        doc.autoTable({
+          startY: y,
+          margin: margenTablas,
+          head: [['Comprobación', 'Resultado', 'Estado']],
+          body: pdfFilas(filasPg),
+          theme: 'plain',
+          styles: { fontSize: 8, textColor: [23, 23, 25], cellPadding: { top: 2, bottom: 2, left: 0, right: 0 }, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
+          headStyles: { textColor: [111, 114, 119], fontStyle: 'bold', fontSize: 7, lineWidth: { bottom: 0.2 }, lineColor: [226, 227, 229] },
+          columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right', cellWidth: 25 } },
+        });
+        y = doc.lastAutoTable.finalY + 4;
+        doc.setFont('helvetica', 'italic'); doc.setFontSize(7); doc.setTextColor(111, 114, 119);
+        const tierraRef = doc.splitTextToSize(pdfTexto(
+          'UTE: el diferencial es obligatorio en el tablero general y en instalaciones domiciliarias debe ser de 30 mA (Comunicado Nro. 26002, 19/02/2026). ' +
+          'La coordinación con tierra se comprueba con R ≤ 50/IΔn en local seco o R ≤ 24/IΔn en local húmedo/mojado (RBT Cap. VI); el Cap. XXIII limita la tensión de contacto a 50 V o 24 V respectivamente. ' +
+          'La resistencia debe provenir de una medición: si no se carga, la memoria permanece Pendiente. Para contactos indirectos, IEC 60364-4-41 se usa como referencia complementaria: TT 230 V exige 0,2 s en los circuitos finales comprendidos y 1 s en distribución/otros; en IT se verifica el primer defecto por R_A·I_d y su detección, y el segundo defecto con condiciones tipo TN si las masas están interconectadas o tipo TT si son independientes. UTE RBT Cap. V §2 exige descargadores cerca del origen cuando sean de temer sobretensiones atmosféricas y exige para ellos tierra inferior a 10 Ω. La app registra esa evaluación y usa IEC 60364-5-53 §534 sólo como referencia para proponer Tipo 1+2 o Tipo 2.'),
+          pageWidth - 2 * margin);
+        doc.text(tierraRef, margin, y);
+        y += tierraRef.length * 3.2 + 8;
+      }
     }
 
     lugarPara(4 + FILA * 3);
@@ -5122,6 +7086,19 @@
       }
     }
 
+    // Pie de página documental: identidad, trazabilidad de versión y numeración.
+    const totalPaginas = doc.getNumberOfPages();
+    for (let pagina = 1; pagina <= totalPaginas; pagina++) {
+      doc.setPage(pagina);
+      const h = doc.internal.pageSize.getHeight();
+      doc.setDrawColor(226,227,229); doc.setLineWidth(0.2);
+      doc.line(margin, h - 11, pageWidth - margin, h - 11);
+      doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(111,114,119);
+      const etiqueta = interno ? 'Memoria técnica interna' : 'Presupuesto';
+      doc.text(pdfTexto('ADONAI ELECTRICAL · ' + etiqueta + ' · Motor ' + MOTOR_VERSION + ' · Normativa ' + NORMATIVE_PACK.version), margin, h - 6.5);
+      doc.text('Página ' + pagina + ' de ' + totalPaginas, pageWidth - margin, h - 6.5, { align: 'right' });
+    }
+
     return { doc, filename: p.codigo + (interno ? '-interno' : '') + '.pdf' };
   }
 
@@ -5163,6 +7140,62 @@
     const url = 'https://api.whatsapp.com/send?' + (numero ? 'phone=' + numero + '&' : '') + 'text=' + encodeURIComponent(mensaje + ' Te lo adjunto en este chat.');
     window.open(url, '_blank');
     toast('PDF descargado — adjuntalo en el chat que se abrió');
+  }
+
+  function pdfCierreTitulo(doc, titulo, subtitulo, borrador) {
+    const w=doc.internal.pageSize.getWidth();
+    doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(23,23,25); doc.text(pdfTexto(titulo),18,20);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(111,114,119); doc.text(pdfTexto(subtitulo||''),18,27);
+    if (borrador) { doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.setTextColor(180,70,70); doc.text('BORRADOR - REVISION FINAL PENDIENTE',w-18,20,{align:'right'}); }
+    doc.setDrawColor(226,227,229); doc.line(18,32,w-18,32);
+  }
+
+  function pdfCierrePie(doc, etiqueta) {
+    const n=doc.getNumberOfPages(), w=doc.internal.pageSize.getWidth();
+    for(let i=1;i<=n;i++){ doc.setPage(i); const h=doc.internal.pageSize.getHeight(); doc.setDrawColor(226,227,229); doc.line(18,h-11,w-18,h-11); doc.setFont('helvetica','normal');doc.setFontSize(6.5);doc.setTextColor(111,114,119);doc.text(pdfTexto('ADONAI ELECTRICAL · '+etiqueta+' · Motor '+MOTOR_VERSION+' · Normativa '+NORMATIVE_PACK.version),18,h-6.5);doc.text('Página '+i+' de '+n,w-18,h-6.5,{align:'right'}); }
+  }
+
+  function pdfDibujarUnifilar(doc, trabajo, yInicio) {
+    let y=yInicio||42; const x=28, w=154;
+    const pg=calcularProteccionGeneral(trabajo);
+    doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(23,23,25);doc.text('Esquema unifilar simplificado',18,y); y+=9;
+    const caja=(texto,yy,ancho=58)=>{ doc.setDrawColor(80,80,80);doc.roundedRect(x,yy,ancho,10,1,1);doc.setFont('helvetica','normal');doc.setFontSize(7);doc.setTextColor(23,23,25);doc.text(pdfTexto(texto),x+ancho/2,yy+6.2,{align:'center'}); };
+    caja('Suministro '+((SISTEMAS[trabajo.sistemaId]||{}).nombre||trabajo.sistemaId),y); y+=16;
+    doc.line(x+29,y-6,x+29,y);
+    caja('Protección general '+(pg.termicaIn?fmt(pg.termicaIn,0)+' A':'pendiente'),y); y+=16;
+    doc.line(x+29,y-6,x+29,y);
+    caja('RCD '+(pg.diferencialSensibilidad?fmt(pg.diferencialSensibilidad,0)+' mA':'pendiente')+' '+tipoDiferencialGeneral(pg),y); y+=18;
+    const circs=trabajo.circuitos||[]; const cols=Math.min(3,Math.max(1,circs.length)); const colW=w/cols;
+    const startY=y;
+    circs.forEach((c,i)=>{ const calc=calcularCircuito(c,caidaPreviaDe(trabajo)); const col=i%cols,row=Math.floor(i/cols); const cx=x+col*colW, cy=startY+row*28; if(col===0){doc.line(x+29,cy-8,x+w-10,cy-8);} doc.line(cx+20,cy-8,cx+20,cy); doc.roundedRect(cx,cy,Math.min(colW-8,46),14,1,1); doc.setFontSize(6.5);doc.text(pdfTexto('C'+(i+1)+' '+(c.nombre||'Circuito')).slice(0,34),cx+2,cy+5); doc.text(pdfTexto((calc.breaker||'—')+' A · '+(calc.seccionAdoptada||'—')+' mm²'),cx+2,cy+10); });
+    const rows=Math.ceil(circs.length/cols); y=startY+rows*28+6;
+    doc.setFont('helvetica','italic');doc.setFontSize(7);doc.setTextColor(111,114,119);doc.text(pdfTexto('Representación automática de una línea para documentación. No sustituye planos constructivos ni esquemas del fabricante.'),18,y);
+    return y+6;
+  }
+
+  async function construirDocumentoCierre(tipo, trabajo) {
+    const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'}); const cierre=evaluarCierreProfesional(trabajo); const borrador=cierre.estado!=='listo';
+    const codigo=trabajo.codigo||'REL'; const cliente=(trabajo.cliente&&trabajo.cliente.nombre)||'-'; const obra=(trabajo.obra&&trabajo.obra.nombre)||'-'; const cp=cierreBase(trabajo);
+    const addCover=()=>{ pdfCierreTitulo(doc,'ADONAI ELECTRICAL','Cierre profesional de obra · '+codigo,borrador); doc.setFont('helvetica','bold');doc.setFontSize(20);doc.setTextColor(23,23,25);doc.text(pdfTexto(tipo==='expediente'?'EXPEDIENTE TÉCNICO':'DOCUMENTACIÓN TÉCNICA'),18,58); doc.setFont('helvetica','normal');doc.setFontSize(10);doc.text(pdfTexto('Cliente: '+cliente),18,72);doc.text(pdfTexto('Obra: '+obra),18,79);doc.text(pdfTexto('Responsable: '+(cp.responsableNombre||'pendiente')+' · '+(cp.categoriaUTE||'habilitación pendiente')),18,86);doc.text(pdfTexto('Fecha de cierre: '+(cp.fecha||'pendiente')),18,93);doc.setFontSize(9);doc.setTextColor(111,114,119);doc.text(pdfTexto(borrador?'Estado documental: BORRADOR. Existen verificaciones o datos de cierre pendientes.':'Estado documental: DEFINITIVO. Revisión final completada.'),18,106); };
+    const addMemoria=(usarActual=false)=>{ if(!usarActual) doc.addPage(); pdfCierreTitulo(doc,'Memoria técnica',codigo+' · '+cliente,borrador); let y=42; const r=calcularPotencia(trabajo.cargas||[],trabajo.factores||{}); const pg=calcularProteccionGeneral(trabajo); doc.autoTable({startY:y,margin:{left:18,right:18},body:pdfFilas([['Sistema',(SISTEMAS[trabajo.sistemaId]||{}).nombre||trabajo.sistemaId],['Potencia instalada',fmt(r.potenciaInstalada/1000)+' kW'],['Potencia de cálculo',fmt(r.pDemandTotal/1000)+' kW'],['Circuitos',(trabajo.circuitos||[]).length],['Protección general',pg.termicaIn?fmt(pg.termicaIn,0)+' A':'Pendiente'],['RCD general',pg.diferencialSensibilidad?fmt(pg.diferencialSensibilidad,0)+' mA · '+tipoDiferencialGeneral(pg):'Pendiente']]),theme:'plain',styles:{fontSize:9},columnStyles:{0:{fontStyle:'bold',cellWidth:48}}}); y=doc.lastAutoTable.finalY+8; const rows=(trabajo.circuitos||[]).map((c,i)=>{const calc=calcularCircuito(c,caidaPreviaDe(trabajo));const comp=calc.apto?comprobarCircuito(datosCircuito(c,caidaPreviaDe(trabajo),contextoCortocircuito(trabajo))):{estado:'no_cumple'};return ['C'+(i+1),c.nombre||'Circuito',fmt(calc.ib||0)+' A',calc.seccionAdoptada?calc.seccionAdoptada+' mm²':'—',calc.breaker?calc.breaker+' A':'—',comp.estado==='cumple'?'Verificado':(comp.estado==='no_cumple'?'No cumple':'Pendiente')];}); doc.autoTable({startY:y,margin:{left:18,right:18},head:[['ID','Circuito','Ib','Sección','Térmica','Estado']],body:pdfFilas(rows),theme:'grid',styles:{fontSize:7}}); y=doc.lastAutoTable.finalY+8; const vr=evaluarCierreProfesional(trabajo); doc.setFont('helvetica','bold');doc.setFontSize(10);doc.text('Revisión final',18,y);y+=5;doc.setFont('helvetica','normal');doc.setFontSize(8);const txt=(vr.fallas.concat(vr.faltantes).length?vr.fallas.concat(vr.faltantes):['Sin pendientes críticos.']).map(x=>'• '+x).join('\n');doc.text(doc.splitTextToSize(pdfTexto(txt),174),18,y); };
+    const addProtocolo=(usarActual=false)=>{ if(!usarActual) doc.addPage(); pdfCierreTitulo(doc,'Protocolo de ensayos',codigo+' · IEC 60364-6 como referencia complementaria',borrador); let y=42; const meta=trabajo.protocoloEnsayos||{}; doc.autoTable({startY:y,margin:{left:18,right:18},body:pdfFilas([['Fecha',meta.fecha||'Pendiente'],['Técnico',meta.tecnico||'Pendiente'],['Instrumento',meta.instrumento||'Pendiente'],['Serie',meta.serie||'—'],['Calibración',meta.calibracion==='si'?'Conforme':(meta.calibracion==='no'?'No conforme':'Pendiente')]]),theme:'plain',styles:{fontSize:8},columnStyles:{0:{fontStyle:'bold',cellWidth:42}}}); y=doc.lastAutoTable.finalY+7; const rows=(trabajo.circuitos||[]).map((c,i)=>['C'+(i+1),c.nombre||'Circuito',Number(c.aislamientoMohm)>0?fmt(c.aislamientoMohm,2)+' MΩ':'Pend.',c.polaridad==='si'?'OK':(c.polaridad==='no'?'No':'Pend.'),c.secuenciaFases==='si'?'OK':(c.secuenciaFases==='no'?'No':'Pend./N/A'),c.continuidadPe==='si'?'OK':(c.continuidadPe==='no'?'No':'Pend.'),c.ensayoRcd==='si'?'OK':(c.ensayoRcd==='no'?'No':'Pend./General')]); doc.autoTable({startY:y,margin:{left:18,right:18},head:[['ID','Circuito','Aislamiento','Polaridad','Secuencia','PE','RCD']],body:pdfFilas(rows),theme:'grid',styles:{fontSize:6.6}}); };
+    const addUnifilar=(usarActual=false)=>{ if(!usarActual) doc.addPage(); pdfCierreTitulo(doc,'Esquema unifilar',codigo+' · generado desde los datos del proyecto',borrador); pdfDibujarUnifilar(doc,trabajo,42); };
+    const addResponsable=()=>{ doc.addPage(); pdfCierreTitulo(doc,'Declaración y responsable técnico',codigo,borrador); let y=44; doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(23,23,25); const t='El responsable técnico declara que la información y las mediciones registradas en este expediente corresponden a los datos cargados en la aplicación y que las verificaciones indicadas como cumplidas fueron revisadas antes de la emisión.';doc.text(doc.splitTextToSize(pdfTexto(t),174),18,y);y+=24;doc.autoTable({startY:y,margin:{left:18,right:18},body:pdfFilas([['Responsable',cp.responsableNombre||'Pendiente'],['Categoría / habilitación',cp.categoriaUTE||'Pendiente'],['Fecha',cp.fecha||'Pendiente'],['Declaración',cp.declaracion==='si'?'Confirmada':'Pendiente']]),theme:'plain',styles:{fontSize:9},columnStyles:{0:{fontStyle:'bold',cellWidth:50}}}); y=doc.lastAutoTable.finalY+12;if(cp.firmaDataUrl){try{doc.addImage(cp.firmaDataUrl,'JPEG',18,y,55,25);}catch(e){}}else{doc.line(18,y+18,78,y+18);doc.setFontSize(7);doc.setTextColor(111,114,119);doc.text('Firma',18,y+22);} };
+    const addFotos=()=>{ (cp.fotos||[]).forEach((f,i)=>{doc.addPage();pdfCierreTitulo(doc,'Anexo fotográfico '+(i+1),pdfTexto(f.nombre||'Foto de obra'),borrador);try{const props=doc.getImageProperties(f.dataUrl);const mw=174,mh=225;let iw=mw,ih=props.height/props.width*iw;if(ih>mh){ih=mh;iw=props.width/props.height*ih;}doc.addImage(f.dataUrl,'JPEG',18+(mw-iw)/2,42,iw,ih);}catch(e){doc.setFontSize(9);doc.text('No se pudo incorporar esta imagen.',18,45);}}); };
+    if(tipo==='memoria'){ addMemoria(true); }
+    else if(tipo==='protocolo'){ addProtocolo(true); }
+    else if(tipo==='unifilar'){ addUnifilar(true); }
+    else { addCover(); addMemoria(); addProtocolo(); addUnifilar(); addResponsable(); addFotos(); }
+    pdfCierrePie(doc,tipo==='expediente'?'Expediente técnico':(tipo==='memoria'?'Memoria técnica':(tipo==='protocolo'?'Protocolo de ensayos':'Esquema unifilar')));
+    return {doc,filename:codigo+'-'+tipo+(borrador?'-BORRADOR':'')+'.pdf'};
+  }
+
+  async function generarDocumentoCierre(tipo) {
+    if(!draft) return;
+    persistDraft();
+    const r=evaluarCierreProfesional(draft);
+    if(r.estado!=='listo') toast('Se emitirá como BORRADOR porque la revisión final tiene pendientes.');
+    const out=await construirDocumentoCierre(tipo,draft); out.doc.save(out.filename);
   }
 
   function wirePerfil() {

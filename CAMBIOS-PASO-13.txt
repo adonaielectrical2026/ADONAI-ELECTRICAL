@@ -1,0 +1,20 @@
+PASO 13 — PE, CONTINUIDAD Y EQUIPOTENCIALIDAD
+
+Base: Paso 12.
+Motor: 2.6.0
+Paquete normativo: 1.9-pe-equipotencialidad-continuidad
+Esquema de datos: v12
+PWA cache: v13
+
+Cambios principales:
+- PE independiente por circuito con sección automática según IEC 60364-5-54 como referencia complementaria.
+- Método simplificado: S_PE = S_fase hasta 16 mm²; 16 mm² para fase >16 y <=35 mm²; S_fase/2 por encima de 35 mm².
+- Si el PE va separado: mínimo mecánico adicional de 2,5 mm² Cu con protección mecánica o 4 mm² Cu sin ella.
+- Ensayo de continuidad PE por circuito: Pendiente / Verificado / No continuo, con resistencia medida opcional para trazabilidad.
+- La memoria no impone un límite universal de ohmios para continuidad; conserva la medición y exige resultado satisfactorio del ensayo.
+- Equipotencialidad principal: evaluación de aplicabilidad, sección y continuidad. Referencia IEC: al menos 1/2 del mayor PE, mínimo 6 mm² Cu y no necesita exceder 25 mm² Cu.
+- Equipotencialidad suplementaria: evaluación separada, sección y continuidad cuando aplique.
+- UTE Cap. XXIII se mantiene como norma principal: PE hacia masas, circuito de tierra continuo, conexiones por derivación y prohibición de fusibles/seccionadores/interruptores en el circuito de tierra.
+- Nueva sección PDF: PE, CONTINUIDAD Y EQUIPOTENCIALIDAD.
+- Migración v12: ningún proyecto antiguo recibe ensayos de continuidad supuestos; quedan Pendiente.
+- Suite de pruebas Paso 13 agregada y regresión Pasos 4–12 actualizada a la versión vigente.

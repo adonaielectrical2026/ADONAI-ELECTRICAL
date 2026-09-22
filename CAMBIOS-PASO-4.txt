@@ -1,0 +1,51 @@
+ADONAI ELECTRICAL — PASO 4
+MEMORIA DE CÁLCULO Y PROTECCIONES
+Fecha: 21/09/2026
+
+BASE
+- Se partió de ADONAI-paso-3-persistencia-offline.zip.
+- Motor de cálculo: 1.7.0.
+- Paquete normativo: 1.0-memoria-protecciones.
+- Esquema local: v4.
+
+CORRECCIONES PRINCIPALES
+1. La protección general y la puesta a tierra forman parte del estado técnico global en instalaciones nuevas.
+2. Se agregó ingreso de resistencia de puesta a tierra medida y condición del local:
+   - seco/normal: tensión límite 50 V;
+   - húmedo/mojado/conductor: tensión límite 24 V.
+3. Se verifica R_A x IΔn <= U_L y se calcula automáticamente la resistencia máxima admisible.
+4. En instalaciones domiciliarias se marca NO CUMPLE si el diferencial general no es de 30 mA.
+5. Si falta la medición de tierra, la memoria queda PENDIENTE: ya no puede aparecer como verificada sólo por cerrar los circuitos.
+6. El PDF interno incorpora una sección propia: PROTECCIÓN GENERAL Y PUESTA A TIERRA.
+7. Se corrigió el tratamiento del paquete normativo: una limitación específica de canalización enterrada ya no convierte automáticamente todos los circuitos en PENDIENTE.
+8. Se eliminó la afirmación incorrecta de que en BT Uruguay ya no se instalan fusibles. El Comunicado UTE 26002 admite interruptores automáticos o fusibles adecuados para sobrecorrientes.
+9. Se corrigió la selección/descripción de diferenciales para carga de vehículos eléctricos:
+   - la app no afirma que todo cargador requiera tipo B;
+   - sin RDC-DD 6 mA se propone B de forma conservadora;
+   - con RDC-DD 6 mA se propone A y se exige verificar modo/equipo según UTE Cap. XXX.
+10. Se diferencia explícitamente el diferencial general interior de la PDIE de la instalación de enlace. La PDIE de la Norma de Enlace agosto 2026 se instala excepcionalmente cuando UTE lo disponga y es suministrada/instalada por UTE.
+11. Se actualizaron referencias normativas visibles en la app y en la memoria.
+12. Las copias antiguas migran a esquema v4 sin inventar una medición de tierra: el nuevo campo queda vacío hasta que se mida.
+13. Se incrementó la versión de caché offline para que una PWA ya instalada reciba app.js/index.html corregidos y no quede sirviendo la versión anterior desde caché.
+
+REFERENCIAS UTE INCORPORADAS
+- Reglamento de Baja Tensión: Caps. II, IV, V, VI, VIII, XXIII y XXX.
+- Comunicado Normativa Técnico Comercial UTE Nro. 26002 — 19/02/2026.
+- Norma de Instalaciones de Enlace de BT — versión agosto 2026, vigente desde 13/08/2026.
+
+VERIFICACIONES REALIZADAS
+- Sintaxis completa de codigo/app.js con Node: OK.
+- Regeneración de app-completa.html: OK.
+- IDs HTML duplicados en index.html/app-completa.html: ninguno.
+- Pruebas del cálculo de tierra:
+  * residencial, 30 mA, seco, sin medición -> PENDIENTE;
+  * residencial, 30 mA, seco, 100 ohm -> CUMPLE;
+  * residencial, 30 mA, húmedo, 900 ohm -> NO CUMPLE (máximo 800 ohm);
+  * residencial, 300 mA -> NO CUMPLE;
+  * industrial, 300 mA, seco, 100 ohm -> CUMPLE (máximo 166,67 ohm).
+
+LIMITACIONES QUE QUEDAN EXPLÍCITAS
+- Canalizaciones enterradas: falta modelar una corrección térmica adicional por resistividad/profundidad/condiciones reales del terreno cuando corresponda.
+- Sobretensiones atmosféricas: la app muestra la exigencia normativa, pero todavía no automatiza un estudio de riesgo ni selección de SPD.
+- Modificaciones/reparaciones: la protección general existente no se recalcula automáticamente; debe verificarse en campo.
+- La medición de tierra debe provenir de una medición real; la app no la estima ni la inventa.

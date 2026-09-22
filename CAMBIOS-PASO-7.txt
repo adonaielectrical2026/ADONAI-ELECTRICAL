@@ -1,0 +1,12 @@
+ADONAI ELECTRICAL — PASO 7 — BALANCE REAL DE FASES
+Fecha: 21/09/2026
+
+1. Cada circuito monofásico de un suministro trifásico se asigna explícitamente a L1/L2/L3 (TT) o a L1-L2/L2-L3/L3-L1 (IT).
+2. Se calculan corrientes de línea por fase usando demanda vinculada cuando existe y, en circuitos manuales, Ib.
+3. Se incorpora distribución automática buscando minimizar el desequilibrio.
+4. Se aplica UTE RBT Cap. II §9 / Tabla I: 20 % hasta 50 kW y 15 % por encima.
+5. Como el numeral no explicita fórmula porcentual, la app documenta el criterio técnico: máxima desviación de corriente respecto del promedio / promedio × 100.
+6. La fase más cargada entra en el dimensionado del alimentador y de la protección general.
+7. En trifásico desbalanceado la caída del alimentador usa un criterio conservador de doble recorrido con la fase más cargada.
+8. El PDF interno incluye el balance L1/L2/L3, desequilibrio, límite y estado.
+9. Esquema de datos v7; motor 2.0.0; paquete normativo 1.3-balance-fases; caché PWA v7.

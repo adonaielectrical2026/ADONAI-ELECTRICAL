@@ -1,0 +1,33 @@
+ADONAI ELECTRICAL — PASO 10
+Selectividad de protecciones, curvas B/C/D y coordinación de diferenciales
+Fecha: 21/09/2026
+
+1. Curvas termomagnéticas IEC 60898-1
+- B: banda magnética 3–5 x In.
+- C: 5–10 x In.
+- D: 10–20 x In.
+- La app conserva selección automática por uso (iluminación B, uso general C, motor D) y permite fijar B/C/D manualmente.
+- Una curva distinta de la sugerida genera una nota de auditoría para justificar corriente de arranque e Icc mínima.
+
+2. Selectividad entre térmicas
+- Ya no se presume selectividad porque In general sea mayor que In del circuito.
+- Cada circuito permite registrar: pendiente, selectividad total según fabricante, parcial según fabricante o combinación no selectiva.
+- Para selectividad parcial se registra el límite Is (kA) y se compara con la Icc real/calculada del circuito.
+- Sin tabla/curva del fabricante, la memoria queda en Pendiente.
+
+3. Diferenciales en cascada
+- La protección general puede declararse instantánea o selectiva tipo S/temporizada.
+- Cuando existe RCD dedicado aguas abajo, se comprueba el criterio IEC de selectividad total: sensibilidad aguas arriba >= 3 veces la sensibilidad aguas abajo y cabecera tipo S/temporizada.
+- 300 mA tipo S sobre 30 mA instantáneo: selectividad compatible.
+- 30 mA sobre 30 mA: no se declara selectividad total.
+- La falta de selectividad se informa separadamente del cumplimiento básico de protección.
+
+4. Memoria/PDF
+- Nueva sección COORDINACIÓN Y SELECTIVIDAD.
+- Se detallan por circuito los datos faltantes o el respaldo de fabricante declarado.
+
+5. Versionado
+- Motor 2.3.0.
+- Paquete normativo 1.6-selectividad-curvas-rcd.
+- Esquema de datos v9.
+- Caché PWA v10.
