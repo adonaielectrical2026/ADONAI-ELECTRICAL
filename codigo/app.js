@@ -303,9 +303,18 @@
     ],
   };
   // Temperatura ambiente de cálculo: siempre 30 °C, que es el criterio de la
-  // empresa para toda la obra. Queda editable circuito por circuito para un caso
-  // que lo justifique, pero no se sugiere ninguna otra.
+  // empresa para toda la obra al aire o en conducto no enterrado. Queda editable
+  // circuito por circuito para un caso que lo justifique, pero no se sugiere
+  // ninguna otra.
   const TEMP_AMBIENTE_DEFECTO = 30;
+  // Caño enterrado (supuesto 1, cerrado el 22/9/2026): UTE y el Reglamento de
+  // Baja Tensión toman como condición normal de diseño una resistividad
+  // térmica de terreno de 1,0 °C·m/W y una temperatura de terreno de 25 °C a
+  // 0,5-0,7 m de profundidad. Esa resistividad es la misma que ya asumen las
+  // Tablas X a XIII que la app reutiliza para el enterrado bajo tubo, así que
+  // no hace falta un factor aparte: alcanza con calcular a 25 °C en vez de los
+  // 30 °C del resto de los métodos.
+  const TEMP_TERRENO_ENTERRADO_DEFECTO = 25;
 
   const METODO_LABEL = {
     embutido: 'Embutido en pared',
@@ -406,10 +415,10 @@
     id: 'rbt-ute-interiores-2001-rev-2026',
     nombre: 'Reglamento de Baja Tensión UTE — instalaciones interiores (Caps. II, IV y V)',
     fuente: 'RBT-UTE: Capítulo II "Instalaciones Interiores o Receptoras" y su Anexo (Tablas I a XVI), Capítulo IV (conductos protectores) y Capítulo V (protecciones), edición N.5 / Junio 2001, ute.com.uy',
-    version: '0.9-diferenciales',
+    version: '0.10-terreno-enterrado',
     estado: 'pendiente', // 'pendiente' | 'verificado' | 'personalizado'
     vigenteDesde: null,
-    actualizadoEl: '2026-09-17',
+    actualizadoEl: '2026-09-22',
     // Supuesto 2, pendiente de confirmación. El contraste numérico de las
     // Tablas VI a IX (llevando la IEC B.52.2 de 30 a 25 °C con 1,06) cae
     // entre los métodos E y F, que son un circuito al aire separado de la
@@ -429,6 +438,12 @@
       // el listado de técnicos instaladores de UTE, Salto, Categoría C. Con
       // null, los circuitos que usan esos factores salen como pendientes.
       aprobacionSupuesto2: { nombre: 'Claudio Rodríguez', categoria: 'C', fecha: '2026-09-17' },
+      // Supuesto 1 (caño enterrado): valores estándar de diseño de UTE,
+      // confirmados por el usuario el 22/9/2026. Con esto la app calcula el
+      // enterrado a la temperatura de terreno, no a la de aire.
+      tempTerrenoEnterrado: 25,
+      resistividadTerrenoEnterrado: 1.0,
+      profundidadReferenciaEnterradoM: [0.5, 0.7],
       // Cortocircuito. El Anexo da el método (Tabla A por potencia del
       // transformador, Tablas B a E por el cable) pero no un valor por
       // defecto, y en vivienda casi nunca se conocen esos datos. Sin Icc real
@@ -457,7 +472,7 @@
       ],
       gamaHastaA: 63,
     },
-    notas:'Ampacidades (Tablas VI-XIII), temperatura (Tabla XIV, escalón inmediato superior), sol (§3.3.2), caída de tensión con conductividad de servicio (§8) medida desde el medidor, caños por Tablas II y III del Capítulo IV, protección contra sobrecargas y cortocircuitos (Cap. V §1.a y §1.b; Anexo §7). Criterios de la casa, más exigentes que el reglamento: agrupamiento contando neutro y tierra, reducción al aire y en bandeja con factores de referencia IEC, 30 °C y mínimos de 1 / 1,5 mm². Al aire libre sin reducción por agrupamiento (criterio de la casa: nunca un circuito en contacto con otro). En bandeja, IEC 60364-5-52 Tabla B.52.17 según el montaje (manojo, capa sobre pared, capa sobre bandeja perforada), sin reducción si entre circuitos hay más de 2·De; enterrados por separación entre caños (Tabla B.52.19: en contacto, 0,25, 0,5 y 1 m; más de 1 m sin reducción). Factores IEC de agrupamiento (B.52.17 y B.52.19): Aprobado el 17/09/2026 por Claudio Rodríguez, técnico instalador UTE Categoría C (supuesto 2), con respaldo en el contraste de las Tablas VI a IX con los métodos E y F de la IEC. Cortocircuito en tres niveles: Icc informada (se verifica), subestación propia (se exige la Icc, Tabla A) o 6 kA de plaza (no verificado); poder de corte por Icn IEC 60898-1 con la gama iC60 N/H/L. 6 kA de plaza confirmados para monofásico y trifásico, con mínimo de 10 kA en térmicas desde 100 A; gama iC60 confirmada. Pendiente: la corrección por terreno del caño enterrado.',
+    notas:'Ampacidades (Tablas VI-XIII), temperatura (Tabla XIV, escalón inmediato superior), sol (§3.3.2), caída de tensión con conductividad de servicio (§8) medida desde el medidor, caños por Tablas II y III del Capítulo IV, protección contra sobrecargas y cortocircuitos (Cap. V §1.a y §1.b; Anexo §7). Criterios de la casa, más exigentes que el reglamento: agrupamiento contando neutro y tierra, reducción al aire y en bandeja con factores de referencia IEC, 30 °C y mínimos de 1 / 1,5 mm². Al aire libre sin reducción por agrupamiento (criterio de la casa: nunca un circuito en contacto con otro). En bandeja, IEC 60364-5-52 Tabla B.52.17 según el montaje (manojo, capa sobre pared, capa sobre bandeja perforada), sin reducción si entre circuitos hay más de 2·De; enterrados por separación entre caños (Tabla B.52.19: en contacto, 0,25, 0,5 y 1 m; más de 1 m sin reducción). Factores IEC de agrupamiento (B.52.17 y B.52.19): Aprobado el 17/09/2026 por Claudio Rodríguez, técnico instalador UTE Categoría C (supuesto 2), con respaldo en el contraste de las Tablas VI a IX con los métodos E y F de la IEC. Cortocircuito en tres niveles: Icc informada (se verifica), subestación propia (se exige la Icc, Tabla A) o 6 kA de plaza (no verificado); poder de corte por Icn IEC 60898-1 con la gama iC60 N/H/L. 6 kA de plaza confirmados para monofásico y trifásico, con mínimo de 10 kA en térmicas desde 100 A; gama iC60 confirmada. Caño enterrado (supuesto 1, cerrado 22/09/2026): valores estándar de diseño de UTE — resistividad térmica de terreno 1,0 °C·m/W (la misma que ya asumen las Tablas X a XIII) y temperatura de terreno 25 °C a 0,5-0,7 m de profundidad; el enterrado se calcula a esa temperatura en vez de los 30 °C del resto de los métodos, sin factor de corrección adicional.',
   };
   // Referencias que respaldan cada paso del motor. El reglamento que rige en
   // Uruguay es el de UTE: es la referencia principal y es la que manda. La IEC
@@ -3515,7 +3530,7 @@
         '<div class="field"><label>Longitud (m)</label><input class="input" type="number" data-f="l" value="' + c.l + '"></div>' +
         '<div class="field"><label>Material</label><select class="select" data-f="material"><option value="cobre"' + (c.material === 'cobre' ? ' selected' : '') + '>Cobre</option><option value="aluminio"' + (c.material === 'aluminio' ? ' selected' : '') + '>Aluminio</option></select></div>' +
         '<div class="field"><label>Método</label><select class="select" data-f="metodo">' + Object.keys(METODO_LABEL).map((k) => '<option value="' + k + '"' + (c.metodo === k ? ' selected' : '') + '>' + METODO_LABEL[k] + '</option>').join('') + '</select></div>' +
-        '<div class="field"><label>Temp. amb. (°C)</label><input class="input" type="number" data-f="tempAmb" value="' + c.tempAmb + '"></div>' +
+        '<div class="field"><label>' + (c.metodo === 'enterrado' ? 'Temp. terreno (°C)' : 'Temp. amb. (°C)') + '</label><input class="input" type="number" data-f="tempAmb" value="' + c.tempAmb + '"></div>' +
         (c.metodo === 'aire' && NORMATIVE_PACK.parametros.aireLibreSeparado
           ? '<div class="field"><label>Agrupamiento</label><div class="hint" style="margin:0">Sin reducción: al aire libre los circuitos van separados, nunca en contacto.</div></div>'
           : '<div class="field"><label>' + (c.metodo === 'bandeja' ? 'Circuitos en la bandeja' : 'Circuitos agrupados') + '</label><input class="input" type="number" min="1" data-f="agrupados" value="' + c.agrupados + '"></div>') +
@@ -3620,6 +3635,13 @@
             if (!c.polosManual) c.polos = polosPorDefecto(c);
           }
           if (f === 'polos') c.polosManual = true;
+          // al enterrar el caño se propone la temperatura de terreno (25 °C,
+          // supuesto 1) en vez de la de aire (30 °C), salvo que ya se haya
+          // tocado el campo a mano
+          if (f === 'metodo') {
+            if (input.value === 'enterrado' && c.tempAmb === TEMP_AMBIENTE_DEFECTO) c.tempAmb = TEMP_TERRENO_ENTERRADO_DEFECTO;
+            else if (input.value !== 'enterrado' && c.tempAmb === TEMP_TERRENO_ENTERRADO_DEFECTO) c.tempAmb = TEMP_AMBIENTE_DEFECTO;
+          }
           renderCircuitosList();
         });
       });
@@ -3903,6 +3925,7 @@
     $('#cond-tiempo-wrap').hidden = esMcb;
     $('#cond-icu-wrap').hidden = !esMcb;
     $('#cond-podercorte-label').textContent = esMcb ? 'Icn IEC 60898-1 (kA)' : 'Icu IEC 60947-2 (kA)';
+    $('#cond-temp-label').textContent = datos.metodo === 'enterrado' ? 'Temp. terreno (°C)' : 'Temp. ambiente (°C)';
     // montaje y separación cuentan al aire y en bandeja; los caños, enterrado
     const alAire = pideMontaje(datos.metodo);
     $('#cond-montaje-wrap').hidden = !alAire;
@@ -3913,6 +3936,18 @@
       $('#cond-montaje').value = MONTAJE_DEFECTO[datos.metodo];
       $('#cond-montaje').dataset.metodo = datos.metodo;
       datos.montaje = MONTAJE_DEFECTO[datos.metodo];
+    }
+    if ($('#cond-temp').dataset.metodo !== datos.metodo) {
+      // enterrado se propone a temperatura de terreno (25 °C, supuesto 1) en
+      // vez de la de aire (30 °C), salvo que ya se haya tocado el campo
+      if (datos.metodo === 'enterrado' && datos.tempAmb === TEMP_AMBIENTE_DEFECTO) {
+        $('#cond-temp').value = TEMP_TERRENO_ENTERRADO_DEFECTO;
+        datos.tempAmb = TEMP_TERRENO_ENTERRADO_DEFECTO;
+      } else if (datos.metodo !== 'enterrado' && datos.tempAmb === TEMP_TERRENO_ENTERRADO_DEFECTO) {
+        $('#cond-temp').value = TEMP_AMBIENTE_DEFECTO;
+        datos.tempAmb = TEMP_AMBIENTE_DEFECTO;
+      }
+      $('#cond-temp').dataset.metodo = datos.metodo;
     }
     const r = calcularSeccion(datos);
     opcionesComprobacion(datos.material, datos.aislacion, datos.metodo);
