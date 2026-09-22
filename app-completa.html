@@ -5544,6 +5544,16 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     // 22/9/2026: bajo goma USD 696,68 y USD 1.198,63 el rollo de 100 m
     // (N06146 / N06150); bajo plástico USD 705,79 y USD 1.207,00 (N04412 /
     // N04414). Por encima de 10 mm² no está relevado en 3x.
+    // Aluminio: no se consigue en bajo goma ni bajo plástico —el conductor
+    // rígido de aluminio no se fabrica en esa vaina flexible—. Para 2
+    // conductores a la intemperie (luminarias de cancha, complejos de
+    // viviendas) el producto real es el preensamblado aéreo autoportante,
+    // relevado en Fivisa el 22/9/2026: Fucetix XLPE 2x16mm² (N11399, USD
+    // 1,86/m) y 2x25mm² (N11400, USD 2,92/m), ya por metro (no viene en
+    // rollo fijo). Corriente admisible de fábrica: 2x16 → 70 A al aire /
+    // 88 A enterrado a 0,70 m; se cotiza aparte del método de cálculo
+    // automático, que no lo modela como conducto/bandeja.
+    cablePreensambladoAluminio: { 16: 75, 25: 117 },
     cableBajoGoma: {
       '2x1': 39, '2x1.5': 55, '2x2': 73, '2x2.5': 89, '2x4': 134, '2x6': 197,
       '3x1': 54, '3x1.5': 77, '3x2': 102, '3x2.5': 125, '3x4': 192, '3x6': 280, '3x10': 482,
@@ -5678,7 +5688,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     { clave: 'diferencialA2P', medida: 25 }, { clave: 'diferencialA2P', medida: 40 }, { clave: 'diferencialA2P', medida: 63 },
     { clave: 'diferencialA4P', medida: 25 }, { clave: 'diferencialA4P', medida: 40 }, { clave: 'diferencialA4P', medida: 63 },
     { clave: 'diferencialB2P', medida: 25 }, { clave: 'diferencialB2P', medida: 40 },
-    { clave: 'cableBajoGoma' }, { clave: 'cableBajoPlastico' },
+    { clave: 'cableBajoGoma' }, { clave: 'cableBajoPlastico' }, { clave: 'cablePreensambladoAluminio' },
     { clave: 'canoGalvanizado' }, { clave: 'codoGalvanizado' },
     { clave: 'bandeja', medida: 150 }, { clave: 'cajaMedidorTrifasica' },
   ];
@@ -8817,6 +8827,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var n,r,i,a,
     {
       titulo: 'Cables unipolares ($/m)',
       campos: [{ key: 'cableUnipolar', tipo: 'mapa', etiqueta: (s) => s + ' mm²' }],
+    },
+    {
+      titulo: 'Cable preensamblado de aluminio, aéreo ($/m)',
+      campos: [{ key: 'cablePreensambladoAluminio', tipo: 'mapa', etiqueta: (s) => '2x' + s + ' mm²' }],
+      nota: 'Fucetix XLPE autoportante, para distribución aérea (luminarias de cancha, complejos de viviendas). Relevado en Fivisa el 22/09/2026. El aluminio no se consigue en cable bajo goma ni bajo plástico —esa vaina flexible es sólo para cobre—; este es el equivalente real de 2 conductores. No entra en el cálculo automático de sección: se agrega a mano en el presupuesto.',
     },
     {
       titulo: 'Canalizaciones ($/m)',
